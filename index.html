@@ -650,8 +650,8 @@ async function saveMarketingList(){
   try{
     const res = await window.storage.get(MARKETING_LIST_KEY, true);
     const saved = (res && res.value) ? JSON.parse(res.value) : [];
-    if(JSON.stringify(saved) !== JSON.stringify(marketingList)) return false;
-  }catch(e){ return false; }
+    if(JSON.stringify(saved) !== JSON.stringify(marketingList)){ lastStorageError = 'Data tidak cocok setelah verifikasi baca-ulang.'; return false; }
+  }catch(e){ lastStorageError = e.message || String(e); return false; }
   return true;
 }
 function findMarketingByPin(pin){
@@ -758,13 +758,15 @@ async function renameProjectCode(newCode){
 
 let saveTimer = null;
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(persist, 400); }
+let lastStorageError = '';
 async function storageSetWithRetry(key, value, shared, retries){
   retries = retries==null ? 2 : retries;
   let lastErr;
   for(let i=0;i<=retries;i++){
-    try{ await window.storage.set(key, value, shared); return true; }
+    try{ await window.storage.set(key, value, shared); lastStorageError = ''; return true; }
     catch(e){ lastErr = e; if(i<retries) await new Promise(r=>setTimeout(r, 600*(i+1))); }
   }
+  lastStorageError = (lastErr && (lastErr.message || String(lastErr))) || 'Unknown error';
   console.error('storage set failed after retries', lastErr);
   return false;
 }
@@ -1210,6 +1212,7 @@ function renderProjectDashboard(){
       <div class="topbar-right">
         ${roleChipHtml()}
         ${isAdmin ? `<button class="btn tiny ghost" id="changeMasterPin">🔑 Ganti PIN Admin</button>` : ''}
+        ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
         <button class="btn tiny ghost" id="logoutRoleBtn">Keluar</button>
       </div>
     </div>
@@ -1300,6 +1303,21 @@ function renderProjectDashboard(){
       }
     }));
   }
+  const changeMyPinBtn = document.getElementById('changeMyPin');
+  if(changeMyPinBtn) changeMyPinBtn.addEventListener('click', async ()=>{
+    const newPin = await customPrompt('PIN baru kamu:', currentMarketing.pin);
+    if(!newPin || !newPin.trim()) return;
+    const trimmed = newPin.trim();
+    await loadMarketingList();
+    const me = findMarketingById(currentMarketing.id);
+    if(!me){ await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
+    if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
+    const oldPin = me.pin;
+    me.pin = trimmed;
+    const ok = await saveMarketingList();
+    if(ok){ currentMarketing = me; showToast('PIN kamu diperbarui ✓'); }
+    else { me.pin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
+  });
   document.querySelectorAll('[data-action="open-project"]').forEach(btn=> btn.addEventListener('click', ()=>{
     const baseUrl = location.href.split('?')[0].split('#')[0];
     location.href = baseUrl + '?p=' + btn.dataset.id;
@@ -1370,7 +1388,7 @@ function showMarketingForm(editId){
     const ok = await saveMarketingList();
     if(!ok){
       btn.disabled = false; btn.textContent = 'Simpan';
-      await customAlert('Gagal menyimpan ke storage — cek koneksi internet dan coba lagi. PIN belum berubah.');
+      await customAlert('Gagal menyimpan ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui'));
       return;
     }
     showToast('Data marketing tersimpan ✓');
@@ -1613,6 +1631,7 @@ function render(){
         </div>
         ${isVendor ? `<div class="mode-pill vendor"><span class="pulse"></span>Mode Vendor</div>` : ''}
         ${isVendor ? `<button class="btn tiny ghost" id="backToDashboardBtn">📁 Semua Project</button>` : ''}
+        ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
         ${isVendor && roleDecided ? `<button class="btn tiny ghost" id="switchRoleBtn">↺ Ganti Peran</button>` : ''}
         ${!isVendor ? `<button class="btn tiny ghost" id="clientLogoutBtn">Keluar</button>` : ''}
       </div>
@@ -2208,6 +2227,22 @@ function attachHandlers(){
 
   const backToDashboardBtn = document.getElementById('backToDashboardBtn');
   if(backToDashboardBtn) backToDashboardBtn.addEventListener('click', ()=>{ roleDecided = false; showProjectDashboard(); });
+
+  const changeMyPinBtn = document.getElementById('changeMyPin');
+  if(changeMyPinBtn) changeMyPinBtn.addEventListener('click', async ()=>{
+    const newPin = await customPrompt('PIN baru kamu:', currentMarketing.pin);
+    if(!newPin || !newPin.trim()) return;
+    const trimmed = newPin.trim();
+    await loadMarketingList();
+    const me = findMarketingById(currentMarketing.id);
+    if(!me){ await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
+    if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
+    const oldPin = me.pin;
+    me.pin = trimmed;
+    const ok = await saveMarketingList();
+    if(ok){ currentMarketing = me; showToast('PIN kamu diperbarui ✓'); }
+    else { me.pin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
+  });
 
   const clientLogoutBtn = document.getElementById('clientLogoutBtn');
   if(clientLogoutBtn) clientLogoutBtn.addEventListener('click', ()=>{

@@ -1832,18 +1832,21 @@ function render(){
   const picPhone = projMkt ? (projMkt.phone || '-') : PIC_PHONE_DISPLAY;
   const picWa = projMkt ? (projMkt.phone ? ('https://wa.me/62' + projMkt.phone.replace(/^0/, '')) : '#') : PIC_WA;
   const picRoleLabel = projMkt ? 'Marketing' : 'PIC WO';
-
-  app.innerHTML = `
-    <div class="topbar">
-      <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
-      <div class="topbar-right">
-        <div class="pic-chip">
+  const topPicChipHtml = isAdmin
+    ? `<div class="pic-chip"><div class="pic-info"><div class="pic-name">🛡️ Admin</div><div class="pic-role">Akses penuh ke semua project &amp; marketing</div></div></div>`
+    : `<div class="pic-chip">
           <img class="pic-avatar" src="${picPhoto}" alt="${escapeHtml(picName)}"/>
           <div class="pic-info">
             <div class="pic-name">${escapeHtml(picName)}</div>
             <div class="pic-role">${picRoleLabel} · <a href="${picWa}" target="_blank" rel="noopener">${escapeHtml(picPhone)}</a></div>
           </div>
-        </div>
+        </div>`;
+
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+      <div class="topbar-right">
+        ${topPicChipHtml}
         ${isVendor ? `<button class="btn tiny ghost" id="backToDashboardBtn">📁 Semua Project</button>` : ''}
         ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
         ${!isVendor ? `<button class="btn tiny ghost" id="clientLogoutBtn">Keluar</button>` : ''}
@@ -1930,7 +1933,7 @@ function render(){
     <section class="panel ${currentTab==='moodboard'?'active':''}">${renderMoodboard()}</section>
 
     <footer>
-      <div class="pic-footer"><img src="${picPhoto}" alt="${escapeHtml(picName)}"/><div style="text-align:left;"><div style="font-weight:700;color:var(--cream);">${escapeHtml(picName)} · ${picRoleLabel}</div><a href="${picWa}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;font-weight:600;">${escapeHtml(picPhone)}</a></div></div>
+      ${!isAdmin ? `<div class="pic-footer"><img src="${picPhoto}" alt="${escapeHtml(picName)}"/><div style="text-align:left;"><div style="font-weight:700;color:var(--cream);">${escapeHtml(picName)} · ${picRoleLabel}</div><a href="${picWa}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;font-weight:600;">${escapeHtml(picPhone)}</a></div></div>` : ''}
       Dibuat dengan 💗 oleh ArtaJava Wedding Organizer untuk perjalanan menuju hari bahagia kalian.
     </footer>
   `;
@@ -2691,7 +2694,8 @@ function attachHandlers(){
           dataUrl = await compressImageFile(file, { maxChars: 40000, maxDim: 1000 });
           type = 'image/jpeg';
         } else {
-          // PDF tidak bisa dikompres di browser — batas storage per-item ~45000 karakter.
+          // PDF tidak bisa dikompres di browser — batas storage per-item sekitar 5MB (base64),
+          // jadi kasih ruang aman di bawah itu (~4.5MB base64, setara ±3.3MB file PDF asli).
           const reader = new FileReader();
           dataUrl = await new Promise((resolve, reject)=>{
             reader.onload = ()=> resolve(reader.result);
@@ -2699,8 +2703,8 @@ function attachHandlers(){
             reader.readAsDataURL(file);
           });
           type = file.type;
-          if(dataUrl.length > 44000){
-            await customAlert('File PDF ini terlalu besar untuk disimpan (batas sekitar 32KB per file). Coba kompres PDF-nya dulu, atau lampirkan sebagai foto/scan.');
+          if(dataUrl.length > 4700000){
+            await customAlert('File PDF ini terlalu besar untuk disimpan (batas sekitar 3.3MB per file). Coba kompres PDF-nya dulu, atau lampirkan sebagai foto/scan.');
             e.target.value = '';
             return;
           }

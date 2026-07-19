@@ -2368,7 +2368,7 @@ function renderVendors(){
   const grandHarga = totalVendorHarga();
   const removedCats = VENDOR_CATS.filter(c=> (state.removedVendorCats||[]).includes(c.key));
   return `
-    <div class="section-head"><div><h2>Fixasi Vendor</h2><p>17 kategori inti, plus add-on & progres pengerjaan tiap vendor. Total harga deal seluruh vendor saat ini: <b style="color:var(--gold);">${fmtIDR(grandHarga)}</b>${grandAddon?` + add-on <b style="color:var(--gold);">${fmtIDR(grandAddon)}</b>`:''} — otomatis masuk ke tab Pembayaran.</p></div></div>
+    <div class="section-head"><div><h2>Fixasi Vendor</h2>${!isSupplier ? `<p>17 kategori inti, plus add-on & progres pengerjaan tiap vendor. Total harga deal seluruh vendor saat ini: <b style="color:var(--gold);">${fmtIDR(grandHarga)}</b>${grandAddon?` + add-on <b style="color:var(--gold);">${fmtIDR(grandAddon)}</b>`:''} — otomatis masuk ke tab Pembayaran.</p>` : ''}</div></div>
     <div class="vendor-grid">${activeVendorCats().map(c=> renderVendorCard(c.key, state.vendors[c.key], {emoji:c.emoji})).join('')}</div>
     ${isVendor && removedCats.length ? `
     <div class="mb-card" style="margin-top:14px;">

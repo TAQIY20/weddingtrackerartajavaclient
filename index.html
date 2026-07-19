@@ -3027,7 +3027,11 @@ function attachHandlers(){
     if(changeProjectCode) changeProjectCode.addEventListener('click', async ()=>{
       const val = await customPrompt('Kode project baru (huruf, angka, - dan _ saja). Kode ini dipakai di link & login klien:', state.id);
       if(val===null) return;
+      changeProjectCode.disabled = true;
+      showLoadingOverlay('Mengganti kode project...');
       const res = await renameProjectCode(val);
+      hideLoadingOverlay();
+      changeProjectCode.disabled = false;
       if(res.ok){ showToast('Kode project diperbarui ✓'); render(); }
       else { await customAlert(res.msg); }
     });

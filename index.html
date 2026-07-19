@@ -414,6 +414,26 @@ const MARKETING_LIST_KEY = 'wedding_marketing_list_' + APP_VERSION;
 const PACKAGE_LIST_KEY = 'wedding_package_list_' + APP_VERSION;
 const CUSTOM_VENDOR_CATS_KEY = 'wedding_custom_vendor_cats_' + APP_VERSION;
 function projectKey(id){ return 'wedding_project_' + APP_VERSION + '_' + id; }
+
+/* ---------- CACHE LOKAL UNTUK LOADING AWAL YANG CEPAT ----------
+   Backend storage (Google Apps Script) butuh waktu untuk merespons (kadang
+   beberapa detik, terutama saat "cold start"). Supaya buka link project TIDAK
+   terasa lama-lama amat, kita simpan salinan data project + data global
+   (setting, daftar marketing, daftar paket, dll) di localStorage HP/browser
+   orang tsb. Kunjungan berikutnya ke link yang sama akan langsung tampil dari
+   salinan lokal itu (instan) sambil data terbaru tetap ditarik di belakang
+   layar dan menggantikannya begitu selesai. Kunjungan PERTAMA ke sebuah link
+   tetap akan menunggu backend seperti biasa (belum ada salinan lokal). */
+const LOCAL_CACHE_KEY_PREFIX = 'wedding_local_cache_' + APP_VERSION + '_';
+function readLocalCache(projectId){
+  try{
+    const raw = localStorage.getItem(LOCAL_CACHE_KEY_PREFIX + projectId);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function writeLocalCache(projectId, snapshot){
+  try{ localStorage.setItem(LOCAL_CACHE_KEY_PREFIX + projectId, JSON.stringify(snapshot)); }catch(e){ /* penuh/diblokir, abaikan */ }
+}
 /* File invoice TIDAK ikut disimpan menempel di dalam data project (state).
    Kalau ditempel, satu blok data project (tamu+jadwal+pembayaran+dll jadi satu)
    gampang kelewat batas ukuran storage backend (45000 karakter) begitu ada
@@ -646,6 +666,7 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     removedVendorCats,
     packageName: pkg ? pkg.name : '',
     budget,
+    subsidiTakeOut: 0,
     payments: [
       {id:uid('p'), label:'DP 1 — Tanda Jadi', amount:dp1, dueDate: weddingDate, status:'unpaid'},
       {id:uid('p'), label:'DP 20%', amount:dp20, dueDate: weddingDate, status:'unpaid'},
@@ -719,6 +740,22 @@ function normalizeState(s){
   if(typeof s.packageName !== 'string') s.packageName = '';
   if(!Array.isArray(s.bonuses)) s.bonuses = [];
   if(!Array.isArray(s.removedVendorCats)) s.removedVendorCats = [];
+  if(typeof s.subsidiTakeOut !== 'number'){
+    // Migrasi dari sistem lama: dulu Subsidi dihitung OTOMATIS dari harga+add-on
+    // vendor yang di-take out. Sekarang Subsidi Take-Out diisi manual di tab
+    // Pembayaran. Supaya Sisa Tagihan project yang sudah berjalan tidak mendadak
+    // berubah, nilai otomatis yang lama itu dipindah jadi nilai awal — dari sini
+    // vendor bisa mengedit manual sesuai kesepakatan.
+    let legacySubsidi = 0;
+    (s.removedVendorCats||[]).forEach(key=>{
+      const v = s.vendors && s.vendors[key];
+      if(v){
+        const addonsSum = (v.addons||[]).reduce((sum,a)=> sum + ((Number(a.qty)||0)*(Number(a.amount)||0)), 0);
+        legacySubsidi += (Number(v.price)||0) + addonsSum;
+      }
+    });
+    s.subsidiTakeOut = legacySubsidi;
+  }
   if(!s.details) s.details = {};
   if(typeof s.details.officeAddress !== 'string') s.details.officeAddress = 'Jl. Tempel Sukorejo 1 No. 78 A Surabaya';
   if(!s.details.clientData) s.details.clientData = { cpwName:'', cpwContact:'', cpwAddress:'', cpwFatherName:'', cpwMotherName:'', cpwBirthDate:'', cppName:'', cppContact:'', cppAddress:'', cppFatherName:'', cppMotherName:'', cppBirthDate:'' };
@@ -1074,6 +1111,16 @@ async function persist(){
       idxEntry.allAgendaDone = computeAllAgendaDone(state.timeline);
       saveProjectsIndex();
     }
+    // Simpan juga ke cache lokal supaya kunjungan berikutnya di HP ini langsung
+    // tampil dengan data yang baru saja diedit (tidak perlu nunggu backend lagi).
+    writeLocalCache(state.id, {
+      project: state,
+      masterSettings,
+      marketingList,
+      packageList,
+      projectsIndex,
+      customVendorCatsExtra: VENDOR_CATS.filter(c=> !BUILTIN_VENDOR_CAT_KEYS.has(c.key)).map(c=>({key:c.key, emoji:c.emoji})),
+    });
   } else {
     showToast('⚠️ Gagal menyimpan — cek koneksi & coba edit lagi', true);
   }
@@ -1169,18 +1216,11 @@ function totalVendorHarga(){
   state.extraVendors.forEach(v=> sum += Number(v.price)||0);
   return sum;
 }
-// Total subsidi/diskon otomatis: harga + add-on dari vendor kategori inti yang sudah
-// "di take out" (dihapus/disembunyikan dari daftar aktif). Nilai ini dulunya akan
-// menambah Total Kontrak kalau vendor itu masih aktif, jadi begitu vendor tsb
-// di-take out, nilainya otomatis dianggap sebagai subsidi yang mengurangi sisa tagihan.
+// Subsidi Take-Out: diisi MANUAL oleh vendor di tab Pembayaran (bukan lagi
+// dihitung otomatis dari vendor yang di-take out). Nilainya otomatis mengurangi
+// Sisa Tagihan lewat rumus di refreshPaymentSummary()/renderPayments().
 function totalSubsidi(){
-  let sum = 0;
-  const removed = VENDOR_CATS.filter(c=> (state.removedVendorCats||[]).includes(c.key));
-  removed.forEach(c=>{
-    const v = state.vendors[c.key];
-    if(v){ sum += (Number(v.price)||0) + totalAddonsForVendor(v); }
-  });
-  return sum;
+  return Number(state.subsidiTakeOut) || 0;
 }
 // DP 20% dihitung dari harga paket, tapi kalau DP 1 (tanda jadi) sudah dicentang
 // lunas, nominal DP 1 itu dianggap sudah bagian dari cicilan DP 20%, jadi sisa
@@ -1211,7 +1251,9 @@ function refreshPaymentSummary(){
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('packageHargaVal', fmtIDR(packageHarga));
   setText('totalHargaVendorVal', fmtIDR(totalHarga));
-  setText('totalSubsidiVal', (subsidi>0 ? '- ' : '') + fmtIDR(subsidi));
+  // Saat mode vendor, elemen #totalSubsidiVal berisi <input> Subsidi Take-Out
+  // yang sedang diedit — jangan ditimpa jadi teks polos, nanti inputnya hilang.
+  if(!isVendor) setText('totalSubsidiVal', (subsidi>0 ? '- ' : '') + fmtIDR(subsidi));
   setText('totalAddonsVal', fmtIDR(totalAddons));
   setText('totalKontrakVal', fmtIDR(totalKontrak));
   setText('dp20Val', fmtIDR(dp20));
@@ -1220,11 +1262,40 @@ function refreshPaymentSummary(){
 }
 
 /* ---------- ROLE / PROJECT GATE ---------- */
+function paintGateForCurrentHash(){
+  if(location.hash === '#client'){ showClientPasswordGate(); }
+  else if(location.hash === '#vendor'){ showSupplierGate(); }
+  else { showProjectGate(); }
+}
 async function initRoleFlow(){
   const params = new URLSearchParams(location.search);
   currentProjectId = params.get('p');
 
   if(currentProjectId){
+    // Kalau link ini sudah pernah dibuka sebelumnya di HP/browser ini, tampilkan
+    // dulu salinan lokalnya SEKARANG JUGA (instan, tanpa nunggu backend) supaya
+    // layar tidak kosong lama. Data terbaru tetap ditarik di belakang layar
+    // sesudah ini dan otomatis menggantikan tampilan begitu siap.
+    const cached = readLocalCache(currentProjectId);
+    let paintedFromCache = false;
+    if(cached && cached.project){
+      try{
+        masterSettings = cached.masterSettings || { vendorPin: '1234' };
+        marketingList = cached.marketingList || [];
+        packageList = cached.packageList || [];
+        projectsIndex = cached.projectsIndex || [];
+        (cached.customVendorCatsExtra || []).forEach(c=>{
+          if(c && c.key && !VENDOR_CATS.some(vc=>vc.key.toLowerCase()===c.key.toLowerCase())){
+            VENDOR_CATS.push({key:c.key, emoji:c.emoji||'⭐'});
+          }
+        });
+        state = normalizeState(cached.project);
+        attachmentsHydrated = false;
+        paintGateForCurrentHash();
+        paintedFromCache = true;
+      }catch(e){ paintedFromCache = false; }
+    }
+
     // Jalankan semua permintaan data bersamaan (paralel), bukan berurutan,
     // supaya waktu tunggu total jauh lebih singkat.
     const [, , , , , proj] = await Promise.all([
@@ -1235,13 +1306,28 @@ async function initRoleFlow(){
       loadProjectsIndex(),
       loadProjectById(currentProjectId)
     ]);
-    if(!proj){ showProjectNotFound(); return; }
+    if(!proj){ if(!paintedFromCache) showProjectNotFound(); return; }
     state = proj;
+    writeLocalCache(currentProjectId, {
+      project: proj,
+      masterSettings,
+      marketingList,
+      packageList,
+      projectsIndex,
+      customVendorCatsExtra: VENDOR_CATS.filter(c=> !BUILTIN_VENDOR_CAT_KEYS.has(c.key)).map(c=>({key:c.key, emoji:c.emoji})),
+    });
     attachmentsHydrated = false;
     hydrateAttachmentsInBackground();
-    if(location.hash === '#client'){ showClientPasswordGate(); }
-    else if(location.hash === '#vendor'){ showSupplierGate(); }
-    else { showProjectGate(); }
+    if(!paintedFromCache){
+      paintGateForCurrentHash();
+    } else if(roleDecided){
+      // Orang sudah lewat gate/password pakai data lama; perbarui layar diam-diam
+      // dengan data terbaru tanpa mereset posisi mereka di dalam aplikasi.
+      render();
+    }
+    // Kalau paintedFromCache dan belum roleDecided, biarkan saja — mereka masih
+    // di layar PIN/password, dan `state` di baliknya sudah diam-diam ter-update
+    // ke data terbaru, jadi begitu mereka submit, sudah pakai data yang benar.
   } else {
     await Promise.all([
       loadMasterSettings(),
@@ -2474,7 +2560,7 @@ function renderPayments(){
   const totalPaid = state.payments.filter(p=>p.status==='paid').reduce((s,p)=>s+(Number(p.amount)||0),0);
   const sisaTagihan = Math.max(totalKontrak - totalPaid - subsidi, 0);
   return `
-    <div class="section-head"><div><h2>Pembayaran</h2><p>DP 1 senilai Rp1.000.000, lanjut DP 20%, dan pelunasan sebelum hari H. Harga paket, harga vendor &amp; add-on otomatis terhitung ke total keseluruhan dan sisa tagihan. Kalau ada vendor yang di-take out, subsidinya otomatis mengurangi sisa tagihan.</p></div></div>
+    <div class="section-head"><div><h2>Pembayaran</h2><p>DP 1 senilai Rp1.000.000, lanjut DP 20%, dan pelunasan sebelum hari H. Harga paket, harga vendor &amp; add-on otomatis terhitung ke total keseluruhan dan sisa tagihan. Kalau ada subsidi vendor take-out, isi manual di kolom Subsidi Take-Out — nilainya otomatis mengurangi Sisa Tagihan.</p></div></div>
     <div class="pay-summary">
       <div class="pay-item pay-item-package"><div class="lbl">Harga Paket</div>
         ${state.packageName ? `<div class="pkg-name">${escapeHtml(state.packageName)}</div>` : ''}
@@ -2482,7 +2568,7 @@ function renderPayments(){
       <div class="pay-item"><div class="lbl">Total Harga Vendor</div><div class="val" id="totalHargaVendorVal">${fmtIDR(totalHarga)}</div></div>
       <div class="pay-item"><div class="lbl">Total Add-Ons Vendor</div><div class="val" id="totalAddonsVal">${fmtIDR(totalAddons)}</div></div>
       <div class="pay-item highlight"><div class="lbl">Total Kontrak Keseluruhan</div><div class="val" id="totalKontrakVal">${fmtIDR(totalKontrak)}</div></div>
-      ${subsidi>0 ? `<div class="pay-item"><div class="lbl">Total Subsidi (Vendor Di-Take Out)</div><div class="val" id="totalSubsidiVal" style="color:var(--danger);">- ${fmtIDR(subsidi)}</div></div>` : `<div class="pay-item" style="display:none;"><div class="lbl">Total Subsidi (Vendor Di-Take Out)</div><div class="val" id="totalSubsidiVal">${fmtIDR(0)}</div></div>`}
+      <div class="pay-item"><div class="lbl">Subsidi Take-Out</div><div class="val" id="totalSubsidiVal" style="${subsidi>0?'color:var(--danger);':''}">${isVendor ? `<input class="currency" id="subsidiInput" value="${fmtIDR(state.subsidiTakeOut)}">` : ((subsidi>0 ? '- ' : '') + fmtIDR(subsidi))}</div></div>
       <div class="pay-item"><div class="lbl">Estimasi DP 20% (dari Harga Paket)${dp1Paid ? ' &mdash; sudah dikurangi DP 1' : ''}</div><div class="val" id="dp20Val">${fmtIDR(dp20)}</div></div>
       <div class="pay-item"><div class="lbl">Sudah Dibayar</div><div class="val" id="totalPaidVal">${fmtIDR(totalPaid)}</div></div>
       <div class="pay-item highlight"><div class="lbl">Sisa Tagihan</div><div class="val" id="sisaTagihanVal">${fmtIDR(sisaTagihan)}</div></div>
@@ -2804,6 +2890,12 @@ function attachHandlers(){
     const budgetInput = document.getElementById('budgetInput');
     setupCurrencyInput(budgetInput, ()=>state.budget, v=>{ state.budget=v; }, ()=>{
       // Harga Paket otomatis masuk ke Total Kontrak, Sisa Tagihan, dan Estimasi DP 20%.
+      refreshPaymentSummary();
+    });
+
+    const subsidiInput = document.getElementById('subsidiInput');
+    setupCurrencyInput(subsidiInput, ()=>state.subsidiTakeOut, v=>{ state.subsidiTakeOut=v; }, ()=>{
+      // Subsidi Take-Out (diisi manual) otomatis mengurangi Sisa Tagihan.
       refreshPaymentSummary();
     });
 

@@ -41,6 +41,17 @@
   .app-loading-screen{min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--cream-dim);font-size:14px;}
   .app-loading-spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(122,31,46,0.15);border-top-color:var(--pink);animation:app-spin .8s linear infinite;}
   @keyframes app-spin{to{transform:rotate(360deg);}}
+  /* Layar loading bermerek (dipakai renderLoadingScreen) — supaya transisi antar
+     tahap (login -> buka project -> dashboard) tidak terasa "blank", tapi tetap
+     terlihat sebagai bagian dari aplikasi (logo, kartu, background sama seperti gate). */
+  .app-loading-card{display:flex;flex-direction:column;align-items:center;gap:6px;animation:fadeUp .3s ease;}
+  .app-loading-card .gate-logo{margin-bottom:6px;}
+  .app-loading-card .app-loading-spinner{width:36px;height:36px;border-width:3px;border-color:rgba(255,255,255,.28);border-top-color:var(--gold);margin:4px 0 2px;}
+  .app-loading-card .app-loading-text{color:rgba(255,255,255,.88);font-size:13.5px;font-weight:600;letter-spacing:.01em;}
+  /* Spinner kecil di dalam tombol saat proses login/submit berjalan */
+  .btn-spinner{display:inline-block;width:13px;height:13px;border-radius:50%;border:2px solid rgba(59,16,21,.28);border-top-color:var(--ink);animation:app-spin .7s linear infinite;vertical-align:-2px;margin-right:7px;}
+  .btn:not(.primary) .btn-spinner{border-color:rgba(122,31,46,.28);border-top-color:var(--pink);}
+  .gate-card .btn:not(.primary) .btn-spinner{border-color:rgba(255,255,255,.35);border-top-color:#fff;}
 
   input,textarea,select{background:var(--field-bg);color:var(--cream);border:1px solid rgba(198,161,91,.45);box-shadow:inset 0 1px 2px rgba(122,31,46,.05);font-family:inherit;accent-color: var(--pink);}
   input::placeholder,textarea::placeholder{color:var(--cream-dimmer);}
@@ -1442,10 +1453,13 @@ function showEntryGate(){
   });
   const tryMarketingPin = async ()=>{
     const val = document.getElementById('marketingPinInput').value.trim();
+    const btn = document.getElementById('marketingPinSubmit');
+    setBtnLoading(btn, 'Memeriksa...');
+    document.getElementById('marketingPinError').textContent = '';
     await loadMarketingList();
     const m = findMarketingByPin(val);
     if(m){ isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; showProjectDashboard(); }
-    else document.getElementById('marketingPinError').textContent = 'PIN salah, atau akun marketing belum dibuat admin.';
+    else { clearBtnLoading(btn); document.getElementById('marketingPinError').textContent = 'PIN salah, atau akun marketing belum dibuat admin.'; }
   };
   document.getElementById('marketingPinSubmit').addEventListener('click', tryMarketingPin);
   document.getElementById('marketingPinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryMarketingPin(); });
@@ -1457,6 +1471,9 @@ function showEntryGate(){
   const tryClientCode = async ()=>{
     const code = document.getElementById('clientCodeInput').value.trim();
     const pass = document.getElementById('clientCodePassInput').value.trim();
+    const btn = document.getElementById('clientCodeSubmit');
+    setBtnLoading(btn, 'Memeriksa...');
+    document.getElementById('clientCodeError').textContent = '';
     const proj = code ? await loadProjectById(code) : null;
     if(proj && proj.clientPassword === pass){
       currentProjectId = code; state = proj; isVendor = false; isAdmin = false; roleDecided = true;
@@ -1465,6 +1482,7 @@ function showEntryGate(){
       render();
       hydrateAttachmentsInBackground();
     } else {
+      clearBtnLoading(btn);
       document.getElementById('clientCodeError').textContent = 'Kode project atau password salah.';
     }
   };
@@ -1530,10 +1548,14 @@ function showProjectGate(){
   });
   const tryMarketingPin = async ()=>{
     const val = document.getElementById('marketingPinInput').value.trim();
+    const btn = document.getElementById('marketingPinSubmit');
+    setBtnLoading(btn, 'Memeriksa...');
+    document.getElementById('marketingPinError').textContent = '';
     await loadMarketingList();
     const m = findMarketingByPin(val);
-    if(!m){ document.getElementById('marketingPinError').textContent = 'PIN salah, atau akun marketing belum dibuat admin.'; return; }
+    if(!m){ clearBtnLoading(btn); document.getElementById('marketingPinError').textContent = 'PIN salah, atau akun marketing belum dibuat admin.'; return; }
     if(state.marketingId && state.marketingId !== m.id){
+      clearBtnLoading(btn);
       document.getElementById('marketingPinError').textContent = 'Project ini bukan link klien kamu.';
       return;
     }
@@ -1609,8 +1631,37 @@ function showClientPasswordGate(){
 }
 
 function renderLoadingScreen(message){
+  // Dibungkus persis seperti layar gate (logo + kartu + background) supaya saat
+  // pindah tahap (login -> buka project -> semua project) tandanya tetap terlihat
+  // menempel di layar, bukan berubah jadi halaman kosong lalu muncul lagi.
   const app = document.getElementById('app');
-  app.innerHTML = `<div class="app-loading-screen"><div class="app-loading-spinner"></div><div>${escapeHtml(message||'Memuat...')}</div></div>`;
+  app.innerHTML = `
+    <div class="gate-wrap">
+      <div class="gate-card app-loading-card">
+        <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
+        <div class="app-loading-spinner"></div>
+        <div class="app-loading-text">${escapeHtml(message||'Memuat...')}</div>
+      </div>
+    </div>
+  `;
+}
+
+/* Tanda loading di dalam tombol (dipakai saat submit login yang perlu menunggu
+   jaringan) — tombol dikunci & diberi spinner kecil supaya orang tahu prosesnya
+   sedang berjalan, alih-alih layar terlihat diam/blank. */
+function setBtnLoading(btn, loadingLabel){
+  if(!btn || btn.dataset.loading==='1') return;
+  btn.dataset.loading = '1';
+  btn.dataset.originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="btn-spinner"></span>${escapeHtml(loadingLabel||'Memproses...')}`;
+}
+function clearBtnLoading(btn){
+  if(!btn || btn.dataset.loading!=='1') return;
+  btn.disabled = false;
+  btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+  delete btn.dataset.loading;
+  delete btn.dataset.originalHtml;
 }
 
 /* ---------- VENDOR/ADMIN PROJECT DASHBOARD ---------- */

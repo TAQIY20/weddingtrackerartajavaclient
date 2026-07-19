@@ -469,6 +469,18 @@ function readLocalCache(projectId){
 function writeLocalCache(projectId, snapshot){
   try{ localStorage.setItem(LOCAL_CACHE_KEY_PREFIX + projectId, JSON.stringify(snapshot)); }catch(e){ /* penuh/diblokir, abaikan */ }
 }
+/* Cache foto marketing di localStorage (terpisah dari cache project di atas,
+   karena dipakai lintas project — dashboard & gate PIN). Kunjungan berikutnya
+   di HP/browser yang sama, foto langsung tampil dari cache ini (instan) sambil
+   versi terbaru tetap ditarik diam-diam di belakang layar lewat
+   hydrateMarketingPhotosInBackground() dan menggantikan cache begitu selesai. */
+const MKT_PHOTO_CACHE_KEY = 'wedding_mkt_photo_cache_' + APP_VERSION;
+function readMktPhotoCache(){
+  try{ return JSON.parse(localStorage.getItem(MKT_PHOTO_CACHE_KEY) || '{}'); }catch(e){ return {}; }
+}
+function writeMktPhotoCache(map){
+  try{ localStorage.setItem(MKT_PHOTO_CACHE_KEY, JSON.stringify(map)); }catch(e){ /* penuh/diblokir, abaikan */ }
+}
 /* File invoice TIDAK ikut disimpan menempel di dalam data project (state).
    Kalau ditempel, satu blok data project (tamu+jadwal+pembayaran+dll jadi satu)
    gampang kelewat batas ukuran storage backend (45000 karakter) begitu ada
@@ -894,11 +906,34 @@ function compressImageFile(file, opts){
    utama (MARKETING_LIST_KEY) hanya berisi data ringan: id, name, phone, pin. */
 function marketingPhotoKey(id){ return 'mkt_photo_' + id; }
 
-async function loadMarketingList(){
+async function loadMarketingListMeta(){
+  // Cuma ambil daftar marketing (nama/phone/pin) TANPA foto — foto (data URL,
+  // bisa besar) ditarik belakangan lewat hydrateMarketingPhotosInBackground()
+  // supaya layar loading awal tidak nunggu semua foto itu selesai diunduh.
   try{
     const res = await window.storage.get(MARKETING_LIST_KEY, true);
     marketingList = (res && res.value) ? JSON.parse(res.value) : [];
   }catch(e){ marketingList = []; }
+  // Tempel dulu foto dari cache lokal (kalau ada) supaya avatar langsung
+  // kelihatan instan, tidak nunggu unduhan dari storage sama sekali.
+  const photoCache = readMktPhotoCache();
+  marketingList.forEach(m=>{ if(photoCache[m.id]) m.photoUrl = photoCache[m.id]; });
+}
+function hydrateMarketingPhotosInBackground(){
+  Promise.all(marketingList.map(async m=>{
+    try{
+      const res = await window.storage.get(marketingPhotoKey(m.id), true);
+      m.photoUrl = (res && res.value) ? res.value : '';
+    }catch(e){ m.photoUrl = m.photoUrl || ''; }
+  })).then(()=>{
+    const cache = {};
+    marketingList.forEach(m=>{ if(m.photoUrl) cache[m.id] = m.photoUrl; });
+    writeMktPhotoCache(cache);
+    try{ render(); }catch(e){}
+  });
+}
+async function loadMarketingList(){
+  await loadMarketingListMeta();
   // Ambil foto tiap marketing dari key terpisah (paralel), lalu tempel ke memori
   // (bukan ke data yang akan disimpan balik) supaya render tetap bisa pakai m.photoUrl.
   await Promise.all(marketingList.map(async m=>{
@@ -1343,7 +1378,7 @@ async function initRoleFlow(){
     // supaya waktu tunggu total jauh lebih singkat.
     const [, , , , , proj] = await Promise.all([
       loadMasterSettings(),
-      loadMarketingList(),
+      loadMarketingListMeta(),
       loadCustomVendorCats(),
       loadPackageList(),
       loadProjectsIndex(),
@@ -1361,6 +1396,7 @@ async function initRoleFlow(){
     });
     attachmentsHydrated = false;
     hydrateAttachmentsInBackground();
+    hydrateMarketingPhotosInBackground();
     if(!paintedFromCache){
       paintGateForCurrentHash();
     } else if(roleDecided){
@@ -1374,11 +1410,12 @@ async function initRoleFlow(){
   } else {
     await Promise.all([
       loadMasterSettings(),
-      loadMarketingList(),
+      loadMarketingListMeta(),
       loadCustomVendorCats(),
       loadPackageList(),
       loadProjectsIndex()
     ]);
+    hydrateMarketingPhotosInBackground();
     showEntryGate();
   }
 }
@@ -1457,9 +1494,9 @@ function showEntryGate(){
   const tryMarketingPin = async ()=>{
     const val = document.getElementById('marketingPinInput').value.trim();
     renderLoadingScreen('Memeriksa PIN...');
-    await loadMarketingList();
+    await loadMarketingListMeta();
     const m = findMarketingByPin(val);
-    if(m){ isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; showProjectDashboard(); }
+    if(m){ isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; showProjectDashboard(); hydrateMarketingPhotosInBackground(); }
     else {
       showEntryGate();
       document.getElementById('gateMarketingBtn').click();
@@ -1553,7 +1590,7 @@ function showProjectGate(){
   const tryMarketingPin = async ()=>{
     const val = document.getElementById('marketingPinInput').value.trim();
     renderLoadingScreen('Memeriksa PIN...');
-    await loadMarketingList();
+    await loadMarketingListMeta();
     const m = findMarketingByPin(val);
     if(!m){
       showProjectGate();
@@ -1568,6 +1605,7 @@ function showProjectGate(){
       return;
     }
     isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; roleDecided = true; render();
+    hydrateMarketingPhotosInBackground();
   };
   document.getElementById('marketingPinSubmit').addEventListener('click', tryMarketingPin);
   document.getElementById('marketingPinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryMarketingPin(); });
@@ -1659,15 +1697,15 @@ function renderLoadingScreen(message){
   `;
   const reloadBtn = document.getElementById('appLoadingReload'+gen);
   if(reloadBtn) reloadBtn.addEventListener('click', ()=> location.reload());
-  // Kalau layar loading ini masih tampil setelah 9 detik (biasanya karena koneksi ke
+  // Kalau layar loading ini masih tampil setelah 3 detik (biasanya karena koneksi ke
   // storage lambat), munculkan tombol "Muat Ulang" supaya orang tidak terjebak diam
   // menatap spinner tanpa jalan keluar. `gen` memastikan ini tidak mengganggu kalau
-  // layar sudah keburu pindah ke tahap lain sebelum 9 detik itu lewat.
+  // layar sudah keburu pindah ke tahap lain sebelum 3 detik itu lewat.
   setTimeout(()=>{
     if(gen !== loadingScreenGen) return;
     const slow = document.getElementById('appLoadingSlow'+gen);
     if(slow) slow.style.display = 'block';
-  }, 9000);
+  }, 3000);
 }
 
 let loadingOverlayGen = 0;
@@ -1698,7 +1736,7 @@ function showLoadingOverlay(message){
     if(gen !== loadingOverlayGen) return;
     const slow = document.getElementById('appOverlaySlow'+gen);
     if(slow) slow.style.display = 'block';
-  }, 9000);
+  }, 3000);
 }
 function hideLoadingOverlay(){
   loadingOverlayGen++; // matikan timer "koneksi lambat" milik overlay sebelumnya
@@ -1713,10 +1751,11 @@ async function showProjectDashboard(overlay){
   if(overlay) showLoadingOverlay('Memuat semua project...');
   else renderLoadingScreen('Memuat semua project...');
   try{
-    await Promise.all([loadProjectsIndex(), loadMarketingList()]);
+    await Promise.all([loadProjectsIndex(), loadMarketingListMeta()]);
   }catch(e){ console.error('showProjectDashboard load failed', e); }
   if(overlay) hideLoadingOverlay();
   renderProjectDashboard();
+  hydrateMarketingPhotosInBackground();
 }
 
 function myVisibleProjects(){

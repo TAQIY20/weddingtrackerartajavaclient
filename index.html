@@ -1283,6 +1283,44 @@ async function downloadDataUrl(dataUrl, filename){
   showToast('Gagal mengunduh file di browser ini. Coba pakai Chrome/Samsung Internet versi terbaru.', true);
 }
 
+/* BUG BARU yang ditemukan (beda dari bug lama di atas): kalau file lampiran belum sempat ke-hydrate ke
+   docFileCache/invoiceFileCache saat tombol di-klik (hydrateAttachmentsInBackground() sengaja jalan di
+   belakang layar biar layar pertama cepat tampil — lihat komentarnya), handler klik lama cuma "return"
+   TANPA preventDefault(). Browser lalu jalan pakai href asli elemen <a>, yang di-set '#' karena filenya
+   belum ke-cache. <a href="#" download="nama.pdf"> di banyak browser Android berarti: "download resource
+   di URL saat ini (yaitu halaman index.html/app itu sendiri)" — makanya yang ke-download malah file .html
+   sebesar halaman webnya (ditandai nama jadi "....pdf.html" karena tipe kontennya disniff sebagai HTML,
+   bukan PDF), dan saat dibuka ya cuma nampilin aplikasi webnya lagi ("Memuat data...").
+   Perbaikan: SELALU preventDefault(), lalu kalau belum ke-cache, ambil filenya on-demand langsung dari
+   storage (fungsi di bawah) sebelum download — jangan pernah biarkan href asli '#' dieksekusi browser. */
+function hideToast(){
+  const t = document.getElementById('toast');
+  clearTimeout(t._h);
+  t.classList.remove('show');
+}
+async function downloadAttachmentSafely(cache, key, fetchFn, filename){
+  filename = filename || 'file';
+  if(cache[key]){
+    downloadDataUrl(cache[key], filename);
+    return;
+  }
+  showToast('Menyiapkan file, mohon tunggu…', false, true);
+  try{
+    const val = await fetchFn();
+    hideToast();
+    if(val){
+      cache[key] = val;
+      downloadDataUrl(val, filename);
+    }else{
+      showToast('File belum tersedia / gagal dimuat. Coba lagi.', true);
+    }
+  }catch(e){
+    hideToast();
+    console.error('downloadAttachmentSafely: gagal ambil file', e);
+    showToast('Gagal mengambil file. Coba lagi.', true);
+  }
+}
+
 /* ---------- CUSTOM MODAL (native confirm/prompt/alert are blocked inside the sandboxed artifact iframe, so we build our own) ---------- */
 function customModal(opts){
   opts = opts || {};
@@ -2584,7 +2622,7 @@ function renderBeranda(dLeft, allVendorList){
           <label style="font-size:11.5px;color:var(--cream-dimmer);display:block;margin-bottom:6px;">MOU</label>
           <div class="p-invoice">
             ${state.documents.mou ? `
-              <a class="invoice-chip" href="${docFileCache.mou || '#'}" download="${escapeAttr(state.documents.mou.name)}" data-action="download-doc" data-doctype="mou" rel="noopener">📎 ${escapeHtml(state.documents.mou.name)}</a>
+              <a class="invoice-chip" href="${docFileCache.mou || 'javascript:void(0)'}" download="${escapeAttr(state.documents.mou.name)}" data-action="download-doc" data-doctype="mou" rel="noopener">📎 ${escapeHtml(state.documents.mou.name)}</a>
               ${isVendor ? `<button class="mi-del" data-action="delete-doc" data-doctype="mou" title="Hapus MOU">✕</button>` : ''}
             ` : (isVendor ? `
               <label class="invoice-upload-btn" id="docUploadLabel_mou">📎 Lampirkan MOU<input type="file" accept="image/*,application/pdf" data-action="upload-doc" data-doctype="mou" hidden/></label>
@@ -2597,7 +2635,7 @@ function renderBeranda(dLeft, allVendorList){
           <label style="font-size:11.5px;color:var(--cream-dimmer);display:block;margin-bottom:6px;">Rundown Acara</label>
           <div class="p-invoice">
             ${state.documents.rundown ? `
-              <a class="invoice-chip" href="${docFileCache.rundown || '#'}" download="${escapeAttr(state.documents.rundown.name)}" data-action="download-doc" data-doctype="rundown" rel="noopener">📎 ${escapeHtml(state.documents.rundown.name)}</a>
+              <a class="invoice-chip" href="${docFileCache.rundown || 'javascript:void(0)'}" download="${escapeAttr(state.documents.rundown.name)}" data-action="download-doc" data-doctype="rundown" rel="noopener">📎 ${escapeHtml(state.documents.rundown.name)}</a>
               ${isVendor ? `<button class="mi-del" data-action="delete-doc" data-doctype="rundown" title="Hapus Rundown">✕</button>` : ''}
             ` : (isVendor ? `
               <label class="invoice-upload-btn" id="docUploadLabel_rundown">📎 Lampirkan Rundown<input type="file" accept="image/*,application/pdf" data-action="upload-doc" data-doctype="rundown" hidden/></label>
@@ -2895,7 +2933,7 @@ function renderPayments(){
             <div class="p-due">🗓️ Jatuh tempo: <input type="date" data-field="dueDate" value="${p.dueDate}" ${isVendor?'':'disabled'}/></div>
             <div class="p-invoice">
               ${p.invoice ? `
-                <a class="invoice-chip" href="${invoiceFileCache[p.id] || '#'}" download="${escapeAttr(p.invoice.name)}" data-action="download-invoice" data-payment-id="${p.id}" data-filename="${escapeAttr(p.invoice.name)}" rel="noopener">📎 ${escapeHtml(p.invoice.name)}</a>
+                <a class="invoice-chip" href="${invoiceFileCache[p.id] || 'javascript:void(0)'}" download="${escapeAttr(p.invoice.name)}" data-action="download-invoice" data-payment-id="${p.id}" data-filename="${escapeAttr(p.invoice.name)}" rel="noopener">📎 ${escapeHtml(p.invoice.name)}</a>
                 ${isVendor ? `<button class="mi-del" data-action="delete-invoice" title="Hapus lampiran invoice">✕</button>` : ''}
               ` : (isVendor ? `
                 <label class="invoice-upload-btn" id="invoiceUploadLabel_${p.id}">📎 Lampirkan Invoice<input type="file" accept="image/*,application/pdf" data-action="upload-invoice" hidden/></label>
@@ -3275,11 +3313,15 @@ function attachHandlers(){
 
     document.querySelectorAll('[data-action="download-doc"]').forEach(a=>{
       a.addEventListener('click', e=>{
+        e.preventDefault(); // SELALU dicegah — jangan pernah biarkan browser pakai href='#' (lihat catatan di downloadAttachmentSafely)
         const docType = a.dataset.doctype;
         const doc = state.documents[docType];
-        if(!doc || !docFileCache[docType]) return; // biarkan browser pakai href asli (fallback) kalau file belum ke-cache
-        e.preventDefault();
-        downloadDataUrl(docFileCache[docType], doc.name);
+        if(!doc) return;
+        const pid = state.id;
+        downloadAttachmentSafely(docFileCache, docType, async ()=>{
+          const val = await storageGetChunked(docFileKey(pid, docType), true);
+          return val;
+        }, doc.name);
       });
     });
 
@@ -3473,9 +3515,13 @@ function attachHandlers(){
     if(toggle) toggle.addEventListener('click', ()=>{ p.status = p.status==='paid'?'unpaid':'paid'; scheduleSave(); render(); });
     const downloadInvoiceLink = el.querySelector('[data-action="download-invoice"]');
     if(downloadInvoiceLink) downloadInvoiceLink.addEventListener('click', e=>{
-      if(!invoiceFileCache[id]) return; // biarkan browser pakai href asli (fallback) kalau file belum ke-cache
-      e.preventDefault();
-      downloadDataUrl(invoiceFileCache[id], downloadInvoiceLink.dataset.filename || (p.invoice && p.invoice.name));
+      e.preventDefault(); // SELALU dicegah — jangan pernah biarkan browser pakai href='#' (lihat catatan di downloadAttachmentSafely)
+      const pid = state.id;
+      const filename = downloadInvoiceLink.dataset.filename || (p.invoice && p.invoice.name);
+      downloadAttachmentSafely(invoiceFileCache, id, async ()=>{
+        const val = await storageGetChunked(invoiceFileKey(pid, id), true);
+        return val;
+      }, filename);
     });
     const delBtn = el.querySelector('[data-action="delete-payment"]');
     if(delBtn) delBtn.addEventListener('click', async ()=>{ if(await customConfirm('Hapus item pembayaran ini?')){ state.payments = state.payments.filter(x=>x.id!==id); scheduleSave(); render(); } });

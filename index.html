@@ -2469,7 +2469,7 @@ function renderBeranda(dLeft, allVendorList){
   const welcomeMktPhone = projMktBeranda ? (projMktBeranda.phone || '') : PIC_PHONE_DISPLAY;
   const welcomeMktWa = projMktBeranda ? (projMktBeranda.phone ? ('https://wa.me/62' + projMktBeranda.phone.replace(/^0/, '')) : '#') : PIC_WA;
   const welcomeCoupleNames = [cd.cpwName, cd.cppName].filter(Boolean).join(' & ') || (state.couple.brideName + ' & ' + state.couple.groomName);
-  const isClientView = !isVendor && !isSupplier;
+  const isClientView = !isSupplier;
   return `
     ${isClientView ? `
     <div class="mb-card" style="background:linear-gradient(135deg,rgba(122,31,46,.06),rgba(184,134,11,.06));">

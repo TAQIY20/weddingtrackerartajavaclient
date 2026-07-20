@@ -2476,10 +2476,13 @@ function renderBeranda(dLeft, allVendorList){
   return `
     ${isClientView ? `
     <div class="mb-card" style="background:linear-gradient(135deg,rgba(122,31,46,.06),rgba(184,134,11,.06));">
-      <h3>👋 Selamat Datang, ${escapeHtml(welcomeCoupleNames)}!</h3>
-      <p style="margin:6px 0 10px;line-height:1.6;">Terima kasih sudah mempercayakan momen spesial kalian pada kami. Halaman ini adalah ruang kolaborasi bersama — silakan lengkapi dan pantau setiap detail persiapan pernikahan kalian di sini kapan saja.</p>
-      <p style="margin:0 0 10px;line-height:1.6;">Project kalian didampingi langsung oleh marketing kami, <b>${escapeHtml(welcomeMktName)}</b>${welcomeMktPhone ? ` (${escapeHtml(welcomeMktPhone)})` : ''}.</p>
-      <p style="margin:0;line-height:1.6;">Kalau ada kendala atau pertanyaan saat pengisian data, jangan sungkan untuk menghubungi saya ya${welcomeMktWa !== '#' ? ` — <a href="${welcomeMktWa}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-decoration-color:var(--gold);text-underline-offset:3px;">chat WA di sini</a>` : ''}. 🙏</p>
+      <h3 style="margin-bottom:2px;">👋 Selamat Datang, ${escapeHtml(welcomeCoupleNames)}</h3>
+      <div style="font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:12px;">Ruang Kolaborasi Persiapan Pernikahan Anda</div>
+      <p style="margin:0 0 10px;line-height:1.7;">Merupakan suatu kehormatan bagi kami untuk turut mendampingi perjalanan menuju hari bahagia Anda berdua. Halaman ini kami siapkan sebagai ruang kolaborasi bersama, tempat Anda dapat melengkapi detail acara, memantau progres persiapan, serta berkoordinasi dengan tim kami — kapan saja dan di mana saja.</p>
+      <p style="margin:0 0 14px;line-height:1.7;">Sebagai bentuk komitmen kami terhadap kelancaran acara Anda, project pernikahan ini didampingi langsung oleh <b>${escapeHtml(welcomeMktName)}</b>${welcomeMktPhone ? ` <span style="color:var(--cream-dimmer);">(${escapeHtml(welcomeMktPhone)})</span>` : ''} selaku Marketing PIC yang akan mengawal setiap tahap persiapan hingga hari istimewa Anda tiba.</p>
+      <div style="border-top:1px solid rgba(184,134,11,.25);margin:0 0 14px;"></div>
+      <p style="margin:0;line-height:1.7;">Apabila Anda menemui kendala atau memiliki pertanyaan seputar pengisian data, jangan ragu untuk menghubungi kami${welcomeMktWa !== '#' ? ` — <a href="${welcomeMktWa}" target="_blank" rel="noopener" style="color:inherit;font-weight:600;text-decoration:underline;text-decoration-color:var(--gold);text-underline-offset:3px;">Hubungi via WhatsApp</a>` : ''}. Kami dengan senang hati siap membantu Anda. 🙏</p>
+      <p style="margin:14px 0 0;text-align:right;font-family:'Fraunces',serif;font-style:italic;color:var(--cream-dimmer);">Salam hangat,<br/><b style="font-style:normal;color:inherit;">${escapeHtml(welcomeMktName)}</b></p>
     </div>
     ` : ''}
     <div class="section-head"><div><h2>Ringkasan Perjalanan</h2><p>Semua progress dari booking sampai album jadi, dalam satu pandangan.</p></div></div>

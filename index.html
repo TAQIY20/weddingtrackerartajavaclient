@@ -267,8 +267,8 @@
   .p-row .p-due{font-size:12px;color:var(--cream-dim);display:flex;align-items:center;gap:6px;margin-top:4px;}
   .p-row .p-due input{font-size:12px;background:rgba(122,31,46,.05);border:1px solid var(--card-border);border-radius:8px;padding:3px 6px;}
   .p-row input.amt{width:190px;min-width:130px;max-width:100%;flex-shrink:0;font-weight:700;color:var(--gold);text-align:right;border-radius:9px;padding:7px 9px;box-sizing:border-box;}
-  .p-invoice{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-  .invoice-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(212,175,55,.14);color:#7A5B12;border-radius:100px;padding:5px 12px;font-size:11.5px;font-weight:700;text-decoration:none;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .p-invoice{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;}
+  .invoice-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(212,175,55,.14);color:#7A5B12;border-radius:100px;padding:5px 12px;font-size:11.5px;font-weight:700;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;box-sizing:border-box;}
   .invoice-upload-btn{display:inline-flex;align-items:center;gap:6px;background:rgba(122,31,46,.06);border:1px dashed var(--card-border);color:var(--cream-dim);border-radius:100px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;}
   .invoice-upload-btn:hover{border-color:var(--pink);color:var(--cream);}
   .invoice-empty{font-size:11.5px;color:var(--cream-dimmer);font-style:italic;}
@@ -1216,27 +1216,49 @@ function showToast(msg, isError, persistent){
   if(!persistent) t._h = setTimeout(()=>t.classList.remove('show'), isError ? 3200 : 1600);
 }
 
-/* Download lampiran (MOU/Rundown/Invoice) sebagai file asli, bukan membuka data-URL sebagai halaman web.
-   Data-URL diubah dulu jadi Blob lalu di-download lewat elemen <a> sementara — ini jauh lebih konsisten
-   lintas browser (termasuk browser bawaan HP) dibanding klik langsung pada href data:... yang suka
-   malah "dibuka" sebagai halaman dan ke-save dengan nama file + ".html" di belakangnya. */
+/* Download lampiran (MOU/Rundown/Invoice) supaya benar-benar tersimpan sebagai file asli di penyimpanan HP,
+   bukan malah "membuka" data-URL sebagai halaman web (yang di beberapa browser bawaan HP/WebView suka salah
+   kaprah — hasil unduhannya jadi salinan halaman index.html itu sendiri, bukan file lampirannya).
+   Strategi: pakai Web Share API (native share-sheet Android/iOS, ada opsi "Simpan ke File/Downloads") sebagai
+   cara utama karena ini jalur OS langsung dan paling konsisten di semua browser/WebView. Kalau tidak didukung,
+   baru fallback ke download lewat Blob URL, dan kalau itu pun gagal, fallback terakhir buka tab baru. */
 async function downloadDataUrl(dataUrl, filename){
   if(!dataUrl || dataUrl === '#'){ showToast('File belum siap, coba lagi sesaat lagi.', true); return; }
+  filename = filename || 'file';
+  let blob;
   try{
     const res = await fetch(dataUrl);
-    const blob = await res.blob();
+    blob = await res.blob();
+  }catch(e){
+    console.error('downloadDataUrl: gagal ambil blob', e);
+    window.open(dataUrl, '_blank');
+    return;
+  }
+  // Cara 1: Web Share API dengan file — muncul share-sheet asli Android/iOS lengkap dengan opsi
+  // "Simpan ke Files/Downloads", paling reliable di WebView/browser bawaan HP.
+  try{
+    const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+    if(navigator.canShare && navigator.canShare({ files: [file] })){
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  }catch(shareErr){
+    if(shareErr && shareErr.name === 'AbortError') return; // user membatalkan share, jangan lanjut fallback
+    console.warn('downloadDataUrl: share gagal, fallback ke download biasa', shareErr);
+  }
+  // Cara 2 (fallback): download lewat Blob URL sementara.
+  try{
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
-    a.download = filename || 'file';
+    a.download = filename;
     a.rel = 'noopener';
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(()=> URL.revokeObjectURL(blobUrl), 8000);
   }catch(e){
-    console.error('downloadDataUrl failed', e);
-    // fallback terakhir kalau Blob gagal (mis. browser lama) — buka tab baru supaya user bisa simpan manual
+    console.error('downloadDataUrl: fallback blob gagal', e);
     window.open(dataUrl, '_blank');
   }
 }
@@ -2538,7 +2560,7 @@ function renderBeranda(dLeft, allVendorList){
     <div class="mb-card">
       <h3>📄 Dokumen Project</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-        <div>
+        <div style="min-width:0;">
           <label style="font-size:11.5px;color:var(--cream-dimmer);display:block;margin-bottom:6px;">MOU</label>
           <div class="p-invoice">
             ${state.documents.mou ? `
@@ -2551,7 +2573,7 @@ function renderBeranda(dLeft, allVendorList){
             `)}
           </div>
         </div>
-        <div>
+        <div style="min-width:0;">
           <label style="font-size:11.5px;color:var(--cream-dimmer);display:block;margin-bottom:6px;">Rundown Acara</label>
           <div class="p-invoice">
             ${state.documents.rundown ? `

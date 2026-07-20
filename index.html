@@ -1703,15 +1703,15 @@ function renderLoadingScreen(message){
   `;
   const reloadBtn = document.getElementById('appLoadingReload'+gen);
   if(reloadBtn) reloadBtn.addEventListener('click', ()=> location.reload());
-  // Kalau layar loading ini masih tampil setelah 7 detik (biasanya karena koneksi ke
+  // Kalau layar loading ini masih tampil setelah 9 detik (biasanya karena koneksi ke
   // storage lambat), munculkan tombol "Muat Ulang" supaya orang tidak terjebak diam
   // menatap spinner tanpa jalan keluar. `gen` memastikan ini tidak mengganggu kalau
-  // layar sudah keburu pindah ke tahap lain sebelum 7 detik itu lewat.
+  // layar sudah keburu pindah ke tahap lain sebelum 9 detik itu lewat.
   setTimeout(()=>{
     if(gen !== loadingScreenGen) return;
     const slow = document.getElementById('appLoadingSlow'+gen);
     if(slow) slow.style.display = 'block';
-  }, 7000);
+  }, 9000);
 }
 
 let loadingOverlayGen = 0;
@@ -1742,7 +1742,7 @@ function showLoadingOverlay(message){
     if(gen !== loadingOverlayGen) return;
     const slow = document.getElementById('appOverlaySlow'+gen);
     if(slow) slow.style.display = 'block';
-  }, 7000);
+  }, 9000);
 }
 function hideLoadingOverlay(){
   loadingOverlayGen++; // matikan timer "koneksi lambat" milik overlay sebelumnya
@@ -1892,7 +1892,9 @@ function renderProjectDashboard(){
       if(val && val.trim()){
         const oldPin = masterSettings.vendorPin;
         masterSettings.vendorPin = val.trim();
+        showLoadingOverlay('Menyimpan PIN admin...');
         const ok = await saveMasterSettings();
+        hideLoadingOverlay();
         if(ok) showToast('PIN admin diperbarui ✓');
         else { masterSettings.vendorPin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage — cek koneksi internet dan coba lagi.'); }
       }
@@ -1947,13 +1949,17 @@ function renderProjectDashboard(){
     const newPin = await customPrompt('PIN baru kamu:', currentMarketing.pin);
     if(!newPin || !newPin.trim()) return;
     const trimmed = newPin.trim();
-    await loadMarketingList();
+    changeMyPinBtn.disabled = true;
+    showLoadingOverlay('Menyimpan PIN...');
+    await loadMarketingListMeta();
     const me = findMarketingById(currentMarketing.id);
-    if(!me){ await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
-    if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
+    if(!me){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
+    if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
     const oldPin = me.pin;
     me.pin = trimmed;
     const ok = await saveMarketingList();
+    hideLoadingOverlay();
+    changeMyPinBtn.disabled = false;
     if(ok){ currentMarketing = me; showToast('PIN kamu diperbarui ✓'); }
     else { me.pin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
   });
@@ -2034,13 +2040,19 @@ function showMarketingForm(editId){
     const phone = document.getElementById('mktPhone').value.trim();
     const pin = document.getElementById('mktPin').value.trim();
     if(!name || !pin){ await customAlert('Nama dan PIN wajib diisi.'); return; }
-    // Selalu cek daftar marketing paling baru dulu, biar gak bentrok PIN dengan perubahan dari sesi lain.
-    await loadMarketingList();
-    const stillEditing = editing ? findMarketingById(editing.id) : null;
-    if(marketingList.some(m => m.pin===pin && m.id!==(stillEditing?stillEditing.id:null))){ await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
     const btn = document.getElementById('saveMktBtn');
     btn.disabled = true;
     showLoadingOverlay('Menyimpan data marketing...');
+    // Selalu cek daftar marketing paling baru dulu, biar gak bentrok PIN dengan perubahan dari sesi
+    // lain — cukup daftar tanpa foto (lebih cepat), sudah cukup buat cek PIN.
+    await loadMarketingListMeta();
+    const stillEditing = editing ? findMarketingById(editing.id) : null;
+    if(marketingList.some(m => m.pin===pin && m.id!==(stillEditing?stillEditing.id:null))){
+      hideLoadingOverlay();
+      btn.disabled = false;
+      await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.');
+      return;
+    }
     let targetId;
     if(stillEditing){
       targetId = stillEditing.id;
@@ -3025,13 +3037,17 @@ function attachHandlers(){
     const newPin = await customPrompt('PIN baru kamu:', currentMarketing.pin);
     if(!newPin || !newPin.trim()) return;
     const trimmed = newPin.trim();
-    await loadMarketingList();
+    changeMyPinBtn.disabled = true;
+    showLoadingOverlay('Menyimpan PIN...');
+    await loadMarketingListMeta();
     const me = findMarketingById(currentMarketing.id);
-    if(!me){ await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
-    if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
+    if(!me){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
+    if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
     const oldPin = me.pin;
     me.pin = trimmed;
     const ok = await saveMarketingList();
+    hideLoadingOverlay();
+    changeMyPinBtn.disabled = false;
     if(ok){ currentMarketing = me; showToast('PIN kamu diperbarui ✓'); }
     else { me.pin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
   });

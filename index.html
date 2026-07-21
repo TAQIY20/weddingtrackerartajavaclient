@@ -1140,13 +1140,40 @@ async function runWithConcurrency(taskFns, limit, onProgress){
 async function storageSetChunkedWithRetry(baseKey, value, shared, onProgress){
   const newChunkCount = Math.max(1, Math.ceil(value.length / STORAGE_CHUNK_SIZE));
   const chunkParts = [];
-  const tasks = [];
   for(let i=0;i<newChunkCount;i++){
-    const part = value.slice(i*STORAGE_CHUNK_SIZE, (i+1)*STORAGE_CHUNK_SIZE);
-    chunkParts.push(part);
-    tasks.push(()=> storageSetWithRetry(baseKey + '_c' + i, part, shared));
+    chunkParts.push(value.slice(i*STORAGE_CHUNK_SIZE, (i+1)*STORAGE_CHUNK_SIZE));
   }
-  const results = await runWithConcurrency(tasks, STORAGE_CHUNK_CONCURRENCY, onProgress);
+  // Tulis chunk, LALU LANGSUNG baca ulang untuk memastikan isinya persis sama (bukan cuma
+  // "berhasil tersimpan" menurut API-nya, tapi benar-benar cocok byte-per-byte). Ini menutup
+  // celah kasus nyata yang ditemukan: penulisan dilaporkan sukses, tapi isi yang benar-benar
+  // tersimpan berbeda/lebih pendek dari yang dikirim (kemungkinan race condition kalau ada
+  // upload/hapus yang tumpang-tindih). Kalau ada yang tidak cocok, ditulis ulang lagi sampai
+  // beberapa ronde sebelum benar-benar menyerah.
+  let doneCount = 0;
+  const totalForProgress = newChunkCount;
+  async function writeAndVerifyOne(i){
+    const key = baseKey + '_c' + i;
+    const expected = chunkParts[i];
+    for(let attempt=0; attempt<3; attempt++){
+      const ok = await storageSetWithRetry(key, expected, shared);
+      if(ok){
+        try{
+          const res = await window.storage.get(key, shared);
+          if(res && res.value === expected) return true;
+          lastStorageError = `Chunk ${i} tidak cocok setelah ditulis (percobaan ${attempt+1})`;
+        }catch(e){ lastStorageError = `Chunk ${i} gagal diverifikasi: ` + (e && (e.message||String(e))); }
+      }
+      if(attempt<2) await new Promise(r=> setTimeout(r, 500*(attempt+1)));
+    }
+    return false;
+  }
+  const tasks = Array.from({length:newChunkCount}, (_,i)=> async ()=>{
+    const ok = await writeAndVerifyOne(i);
+    doneCount++;
+    if(onProgress) onProgress(doneCount, totalForProgress);
+    return ok;
+  });
+  const results = await runWithConcurrency(tasks, STORAGE_CHUNK_CONCURRENCY);
   if(results.some(ok=>!ok)) return false;
   // Simpan juga panjang tiap chunk (dan panjang total) di meta, supaya waktu dibaca ulang
   // kita bisa DETEKSI kalau ada chunk yang kesimpan korup/kepotong (bukan cuma "ada/tidak").

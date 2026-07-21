@@ -1417,7 +1417,12 @@ function hideToast(){
 async function downloadAttachmentSafely(cache, key, fetchFn, filename){
   filename = filename || 'file';
   if(cache[key]){
+    // Filenya sudah "siap sedia" di cache (misal dari proses hydrate otomatis di background),
+    // jadi bisa langsung diunduh — tapi tetap kasih toast sekilas biar user selalu dapat tanda
+    // visual yang konsisten setiap kali klik download, bukan cuma pas file belum ke-cache.
+    showToast('Menyiapkan file…', false, true);
     downloadDataUrl(cache[key], filename);
+    setTimeout(hideToast, 400);
     return;
   }
   const DOWNLOAD_RETRY_DELAYS_MS = [0, 900, 1800];

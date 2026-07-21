@@ -442,6 +442,38 @@ if(!window.storage){
     };
   }
 }
+/* ---------- VERCEL BLOB (khusus file dokumen besar: MOU & Rundown) ----------
+   Kenapa dipisah dari window.storage (Google Sheets) di atas: dokumen PDF
+   bisa berukuran beberapa MB, dan kalau dipecah jadi puluhan/ratusan "chunk"
+   ke Google Sheets, peluang salah satu chunk gagal tulis/baca jadi sangat
+   tinggi (itu penyebab bug "belum bisa diverifikasi" yang sering muncul).
+   Vercel Blob memang didesain untuk menyimpan file utuh, jadi satu file =
+   satu upload, tanpa chunking sama sekali. */
+async function uploadFileToBlob(file, onProgress){
+  // @vercel/blob/client diimpor dari CDN esm.sh karena project ini tidak
+  // punya proses build (cuma HTML polos), jadi tidak bisa "npm install"
+  // untuk kode yang jalan di browser.
+  const { upload } = await import('https://esm.sh/@vercel/blob@0.27.0/client');
+  const blob = await upload(file.name, file, {
+    access: 'public',
+    handleUploadUrl: '/api/blob-upload',
+    onUploadProgress: onProgress ? (p)=> onProgress(p.percentage) : undefined,
+  });
+  return blob; // { url, pathname, contentType, ... }
+}
+async function deleteFileFromBlob(url){
+  const res = await fetch('/api/blob-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({}));
+    throw new Error(data.error || ('HTTP ' + res.status));
+  }
+  return await res.json();
+}
+
 const APP_VERSION = 'v4';
 const PROJECTS_INDEX_KEY = 'wedding_projects_index_' + APP_VERSION;
 const MASTER_SETTINGS_KEY = 'wedding_master_settings_' + APP_VERSION;
@@ -511,6 +543,11 @@ async function hydrateInvoiceAttachments(){
   if(!state || !Array.isArray(state.payments)) return;
   let needsResave = false;
   await Promise.all(state.payments.filter(p=>p.invoice).map(async p=>{
+    if(p.invoice.url){
+      // Format baru (Vercel Blob): file-nya sudah berupa URL langsung, tidak perlu
+      // di-fetch/gabung chunk sama sekali — download & cek status pakai URL ini langsung.
+      return;
+    }
     if(p.invoice.dataUrl){
       // Data lama: dataUrl masih nempel di state (format sebelum perbaikan ini) — migrasikan ke key terpisah.
       invoiceFileCache[p.id] = p.invoice.dataUrl;
@@ -1054,10 +1091,10 @@ async function deleteProject(id){
     if(res && res.value){
       const proj = JSON.parse(res.value);
       await Promise.all((proj.payments||[]).filter(p=>p.invoice).map(p=>
-        storageDeleteChunked(invoiceFileKey(id, p.id), true).catch(()=>{})
+        p.invoice.url ? deleteFileFromBlob(p.invoice.url).catch(()=>{}) : storageDeleteChunked(invoiceFileKey(id, p.id), true).catch(()=>{})
       ));
       await Promise.all(['mou','rundown'].filter(dt=> proj.documents && proj.documents[dt]).map(dt=>
-        storageDeleteChunked(docFileKey(id, dt), true).catch(()=>{})
+        proj.documents[dt].url ? deleteFileFromBlob(proj.documents[dt].url).catch(()=>{}) : storageDeleteChunked(docFileKey(id, dt), true).catch(()=>{})
       ));
     }
   }catch(e){ /* kalau gagal ambil data lama, lanjut hapus project-nya saja */ }
@@ -3111,7 +3148,7 @@ function renderPayments(){
             <div class="p-due">🗓️ Jatuh tempo: <input type="date" data-field="dueDate" value="${p.dueDate}" ${isVendor?'':'disabled'}/></div>
             <div class="p-invoice">
               ${p.invoice ? `
-                <a class="invoice-chip" href="${invoiceFileCache[p.id] || 'javascript:void(0)'}" download="${escapeAttr(p.invoice.name)}" data-action="download-invoice" data-payment-id="${p.id}" data-filename="${escapeAttr(p.invoice.name)}" rel="noopener">📎 ${escapeHtml(p.invoice.name)}</a>
+                <a class="invoice-chip" href="${p.invoice.url || invoiceFileCache[p.id] || 'javascript:void(0)'}" download="${escapeAttr(p.invoice.name)}" data-action="download-invoice" data-payment-id="${p.id}" data-filename="${escapeAttr(p.invoice.name)}" rel="noopener">📎 ${escapeHtml(p.invoice.name)}</a>
                 ${isVendor ? `<button class="mi-del" data-action="check-invoice-status" data-payment-id="${p.id}" title="Cek status upload">🔍</button>` : ''}
                 ${isVendor ? `<button class="mi-del" data-action="delete-invoice" title="Hapus lampiran invoice">✕</button>` : ''}
               ` : (isVendor ? `
@@ -3452,45 +3489,24 @@ function attachHandlers(){
         const originalLabelText = labelEl ? labelEl.childNodes[0].nodeValue : '';
         const setLabelText = (txt)=>{ if(labelEl) labelEl.childNodes[0].nodeValue = txt; };
         if(labelEl) labelEl.style.pointerEvents = 'none';
-        setLabelText('⏳ Menyiapkan file...');
+        setLabelText('⏳ Mengunggah...');
         try{
-          let dataUrl, type;
-          if(file.type && file.type.startsWith('image/')){
-            dataUrl = await compressImageFile(file, { maxChars: 40000, maxDim: 1000 });
-            type = 'image/jpeg';
-          } else {
-            const reader = new FileReader();
-            dataUrl = await new Promise((resolve, reject)=>{
-              reader.onload = ()=> resolve(reader.result);
-              reader.onerror = ()=> reject(new Error('Gagal membaca file.'));
-              reader.readAsDataURL(file);
-            });
-            type = file.type;
-          }
-          const ok = await storageSetChunkedWithRetry(docFileKey(state.id, docType), dataUrl, true, (done,total)=>{
-            setLabelText(total>1 ? `⏳ Mengunggah... ${Math.round(done/total*100)}%` : '⏳ Mengunggah...');
+          // Upload file APA ADANYA (tidak dipecah jadi chunk) langsung ke Vercel Blob.
+          // Jauh lebih andal untuk file besar dibanding chunking ke Google Sheets —
+          // satu file = satu operasi upload, bukan puluhan operasi tulis+verifikasi.
+          const oldUrl = state.documents[docType] && state.documents[docType].url;
+          const blob = await uploadFileToBlob(file, (pct)=>{
+            setLabelText(`⏳ Mengunggah... ${Math.round(pct)}%`);
           });
-          if(!ok){
-            await customAlert('Gagal menyimpan ' + docLabel + ' ke storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui'));
-            setLabelText(originalLabelText);
-            if(labelEl) labelEl.style.pointerEvents = '';
-            e.target.value = '';
-            return;
-          }
-          // Langsung anggap berhasil dan lanjutkan alur vendor — JANGAN blokir dengan verifikasi
-          // sinkron di sini. Storage-nya ternyata butuh waktu "settle" yang tidak konsisten
-          // (kadang <1 detik, kadang lebih dari beberapa detik), jadi verifikasi sinkron malah
-          // jadi alarm palsu yang bikin vendor kena "gagal" padahal filenya baik-baik saja.
-          docFileCache[docType] = dataUrl;
-          state.documents[docType] = { name:file.name, type };
+          state.documents[docType] = { name:file.name, type:file.type, url: blob.url };
+          docFileCache[docType] = blob.url;
           showToast(docLabel + ' berhasil diunggah ✓');
           scheduleSave(); render();
-          // Verifikasi tetap jalan, tapi di BELAKANG LAYAR dengan waktu tunggu lebih panjang.
-          // Kalau memang betul-betul gagal (bukan cuma lagi lambat), kasih notifikasi kecil
-          // yang tidak menghentikan apa pun — vendor tetap bisa lanjut kerja.
-          verifyStoredChunkedBackground(docFileKey(state.id, docType), true, docLabel);
+          // Hapus file lama di Blob (kalau ada) supaya tidak menumpuk kuota storage.
+          // Dilakukan di belakang layar, tidak menghalangi apa pun kalau gagal.
+          if(oldUrl){ deleteFileFromBlob(oldUrl).catch(()=>{}); }
         }catch(err){
-          await customAlert('Gagal memproses file ' + docLabel + ': ' + (err.message || err));
+          await customAlert('Gagal mengunggah file ' + docLabel + ': ' + (err.message || err));
           setLabelText(originalLabelText);
           if(labelEl) labelEl.style.pointerEvents = '';
           e.target.value = '';
@@ -3508,15 +3524,19 @@ function attachHandlers(){
           // ternyata kosong di sini, kode langsung `return` tanpa kasih tahu apa-apa ke user —
           // dari sudut pandang user itu keliatan seperti tombolnya benar-benar mati/diam,
           // padahal harusnya selalu ada tanda visual (toast) setiap kali tombol ini diklik.
-          if(!doc){
+          if(!doc || !doc.url){
             showToast('Lampiran belum tersedia, coba refresh halaman.', true);
             return;
           }
-          const pid = state.id;
-          downloadAttachmentSafely(docFileCache, docType, async ()=>{
-            const val = await storageGetChunked(docFileKey(pid, docType), true);
-            return val;
-          }, doc.name);
+          // File-nya sekarang sebuah URL Blob (bukan data-URL chunked), jadi
+          // download tinggal buka linknya langsung — tidak perlu gabung chunk lagi.
+          const link = document.createElement('a');
+          link.href = doc.url;
+          link.download = doc.name;
+          link.rel = 'noopener';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
         }catch(err){
           // Jaring pengaman terakhir: apa pun yang gagal secara tak terduga di sini, jangan
           // sampai user hanya melihat klik yang diam tanpa respons — selalu tampilkan sesuatu.
@@ -3530,17 +3550,25 @@ function attachHandlers(){
       btn.addEventListener('click', async ()=>{
         const docType = btn.dataset.doctype;
         const docLabel = btn.dataset.doclabel || docType;
-        const pid = state.id;
+        const doc = state.documents[docType];
         btn.disabled = true;
         const seq = showToast(`Mengecek status ${docLabel}...`, false, true);
-        const val = await withTimeout(storageGetChunked(docFileKey(pid, docType), true), 20000).catch(()=>null);
+        // File tersimpan sebagai satu URL Blob utuh (bukan chunk), jadi cek status
+        // cukup pastikan URL-nya memang bisa diakses (HEAD request), tanpa perlu
+        // gabung puluhan chunk seperti sebelumnya.
+        let ok = false;
+        try{
+          if(doc && doc.url){
+            const res = await withTimeout(fetch(doc.url, { method: 'HEAD' }), 15000);
+            ok = res.ok;
+          }
+        }catch(e){ ok = false; }
         hideToast(seq);
         btn.disabled = false;
-        if(val){
-          docFileCache[docType] = val; // sekalian isi cache biar download berikutnya instan
+        if(ok){
           await customAlert(`✅ ${docLabel} sudah tersimpan lengkap dan siap dibagikan ke klien.`);
         }else{
-          await customAlert(`⚠️ ${docLabel} belum bisa diverifikasi (belum sempat "settle" di storage).\n\nDetail teknis: ${lastFetchError || 'tidak ada detail'}\n\nTunggu sebentar lalu cek lagi. Kalau setelah beberapa menit masih begini, coba hapus dan upload ulang.`);
+          await customAlert(`⚠️ ${docLabel} tidak bisa diakses saat ini.\n\nCoba tunggu sebentar lalu cek lagi. Kalau masih begini, coba hapus dan upload ulang.`);
         }
       });
     });
@@ -3551,9 +3579,10 @@ function attachHandlers(){
         const docLabel = docType==='mou' ? 'MOU' : 'Rundown';
         if(await customConfirm(`Hapus lampiran ${docLabel} ini?`)){
           showLoadingOverlay(`Menghapus lampiran ${docLabel}...`);
+          const oldUrl = state.documents[docType] && state.documents[docType].url;
           state.documents[docType] = null;
           delete docFileCache[docType];
-          try{ await storageDeleteChunked(docFileKey(state.id, docType), true); }catch(e){ /* kalau memang belum ada, abaikan */ }
+          if(oldUrl){ try{ await deleteFileFromBlob(oldUrl); }catch(e){ /* kalau memang belum ada, abaikan */ } }
           hideLoadingOverlay();
           scheduleSave(); render();
         }
@@ -3739,12 +3768,17 @@ function attachHandlers(){
     if(downloadInvoiceLink) downloadInvoiceLink.addEventListener('click', e=>{
       e.preventDefault(); // SELALU dicegah — jangan pernah biarkan browser pakai href='#' (lihat catatan di downloadAttachmentSafely)
       try{
-        const pid = state.id;
-        const filename = downloadInvoiceLink.dataset.filename || (p.invoice && p.invoice.name);
-        downloadAttachmentSafely(invoiceFileCache, id, async ()=>{
-          const val = await storageGetChunked(invoiceFileKey(pid, id), true);
-          return val;
-        }, filename);
+        if(!p.invoice || !p.invoice.url){
+          showToast('Lampiran belum tersedia, coba refresh halaman.', true);
+          return;
+        }
+        const link = document.createElement('a');
+        link.href = p.invoice.url;
+        link.download = downloadInvoiceLink.dataset.filename || p.invoice.name;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
       }catch(err){
         console.error('download-invoice click: gagal tak terduga', err);
         showToast('Gagal memproses klik download. Coba lagi.', true);
@@ -3752,17 +3786,21 @@ function attachHandlers(){
     });
     const checkInvoiceStatusBtn = el.querySelector('[data-action="check-invoice-status"]');
     if(checkInvoiceStatusBtn) checkInvoiceStatusBtn.addEventListener('click', async ()=>{
-      const pid = state.id;
       checkInvoiceStatusBtn.disabled = true;
       const seq = showToast('Mengecek status invoice...', false, true);
-      const val = await withTimeout(storageGetChunked(invoiceFileKey(pid, id), true), 20000).catch(()=>null);
+      let ok = false;
+      try{
+        if(p.invoice && p.invoice.url){
+          const res = await withTimeout(fetch(p.invoice.url, { method: 'HEAD' }), 15000);
+          ok = res.ok;
+        }
+      }catch(e){ ok = false; }
       hideToast(seq);
       checkInvoiceStatusBtn.disabled = false;
-      if(val){
-        invoiceFileCache[id] = val; // sekalian isi cache biar download berikutnya instan
+      if(ok){
         await customAlert('✅ Invoice sudah tersimpan lengkap dan siap dibagikan ke klien.');
       }else{
-        await customAlert(`⚠️ Invoice belum bisa diverifikasi (belum sempat "settle" di storage).\n\nDetail teknis: ${lastFetchError || 'tidak ada detail'}\n\nTunggu sebentar lalu cek lagi. Kalau setelah beberapa menit masih begini, coba hapus dan upload ulang.`);
+        await customAlert('⚠️ Invoice tidak bisa diakses saat ini.\n\nCoba tunggu sebentar lalu cek lagi. Kalau masih begini, coba hapus dan upload ulang.');
       }
     });
     const delBtn = el.querySelector('[data-action="delete-payment"]');
@@ -3775,51 +3813,23 @@ function attachHandlers(){
       const label = document.getElementById('invoiceUploadLabel_' + id);
       const setLabelText = (txt)=>{ if(label) label.childNodes[0].nodeValue = txt; };
       const originalLabelText = '📎 Lampirkan Invoice';
-      // Kasih tahu langsung kalau prosesnya sedang berjalan, supaya tidak
-      // terlihat seperti macet/tidak ada respons — terutama untuk file besar
-      // yang perlu waktu lebih lama untuk diunggah.
       if(label) label.style.pointerEvents = 'none';
-      setLabelText('⏳ Menyiapkan file...');
+      setLabelText('⏳ Mengunggah...');
       try{
-        let dataUrl, type;
-        if(file.type && file.type.startsWith('image/')){
-          // Invoice berupa foto: kompres dulu biar ukurannya wajar.
-          dataUrl = await compressImageFile(file, { maxChars: 40000, maxDim: 1000 });
-          type = 'image/jpeg';
-        } else {
-          // PDF tidak bisa dikompres di browser. Backend storage cuma bisa nyimpen
-          // ±45000 karakter per key, jadi file PDF dipecah jadi beberapa key
-          // ("chunk") lewat storageSetChunkedWithRetry di bawah — bukan disimpan
-          // sebagai satu key besar, supaya tidak kena batas itu.
-          const reader = new FileReader();
-          dataUrl = await new Promise((resolve, reject)=>{
-            reader.onload = ()=> resolve(reader.result);
-            reader.onerror = ()=> reject(new Error('Gagal membaca file.'));
-            reader.readAsDataURL(file);
-          });
-          type = file.type;
-        }
-        // Simpan file invoice ke key TERPISAH dari data project (state), dipecah
-        // jadi beberapa chunk yang dikirim berbarengan (bukan satu-satu) supaya
-        // tidak kena batas ukuran per-key dan tidak lama tanpa keterangan apa pun.
-        const ok = await storageSetChunkedWithRetry(invoiceFileKey(state.id, p.id), dataUrl, true, (done, total)=>{
-          setLabelText(total>1 ? `⏳ Mengunggah... ${Math.round(done/total*100)}%` : '⏳ Mengunggah...');
+        // Upload file APA ADANYA ke Vercel Blob — tidak dipecah jadi chunk lagi,
+        // jadi tidak kena masalah "belum settle" yang dulu sering muncul untuk
+        // invoice PDF/foto yang agak besar.
+        const oldUrl = p.invoice && p.invoice.url;
+        const blob = await uploadFileToBlob(file, (pct)=>{
+          setLabelText(`⏳ Mengunggah... ${Math.round(pct)}%`);
         });
-        if(!ok){
-          await customAlert('Gagal menyimpan invoice ke storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui'));
-          setLabelText(originalLabelText);
-          if(label) label.style.pointerEvents = '';
-          e.target.value = '';
-          return;
-        }
-        // Langsung anggap berhasil dan lanjutkan alur vendor — verifikasi jalan di belakang layar.
-        invoiceFileCache[p.id] = dataUrl;
-        p.invoice = { name:file.name, type };
+        invoiceFileCache[p.id] = blob.url;
+        p.invoice = { name:file.name, type:file.type, url: blob.url };
         showToast('Invoice berhasil diunggah ✓');
         scheduleSave(); render();
-        verifyStoredChunkedBackground(invoiceFileKey(state.id, p.id), true, 'Invoice');
+        if(oldUrl){ deleteFileFromBlob(oldUrl).catch(()=>{}); }
       }catch(err){
-        await customAlert('Gagal memproses file invoice: ' + (err.message || err));
+        await customAlert('Gagal mengunggah file invoice: ' + (err.message || err));
         setLabelText(originalLabelText);
         if(label) label.style.pointerEvents = '';
         e.target.value = '';
@@ -3829,9 +3839,10 @@ function attachHandlers(){
     if(delInvoiceBtn) delInvoiceBtn.addEventListener('click', async ()=>{
       if(await customConfirm('Hapus lampiran invoice ini?')){
         showLoadingOverlay('Menghapus lampiran invoice...');
+        const oldUrl = p.invoice && p.invoice.url;
         p.invoice = null;
         delete invoiceFileCache[id];
-        try{ await storageDeleteChunked(invoiceFileKey(state.id, id), true); }catch(e){ /* kalau memang belum ada, abaikan */ }
+        if(oldUrl){ try{ await deleteFileFromBlob(oldUrl); }catch(e){ /* kalau memang belum ada, abaikan */ } }
         hideLoadingOverlay();
         scheduleSave(); render();
       }

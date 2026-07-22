@@ -576,6 +576,10 @@ async function hydrateDocumentAttachments(){
   if(!state || !state.documents) return;
   await Promise.all(['mou','rundown'].map(async docType=>{
     if(!state.documents[docType]) return;
+    if(state.documents[docType].url){
+      // Format baru (Vercel Blob): tidak perlu fetch apa pun, URL-nya sudah langsung dipakai.
+      return;
+    }
     try{
       const val = await storageGetChunked(docFileKey(state.id, docType), true);
       if(val) docFileCache[docType] = val;
@@ -3365,6 +3369,43 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
+  // PENTING: handler download-doc ini SENGAJA diletakkan di sini (di luar blok
+  // "if(isVendor)"). Sebelumnya dia ada DI DALAM blok isVendor, jadi kalau halaman
+  // dibuka lewat link KLIEN (bukan vendor/admin), klik download MOU/Rundown
+  // benar-benar tidak berbuat apa-apa (handler-nya tidak pernah dipasang) —
+  // itu penyebab bug "klik tidak ada reaksi apa-apa" waktu dibuka dari sisi klien.
+  document.querySelectorAll('[data-action="download-doc"]').forEach(a=>{
+    a.addEventListener('click', e=>{
+      e.preventDefault(); // SELALU dicegah — jangan pernah biarkan browser pakai href='#' (lihat catatan di downloadAttachmentSafely)
+      try{
+        const docType = a.dataset.doctype;
+        const doc = state.documents[docType];
+        // PENTING (perbaikan bug "klik tidak ada reaksi sama sekali"): sebelumnya kalau `doc`
+        // ternyata kosong di sini, kode langsung `return` tanpa kasih tahu apa-apa ke user —
+        // dari sudut pandang user itu keliatan seperti tombolnya benar-benar mati/diam,
+        // padahal harusnya selalu ada tanda visual (toast) setiap kali tombol ini diklik.
+        if(!doc || !doc.url){
+          showToast('Lampiran belum tersedia, coba refresh halaman.', true);
+          return;
+        }
+        // File-nya sekarang sebuah URL Blob (bukan data-URL chunked), jadi
+        // download tinggal buka linknya langsung — tidak perlu gabung chunk lagi.
+        const link = document.createElement('a');
+        link.href = doc.url;
+        link.download = doc.name;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }catch(err){
+        // Jaring pengaman terakhir: apa pun yang gagal secara tak terduga di sini, jangan
+        // sampai user hanya melihat klik yang diam tanpa respons — selalu tampilkan sesuatu.
+        console.error('download-doc click: gagal tak terduga', err);
+        showToast('Gagal memproses klik download. Coba lagi.', true);
+      }
+    });
+  });
+
   document.querySelectorAll('[data-tab]').forEach(btn=> btn.addEventListener('click', ()=> setTab(btn.dataset.tab)));
 
   const switchRoleBtn = document.getElementById('switchRoleBtn');
@@ -3510,38 +3551,6 @@ function attachHandlers(){
           setLabelText(originalLabelText);
           if(labelEl) labelEl.style.pointerEvents = '';
           e.target.value = '';
-        }
-      });
-    });
-
-    document.querySelectorAll('[data-action="download-doc"]').forEach(a=>{
-      a.addEventListener('click', e=>{
-        e.preventDefault(); // SELALU dicegah — jangan pernah biarkan browser pakai href='#' (lihat catatan di downloadAttachmentSafely)
-        try{
-          const docType = a.dataset.doctype;
-          const doc = state.documents[docType];
-          // PENTING (perbaikan bug "klik tidak ada reaksi sama sekali"): sebelumnya kalau `doc`
-          // ternyata kosong di sini, kode langsung `return` tanpa kasih tahu apa-apa ke user —
-          // dari sudut pandang user itu keliatan seperti tombolnya benar-benar mati/diam,
-          // padahal harusnya selalu ada tanda visual (toast) setiap kali tombol ini diklik.
-          if(!doc || !doc.url){
-            showToast('Lampiran belum tersedia, coba refresh halaman.', true);
-            return;
-          }
-          // File-nya sekarang sebuah URL Blob (bukan data-URL chunked), jadi
-          // download tinggal buka linknya langsung — tidak perlu gabung chunk lagi.
-          const link = document.createElement('a');
-          link.href = doc.url;
-          link.download = doc.name;
-          link.rel = 'noopener';
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        }catch(err){
-          // Jaring pengaman terakhir: apa pun yang gagal secara tak terduga di sini, jangan
-          // sampai user hanya melihat klik yang diam tanpa respons — selalu tampilkan sesuatu.
-          console.error('download-doc click: gagal tak terduga', err);
-          showToast('Gagal memproses klik download. Coba lagi.', true);
         }
       });
     });

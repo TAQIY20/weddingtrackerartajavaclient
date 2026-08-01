@@ -361,17 +361,62 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore-compat.js"></script>
 <script>
 /* Storage backend for when this file runs outside Claude.ai (e.g. hosted on
    Netlify, opened directly from disk). Claude.ai's artifact preview injects
    a real window.storage backed by the cloud; everywhere else we shim the
-   same get/set/delete/list API. If APPS_SCRIPT_URL below is filled in, all
-   reads/writes go to a Google Sheet (real-time, shared across every device).
-   If it's left empty, falls back to this browser's localStorage only. */
+   same API for get/set/delete/list. Firestore (kalau berhasil dimuat) jadi
+   backend utama sekarang — jauh lebih cepat & stabil dibanding Google Apps
+   Script yang sebelumnya jadi penyebab bug data hilang saat lambat/timeout.
+   Google Sheets tetap disimpan sebagai cadangan kalau skrip Firebase gagal
+   dimuat (mis. domain gstatic.com diblokir jaringan), supaya app tetap bisa
+   jalan. Kalau keduanya gagal, baru jatuh ke localStorage HP/browser saja. */
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzpcNR_iq-FgwN6UUUy-5R0nYCNFvJSJAtuEUTj6qV_RYL7YMaYuK0JxiPEktb-tYe36w/exec';
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDPMCaEO1UmRK5VD8hlvQGoZALAmSYMwPQ",
+  authDomain: "wedding-tracker-artajava-wo.firebaseapp.com",
+  projectId: "wedding-tracker-artajava-wo",
+  storageBucket: "wedding-tracker-artajava-wo.firebasestorage.app",
+  messagingSenderId: "10890712516",
+  appId: "1:10890712516:web:209a720114b51e7cf98091",
+  measurementId: "G-E7CC11YR16"
+};
+const FIREBASE_KV_COLLECTION = 'wedding_kv';
 
 if(!window.storage){
-  if(APPS_SCRIPT_URL){
+  if(window.firebase && FIREBASE_CONFIG.apiKey){
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.firestore();
+    const kv = () => db.collection(FIREBASE_KV_COLLECTION);
+    window.storage = {
+      async get(key, shared){
+        const snap = await kv().doc(key).get();
+        if(!snap.exists) return null; // null = key belum ada, sama seperti backend lama
+        const data = snap.data();
+        return { key, value: data.value, shared: !!shared };
+      },
+      async set(key, value, shared){
+        await kv().doc(key).set({ value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        return { key, value, shared: !!shared };
+      },
+      async delete(key, shared){
+        await kv().doc(key).delete();
+        return { key, deleted: true, shared: !!shared };
+      },
+      async list(prefix, shared){
+        let q = kv();
+        if(prefix){
+          q = q.where(firebase.firestore.FieldPath.documentId(), '>=', prefix)
+               .where(firebase.firestore.FieldPath.documentId(), '<', prefix + '\uf8ff');
+        }
+        const snap = await q.get();
+        const keys = snap.docs.map(d => prefix ? d.id.slice(prefix.length) : d.id);
+        return { keys, prefix, shared: !!shared };
+      }
+    };
+  } else if(APPS_SCRIPT_URL){
     window.storage = {
       async get(key, shared){
         const url = `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&shared=${!!shared}`;
@@ -883,12 +928,27 @@ function normalizeState(s){
 }
 
 /* ---------- MASTER SETTINGS (admin/vendor login PIN, shared across all projects) ---------- */
+let masterSettingsLoadFailed = false; // true kalau pengambilan PIN admin dari storage gagal sesi ini
 async function loadMasterSettings(){
+  masterSettingsLoadFailed = false;
   try{
-    const res = await window.storage.get(MASTER_SETTINGS_KEY, true);
+    const res = await storageGetWithRetry(MASTER_SETTINGS_KEY, true);
     if(res && res.value){ masterSettings = JSON.parse(res.value); if(!masterSettings.vendorPin) masterSettings.vendorPin = '1234'; }
-    else { masterSettings = { vendorPin: '1234' }; await saveMasterSettings(); }
-  }catch(e){ masterSettings = { vendorPin: '1234' }; }
+    else if(!masterSettings){ masterSettings = { vendorPin: '1234' }; }
+    // PERBAIKAN BUG "PIN admin ke-reset sendiri ke 1234": DULU di sini ada
+    // `await saveMasterSettings()` yang otomatis menulis PIN default 1234
+    // ke storage begitu res.value kosong — padahal "kosong" itu bisa juga
+    // berarti pengambilan datanya gagal/lambat, BUKAN berarti PIN memang
+    // belum pernah diset. Auto-save itu yang diam-diam menimpa PIN asli
+    // admin. Sekarang PIN default 1234 cuma dipakai sementara di memori;
+    // baru benar-benar ditulis ke storage kalau admin sengaja menggantinya
+    // lewat menu "Ganti PIN Admin".
+  }catch(e){
+    masterSettingsLoadFailed = true;
+    // Kalau sudah ada masterSettings sebelumnya (mis. dari cache lokal),
+    // JANGAN ditimpa jadi default — pertahankan yang lama.
+    if(!masterSettings) masterSettings = { vendorPin: '1234' };
+  }
 }
 async function saveMasterSettings(){
   return await storageSetWithRetry(MASTER_SETTINGS_KEY, JSON.stringify(masterSettings), true);
@@ -949,14 +1009,27 @@ function compressImageFile(file, opts){
    utama (MARKETING_LIST_KEY) hanya berisi data ringan: id, name, phone, pin. */
 function marketingPhotoKey(id){ return 'mkt_photo_' + id; }
 
+let marketingListLoadFailed = false; // true kalau pengambilan daftar marketing dari storage gagal sesi ini
 async function loadMarketingListMeta(){
   // Cuma ambil daftar marketing (nama/phone/pin) TANPA foto — foto (data URL,
   // bisa besar) ditarik belakangan lewat hydrateMarketingPhotosInBackground()
   // supaya layar loading awal tidak nunggu semua foto itu selesai diunduh.
+  marketingListLoadFailed = false;
   try{
-    const res = await window.storage.get(MARKETING_LIST_KEY, true);
+    const res = await storageGetWithRetry(MARKETING_LIST_KEY, true);
     marketingList = (res && res.value) ? JSON.parse(res.value) : [];
-  }catch(e){ marketingList = []; }
+  }catch(e){
+    // PERBAIKAN BUG "marketing & paket vendor hilang semua": DULU baris ini
+    // langsung `marketingList = []` begitu pengambilan data gagal (mis.
+    // backend lambat/timeout). Daftar kosong itu lalu tetap dipakai oleh
+    // kode lain yang memanggil fungsi ini sebelum menyimpan (mis. sebelum
+    // tambah/edit marketing) — akibatnya daftar kosong itu ikut TERSIMPAN
+    // ke storage, menimpa & menghapus semua data marketing yang sudah ada.
+    // Sekarang kalau gagal, daftar yang SUDAH ADA di memori/cache
+    // dipertahankan apa adanya, dan ditandai gagal lewat marketingListLoadFailed
+    // supaya alur simpan bisa menolak menyimpan & memperingatkan admin.
+    marketingListLoadFailed = true;
+  }
   // Tempel dulu foto dari cache lokal (kalau ada) supaya avatar langsung
   // kelihatan instan, tidak nunggu unduhan dari storage sama sekali.
   const photoCache = readMktPhotoCache();
@@ -1022,11 +1095,18 @@ function findMarketingById(id){
 }
 
 /* ---------- PAKET VENDOR (admin-managed, shared across all projects) ---------- */
+let packageListLoadFailed = false; // true kalau pengambilan daftar paket dari storage gagal sesi ini
 async function loadPackageList(){
+  packageListLoadFailed = false;
   try{
-    const res = await window.storage.get(PACKAGE_LIST_KEY, true);
+    const res = await storageGetWithRetry(PACKAGE_LIST_KEY, true);
     packageList = (res && res.value) ? JSON.parse(res.value) : [];
-  }catch(e){ packageList = []; }
+  }catch(e){
+    // Sama seperti bug daftar marketing di atas: JANGAN kosongkan packageList
+    // yang sudah ada hanya karena pengambilan ulang gagal — itu yang bikin
+    // "Paket Vendor" bisa ikut kehapus semua saat disimpan ulang.
+    packageListLoadFailed = true;
+  }
   packageList.forEach(pk=>{
     if(!Array.isArray(pk.includedCats)) pk.includedCats = [];
     if(typeof pk.price !== 'number') pk.price = parseInt(digitsOnly(pk.price),10) || 0;
@@ -1042,11 +1122,19 @@ function findPackageById(id){
 }
 
 /* ---------- PROJECTS INDEX ---------- */
+let projectsIndexLoadFailed = false; // true kalau pengambilan daftar project dari storage gagal sesi ini
 async function loadProjectsIndex(){
+  projectsIndexLoadFailed = false;
   try{
-    const res = await window.storage.get(PROJECTS_INDEX_KEY, true);
+    const res = await storageGetWithRetry(PROJECTS_INDEX_KEY, true);
     projectsIndex = (res && res.value) ? JSON.parse(res.value) : [];
-  }catch(e){ projectsIndex = []; }
+  }catch(e){
+    // Sama seperti bug di atas: jangan kosongkan daftar project yang sudah
+    // ada di memori/cache hanya karena pengambilan ulang gagal.
+    projectsIndexLoadFailed = true;
+    if(!Array.isArray(projectsIndex)) projectsIndex = [];
+    return; // jangan lanjut ke migrasi legacy kalau memang gagal ambil, bukan benar-benar kosong
+  }
   if(projectsIndex.length === 0){ await migrateLegacyProject(); }
 }
 
@@ -1151,6 +1239,25 @@ async function storageSetWithRetry(key, value, shared, retries){
   lastStorageError = (lastErr && (lastErr.message || String(lastErr))) || 'Unknown error';
   console.error('storage set failed after retries', lastErr);
   return false;
+}
+/* PERBAIKAN BUG: sebelumnya SEMUA pengambilan data (window.storage.get) untuk
+   PIN admin, daftar marketing, & daftar paket TIDAK punya retry sama sekali —
+   begitu backend (Google Apps Script) lambat/timeout sekali saja, kodenya
+   langsung menyerah dan menganggap datanya "kosong". Ini yang menyebabkan
+   PIN admin ke-reset ke 1234 dan daftar marketing/paket vendor hilang total
+   saat koneksi lagi lambat. storageGetWithRetry() coba beberapa kali dulu
+   (dengan jeda) sebelum benar-benar dianggap gagal, sama seperti
+   storageSetWithRetry() di atas. */
+async function storageGetWithRetry(key, shared, retries){
+  retries = retries==null ? 3 : retries;
+  let lastErr;
+  for(let i=0;i<=retries;i++){
+    try{ const res = await window.storage.get(key, shared); lastStorageError=''; return res; }
+    catch(e){ lastErr = e; if(i<retries) await new Promise(r=>setTimeout(r, 500*(i+1))); }
+  }
+  lastStorageError = (lastErr && (lastErr.message || String(lastErr))) || 'Unknown error';
+  console.error('storage get failed after retries', key, lastErr);
+  throw lastErr || new Error('storage get failed: ' + key);
 }
 
 /* ---------- CHUNKED STORAGE (untuk file besar seperti PDF invoice) ----------
@@ -2210,6 +2317,10 @@ function renderProjectDashboard(){
   });
   if(isAdmin){
     document.getElementById('changeMasterPin').addEventListener('click', async ()=>{
+      if(masterSettingsLoadFailed){
+        await customAlert('PIN admin saat ini gagal dimuat dari server (koneksi lambat/gagal), jadi nilai yang tampil di bawah mungkin bukan PIN yang sebenarnya. Refresh halaman dulu, pastikan berhasil masuk, baru ganti PIN.');
+        return;
+      }
       const val = await customPrompt('PIN Admin baru:', masterSettings.vendorPin);
       if(val && val.trim()){
         const oldPin = masterSettings.vendorPin;
@@ -2225,6 +2336,10 @@ function renderProjectDashboard(){
     document.getElementById('newPackageBtn').addEventListener('click', ()=> showPackageForm());
     document.querySelectorAll('[data-action="edit-package"]').forEach(btn=> btn.addEventListener('click', ()=> showPackageForm(btn.dataset.id)));
     document.querySelectorAll('[data-action="delete-package"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+      if(packageListLoadFailed){
+        await customAlert('Daftar paket gagal dimuat lengkap dari server (koneksi lambat/gagal). Untuk menghindari paket lain ikut terhapus, refresh halaman dulu sebelum menghapus.');
+        return;
+      }
       if(await customConfirm('Hapus paket ini? Project yang sudah dibuat pakai paket ini tidak akan berubah.')){
         btn.disabled = true;
         showLoadingOverlay('Menghapus paket...');
@@ -2235,6 +2350,11 @@ function renderProjectDashboard(){
       }
     }));
     document.querySelectorAll('[data-action="reassign-marketing"]').forEach(sel=> sel.addEventListener('change', async ()=>{
+      if(projectsIndexLoadFailed){
+        await customAlert('Daftar project gagal dimuat lengkap dari server (koneksi lambat/gagal). Refresh halaman dulu sebelum menugaskan marketing.');
+        renderProjectDashboard();
+        return;
+      }
       const pid = sel.dataset.id;
       const newMid = sel.value || null;
       sel.disabled = true;
@@ -2249,6 +2369,10 @@ function renderProjectDashboard(){
     }));
     document.querySelectorAll('[data-action="edit-marketing"]').forEach(btn=> btn.addEventListener('click', ()=> showMarketingForm(btn.dataset.id)));
     document.querySelectorAll('[data-action="delete-marketing"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+      if(marketingListLoadFailed){
+        await customAlert('Daftar marketing gagal dimuat lengkap dari server (koneksi lambat/gagal). Untuk menghindari akun marketing lain ikut terhapus, refresh halaman dulu sebelum menghapus.');
+        return;
+      }
       if(await customConfirm('Hapus akun marketing ini? Project yang sudah ditugaskan ke dia akan jadi "Belum ditugaskan".')){
         btn.disabled = true;
         showLoadingOverlay('Menghapus marketing...');
@@ -2277,6 +2401,7 @@ function renderProjectDashboard(){
     changeMyPinBtn.disabled = true;
     showLoadingOverlay('Menyimpan PIN...');
     await loadMarketingListMeta();
+    if(marketingListLoadFailed){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('Gagal mengambil data marketing terbaru dari server (koneksi lambat/gagal). Coba lagi sebentar lagi.'); return; }
     const me = findMarketingById(currentMarketing.id);
     if(!me){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
     if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }
@@ -2371,6 +2496,12 @@ function showMarketingForm(editId){
     // Selalu cek daftar marketing paling baru dulu, biar gak bentrok PIN dengan perubahan dari sesi
     // lain — cukup daftar tanpa foto (lebih cepat), sudah cukup buat cek PIN.
     await loadMarketingListMeta();
+    if(marketingListLoadFailed){
+      hideLoadingOverlay();
+      btn.disabled = false;
+      await customAlert('Gagal mengambil daftar marketing terbaru dari server (koneksi lambat/gagal). Supaya akun marketing lain tidak ikut terhapus, coba lagi setelah koneksi stabil.');
+      return;
+    }
     const stillEditing = editing ? findMarketingById(editing.id) : null;
     if(marketingList.some(m => m.pin===pin && m.id!==(stillEditing?stillEditing.id:null))){
       hideLoadingOverlay();
@@ -2523,6 +2654,10 @@ function showPackageForm(editId, draft){
       if(lines.length) catItems[key] = lines;
     });
     if(!name){ await customAlert('Nama paket wajib diisi.'); return; }
+    if(packageListLoadFailed){
+      await customAlert('Daftar paket gagal dimuat lengkap dari server saat halaman dibuka (koneksi lambat/gagal). Untuk menghindari paket lain ikut terhapus, refresh halaman dulu sebelum menyimpan.');
+      return;
+    }
     const btn = document.getElementById('savePkgBtn');
     btn.disabled = true;
     showLoadingOverlay('Menyimpan paket...');
@@ -3426,6 +3561,7 @@ function attachHandlers(){
     changeMyPinBtn.disabled = true;
     showLoadingOverlay('Menyimpan PIN...');
     await loadMarketingListMeta();
+    if(marketingListLoadFailed){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('Gagal mengambil data marketing terbaru dari server (koneksi lambat/gagal). Coba lagi sebentar lagi.'); return; }
     const me = findMarketingById(currentMarketing.id);
     if(!me){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('Akun kamu tidak ditemukan lagi — mungkin sudah dihapus admin. Hubungi admin ya.'); return; }
     if(marketingList.some(m => m.pin===trimmed && m.id!==me.id)){ hideLoadingOverlay(); changeMyPinBtn.disabled = false; await customAlert('PIN ini sudah dipakai marketing lain, pakai PIN lain.'); return; }

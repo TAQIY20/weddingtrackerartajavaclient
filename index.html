@@ -1156,7 +1156,7 @@ async function migrateLegacyProject(){
     data.id = genProjectId();
     if(!data.clientPassword) data.clientPassword = genPassword(6);
     await window.storage.set(projectKey(data.id), JSON.stringify(data), true);
-    projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, createdAt: data.createdAt || new Date().toISOString(), ...computePaymentFlags(data.payments), allAgendaDone: computeAllAgendaDone(data.timeline) });
+    projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt || new Date().toISOString(), ...computePaymentFlags(data.payments), allAgendaDone: computeAllAgendaDone(data.timeline) });
     await saveProjectsIndex();
   }catch(e){ /* no legacy data, ignore */ }
 }
@@ -1176,7 +1176,7 @@ async function createProject(brideName, groomName, marketingId, packageId){
   const pkg = packageId ? findPackageById(packageId) : null;
   const data = defaultData(brideName, groomName, null, marketingId || null, pkg);
   await window.storage.set(projectKey(data.id), JSON.stringify(data), true);
-  projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, createdAt: data.createdAt, marketingId: data.marketingId || null, ...computePaymentFlags(data.payments), allAgendaDone: computeAllAgendaDone(data.timeline) });
+  projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt, marketingId: data.marketingId || null, ...computePaymentFlags(data.payments), allAgendaDone: computeAllAgendaDone(data.timeline) });
   await saveProjectsIndex();
   return data;
 }
@@ -1450,6 +1450,7 @@ async function persist(){
       idxEntry.brideName = state.couple.brideName;
       idxEntry.groomName = state.couple.groomName;
       idxEntry.weddingDate = state.couple.weddingDate;
+      idxEntry.packageName = state.packageName || '';
       Object.assign(idxEntry, computePaymentFlags(state.payments));
       idxEntry.allAgendaDone = computeAllAgendaDone(state.timeline);
       saveProjectsIndex();
@@ -2198,7 +2199,17 @@ async function showProjectDashboard(overlay){
 }
 
 function myVisibleProjects(){
-  const sorted = [...projectsIndex].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+  // Urutkan otomatis berdasarkan tanggal nikah yang paling dekat ke hari ini duluan.
+  // Project yang tanggal nikahnya sudah lewat ditaruh di paling bawah (diurutkan
+  // dari yang paling baru lewat), dan yang belum punya tanggal ditaruh paling akhir.
+  const todayMs = new Date(todayISO() + 'T00:00:00').getTime();
+  const distance = (p)=>{
+    if(!p.weddingDate) return Infinity;
+    const d = new Date(p.weddingDate + 'T00:00:00').getTime();
+    if(isNaN(d)) return Infinity;
+    return d >= todayMs ? (d - todayMs) : (Number.MAX_SAFE_INTEGER - (todayMs - d));
+  };
+  const sorted = [...projectsIndex].sort((a,b)=> distance(a) - distance(b));
   if(isAdmin) return sorted;
   if(currentMarketing) return sorted.filter(p => p.marketingId === currentMarketing.id);
   return sorted;
@@ -2232,6 +2243,7 @@ function projectCardHtml(p){
           <div class="v-cat" style="padding-right:88px;"><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(p.brideName)} &amp; ${escapeHtml(p.groomName)}</span></div></div>
           <div class="v-field"><label>Tanggal Nikah</label><div>${fmtDate(p.weddingDate)}</div></div>
           <div class="v-field"><label>Kode Project</label><div style="font-family:monospace;font-weight:700;">${escapeHtml(p.id)}</div></div>
+          ${p.packageName ? `<div class="v-field"><label>Paket</label><div>${escapeHtml(p.packageName)}</div></div>` : ''}
           ${marketingBadge}
           <div class="row-actions" style="margin-top:10px;">
             <button class="btn small primary" data-action="open-project" data-id="${p.id}">Buka →</button>

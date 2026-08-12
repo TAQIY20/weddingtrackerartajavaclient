@@ -657,6 +657,7 @@ const PIC_WA = "https://wa.me/6285755768427";
 
 let isVendor = false;
 let isSupplier = false;        // true when logged in via the field-vendor link (real supplier: MUA/Katering/dll — no PIN, no password)
+let vendorLinkMode = false;    // true when this session entered via the global admin "Link Vendor" (#vendorlink) — keeps logout inside the vendor-only flow, never back to the full Admin/Marketing/Client entry gate
 let supplierVendorKey = null;  // which vendor category this supplier session represents
 let isVendorAccountSession = false;   // true when currently viewing a project after logging in via a real Vendor Account (username+password)
 let currentVendorAccountSession = null; // the vendor account object ({id,name,category,phone,username,password}) for the session above
@@ -2187,6 +2188,11 @@ function showVendorAccountDashboard(){
   document.getElementById('logoutVendorAccountBtn').addEventListener('click', ()=>{
     isVendorAccountSession = false; currentVendorAccountSession = null; roleDecided = false;
     currentProjectId = null; state = null; isSupplier = false; supplierVendorKey = null;
+    if(vendorLinkMode){
+      history.replaceState(null, '', location.pathname + '#vendorlink');
+      showVendorLinkProjectPicker();
+      return;
+    }
     history.replaceState(null, '', location.pathname);
     showEntryGate();
   });
@@ -2304,40 +2310,50 @@ function showProjectGate(){
 
 /* ---------- LINK VENDOR GLOBAL (admin, lintas semua project) ----------
    Diakses lewat baseURL + '#vendorlink' (tanpa kode project sama sekali).
-   Vendor pilih dulu project (nama pengantin) di sini, lalu diarahkan ke
-   showSupplierGate() seperti biasa. Halaman ini SENGAJA tidak punya opsi
-   Admin/Marketing/Klien sama sekali, supaya link ini murni cuma bisa
-   dipakai buat akses vendor lapangan — tidak bisa "kemana-mana". */
+   Vendor login pakai USERNAME & PASSWORD dari akun yang sudah dibuat admin
+   di Database Vendor (sama seperti tombol "Saya Vendor (Akun)" di halaman
+   utama) — bukan cuma pilih nama project bebas tanpa keamanan. Setelah
+   login, vendor lihat semua project tempat dia dijadwalkan lalu pilih mau
+   buka yang mana. Halaman ini SENGAJA tidak punya opsi Admin/Marketing/
+   Klien sama sekali, supaya link ini murni cuma bisa dipakai buat akses
+   vendor lapangan — tidak bisa "kemana-mana". */
 async function showVendorLinkProjectPicker(){
+  vendorLinkMode = true;
   const app = document.getElementById('app');
-  renderLoadingScreen('Memuat daftar project...');
-  await loadProjectsIndex();
-  const sorted = [...projectsIndex].sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
         <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
         <h2>Akses Vendor</h2>
-        <p>Kamu masuk sebagai vendor lapangan — tidak perlu PIN atau password. Pilih dulu project (nama calon pengantin) tempat kamu bertugas:</p>
-        <div class="gate-btns" style="flex-direction:column;max-height:380px;overflow-y:auto;">
-          ${sorted.length ? sorted.map(p=>`<button class="gate-btn" data-vlp-id="${escapeAttr(p.id)}">💍 ${escapeHtml(p.brideName)} &amp; ${escapeHtml(p.groomName)}</button>`).join('') : `<p style="color:var(--cream-dimmer);font-size:13px;">Belum ada project yang dibuat.</p>`}
+        <p>Masuk pakai username &amp; password akun vendor kamu (dibuatkan oleh admin ArtaJava).</p>
+        <div class="pin-box show" id="vendorLinkLoginBox">
+          <input type="text" id="vlkUserInput" placeholder="Username Vendor"/>
+          <div class="pin-box-pw-wrap"><input type="password" id="vlkPassInput" placeholder="Password Vendor"/><button type="button" class="pw-toggle" data-pw-toggle="vlkPassInput">👁</button></div>
+          <button class="btn primary" id="vlkSubmit" style="width:100%;">Masuk</button>
+          <div class="pin-error" id="vlkError"></div>
         </div>
       </div>
     </div>
   `;
-  document.querySelectorAll('[data-vlp-id]').forEach(btn=> btn.addEventListener('click', async ()=>{
-    const pid = btn.dataset.vlpId;
-    renderLoadingScreen('Membuka project...');
-    const proj = await loadProjectById(pid);
-    if(!proj){
-      showToast('Project ini sudah tidak ditemukan (mungkin dihapus admin).', true);
+  const tryLogin = async ()=>{
+    const username = document.getElementById('vlkUserInput').value.trim();
+    const password = document.getElementById('vlkPassInput').value.trim();
+    if(!username || !password){ document.getElementById('vlkError').textContent = 'Isi username dan password dulu.'; return; }
+    renderLoadingScreen('Memeriksa akun vendor...');
+    await Promise.all([loadVendorAccounts(), loadVendorSchedule()]);
+    const v = findVendorAccountByUsername(username);
+    if(v && v.password === password){
+      currentVendorAccountSession = v; isAdmin = false; isVendor = false; currentMarketing = null; roleDecided = false;
+      showVendorAccountDashboard();
+    } else {
       showVendorLinkProjectPicker();
-      return;
+      document.getElementById('vlkError').textContent = 'Username atau password vendor salah, atau akun belum dibuat admin.';
     }
-    currentProjectId = pid; state = proj; attachmentsHydrated = false;
-    showSupplierGate();
-    hydrateAttachmentsInBackground();
-  }));
+  };
+  document.getElementById('vlkSubmit').addEventListener('click', tryLogin);
+  document.getElementById('vlkPassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
+  document.getElementById('vlkUserInput').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('vlkPassInput').focus(); });
+  bindPwToggles();
 }
 
 function showSupplierGate(){
@@ -4054,6 +4070,11 @@ function attachHandlers(){
       isVendorAccountSession = false; currentVendorAccountSession = null;
       roleDecided = false; isSupplier = false; supplierVendorKey = null;
       currentProjectId = null; state = null;
+      if(vendorLinkMode){
+        history.replaceState(null, '', location.pathname + '#vendorlink');
+        showVendorLinkProjectPicker();
+        return;
+      }
       history.replaceState(null, '', location.pathname);
       showEntryGate();
       return;

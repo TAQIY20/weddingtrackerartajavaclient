@@ -148,6 +148,7 @@
   .hero-meta .dt-row{display:flex;gap:10px;align-items:center;}
   .hero-meta .dt-row input[type=date]{max-width:160px;flex:1 1 auto;}
   .hero-meta .dt-row input[type=time]{max-width:100px;flex:0 0 auto;}
+  .hero-meta .dt-row .tz-hint{font-size:11px;font-weight:700;color:var(--cream-dimmer);letter-spacing:.04em;flex-shrink:0;}
   .hero-meta input:focus{outline:none;border-color:var(--pink);}
   .names input{background:transparent;border:none;color:var(--cream);font-family:'Fraunces',serif;font-size:inherit;font-weight:600;width:47%;}
 
@@ -1875,6 +1876,13 @@ function bindPwToggles(){
 function digitsOnly(str){ return String(str||'').replace(/[^0-9]/g,''); }
 function fmtIDR(n){ n = Number(n)||0; return 'Rp ' + n.toLocaleString('id-ID'); }
 function fmtDate(iso){ if(!iso) return '-'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
+// Gabung tanggal + jam jadi satu kalimat yang nyambung, format jam ala Indonesia
+// (titik, bukan titik dua) dan selalu dikasih keterangan zona waktu WIB.
+function fmtDateTimeWIB(iso, time){
+  const d = fmtDate(iso);
+  if(!time) return d;
+  return `${d}, pukul ${time.replace(':', '.')} WIB`;
+}
 function fmtDateShort(iso){ if(!iso) return '-'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}); }
 function daysUntil(iso){ const now = new Date(); now.setHours(0,0,0,0); const d = new Date(iso+'T00:00:00'); return Math.round((d-now)/86400000); }
 function copyText(text){
@@ -2214,7 +2222,7 @@ function showVendorAccountDashboard(){
     <div class="topbar">
       <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
       <div class="topbar-right">
-        <div class="pic-chip"><div class="pic-info"><div class="pic-name">🧰 ${escapeHtml(acc.name)}</div><div class="pic-role">Akun Vendor · ${escapeHtml(acc.category||'-')}</div></div></div>
+        <div class="pic-chip">${acc.photoUrl ? `<img class="pic-avatar" src="${escapeAttr(acc.photoUrl)}" alt="${escapeHtml(acc.name)}"/>` : ''}<div class="pic-info"><div class="pic-name">${acc.photoUrl ? '' : '🧰 '}${escapeHtml(acc.name)}</div><div class="pic-role">Akun Vendor · ${escapeHtml(acc.category||'-')}</div></div></div>
         <button class="btn tiny ghost" id="logoutVendorAccountBtn">Keluar</button>
       </div>
     </div>
@@ -3330,18 +3338,23 @@ function render(){
   const picPhone = projMkt ? (projMkt.phone || '-') : PIC_PHONE_DISPLAY;
   const picWa = projMkt ? (projMkt.phone ? ('https://wa.me/62' + projMkt.phone.replace(/^0/, '')) : '#') : PIC_WA;
   const picRoleLabel = projMkt ? 'Marketing' : 'PIC WO';
-  // Logo vendor lapangan yang sedang akses: prioritaskan foto akun vendor yang
+  // Logo & nama vendor lapangan yang sedang akses: prioritaskan akun vendor yang
   // sedang login (kalau masuk lewat Link Vendor akun/username), kalau tidak ada
-  // pakai logo vendor yang sudah ditugaskan admin/marketing ke kategori ini.
+  // pakai data vendor yang sudah ditugaskan admin/marketing ke kategori ini —
+  // jadi chip-nya nampilin nama vendor asli (mis. "MUALIFA"), bukan cuma nama
+  // kategorinya ("MUA").
+  const supplierAssignedVendor = state.vendors[supplierVendorKey];
+  const supplierLoggedInAcc = (isVendorAccountSession && currentVendorAccountSession) ? currentVendorAccountSession : null;
   const supplierLogo = isSupplier
-    ? ((isVendorAccountSession && currentVendorAccountSession && currentVendorAccountSession.photoUrl)
-        ? currentVendorAccountSession.photoUrl
-        : vendorLogoUrl(state.vendors[supplierVendorKey]))
+    ? ((supplierLoggedInAcc && supplierLoggedInAcc.photoUrl) ? supplierLoggedInAcc.photoUrl : vendorLogoUrl(supplierAssignedVendor))
+    : null;
+  const supplierDisplayName = isSupplier
+    ? ((supplierLoggedInAcc && supplierLoggedInAcc.name) ? supplierLoggedInAcc.name : ((supplierAssignedVendor && supplierAssignedVendor.name) ? supplierAssignedVendor.name : (supplierVendorKey||'Vendor')))
     : null;
   const topPicChipHtml = isAdmin
     ? `<div class="pic-chip"><div class="pic-info"><div class="pic-name">🛡️ Admin</div><div class="pic-role">Akses penuh ke semua project &amp; marketing</div></div></div>`
     : isSupplier
-    ? `<div class="pic-chip">${supplierLogo ? `<img class="pic-avatar" src="${escapeAttr(supplierLogo)}" alt="${escapeHtml(supplierVendorKey||'Vendor')}"/>` : ''}<div class="pic-info"><div class="pic-name">${supplierLogo ? '' : '🧰 '}${escapeHtml(supplierVendorKey||'Vendor')}</div><div class="pic-role">Akses vendor lapangan</div></div></div>`
+    ? `<div class="pic-chip">${supplierLogo ? `<img class="pic-avatar" src="${escapeAttr(supplierLogo)}" alt="${escapeHtml(supplierDisplayName)}"/>` : ''}<div class="pic-info"><div class="pic-name">${supplierLogo ? '' : '🧰 '}${escapeHtml(supplierDisplayName)}</div><div class="pic-role">${escapeHtml(supplierVendorKey||'Vendor')} · Akses vendor lapangan</div></div></div>`
     : `<div class="pic-chip">
           <img class="pic-avatar" src="${picPhoto}" alt="${escapeHtml(picName)}"/>
           <div class="pic-info">
@@ -3395,10 +3408,10 @@ function render(){
         </h1>
         <div class="hero-meta">
           <div class="item"><div class="label">Tanggal &amp; Lokasi Akad / Pemberkatan</div>
-            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="akadDateInput" value="${state.couple.akadDate}"><input type="time" id="akadTimeInput" value="${escapeAttr(state.couple.akadTime)}"></div>` : (fmtDate(state.couple.akadDate) + (state.couple.akadTime ? ' • ' + escapeHtml(state.couple.akadTime) : ''))}</div>
+            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="akadDateInput" value="${state.couple.akadDate}"><input type="time" id="akadTimeInput" value="${escapeAttr(state.couple.akadTime)}"><span class="tz-hint">WIB</span></div>` : escapeHtml(fmtDateTimeWIB(state.couple.akadDate, state.couple.akadTime))}</div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="akadLocationInput" placeholder="Lokasi akad/pemberkatan" value="${escapeAttr(state.couple.akadLocation)}">` : (state.couple.akadLocation || 'Lokasi belum diisi')}</div></div>
           <div class="item"><div class="label">Tanggal &amp; Lokasi Resepsi</div>
-            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="weddingDateInput" value="${state.couple.weddingDate}"><input type="time" id="weddingTimeInput" value="${escapeAttr(state.couple.weddingTime)}"></div>` : (fmtDate(state.couple.weddingDate) + (state.couple.weddingTime ? ' • ' + escapeHtml(state.couple.weddingTime) : ''))}</div>
+            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="weddingDateInput" value="${state.couple.weddingDate}"><input type="time" id="weddingTimeInput" value="${escapeAttr(state.couple.weddingTime)}"><span class="tz-hint">WIB</span></div>` : escapeHtml(fmtDateTimeWIB(state.couple.weddingDate, state.couple.weddingTime))}</div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="venueInput" placeholder="Lokasi resepsi" value="${escapeAttr(state.couple.venueName)}">` : (state.couple.venueName || 'Lokasi belum diisi')}</div></div>
         </div>
       </div>

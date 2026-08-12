@@ -1917,7 +1917,17 @@ function refreshPaymentSummary(){
 /* ---------- ROLE / PROJECT GATE ---------- */
 function paintGateForCurrentHash(){
   if(location.hash === '#client'){ showClientPasswordGate(); }
-  else if(location.hash === '#vendor'){ showSupplierGate(); }
+  else if(location.hash === '#vendor'){
+    // Ini cuma kepanggil pas HALAMAN BARU DIBUKA/DI-REFRESH (bukan pas navigasi
+    // biasa di dalam sesi yang sedang jalan). Dulu di sini langsung showSupplierGate()
+    // — akibatnya kalau vendor refresh browser pas lagi buka salah satu project,
+    // dia nyelonong balik ke pilihan kategori vendor project itu TANPA login ulang
+    // (bypass login akun vendor). Sekarang di-redirect balik ke halaman login
+    // "Link Vendor" supaya refresh selalu minta login lagi, tidak pernah nyangkut
+    // di project tertentu tanpa lewat login.
+    history.replaceState(null, '', location.pathname + '#vendorlink');
+    showVendorLinkProjectPicker();
+  }
   else { showProjectGate(); }
 }
 async function initRoleFlow(){

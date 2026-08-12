@@ -1378,9 +1378,13 @@ async function deleteProject(id){
     }
   }catch(e){ /* kalau gagal ambil data lama, lanjut hapus project-nya saja */ }
   projectsIndex = projectsIndex.filter(p=>p.id!==id);
+  if(!Array.isArray(vendorSchedule)) vendorSchedule = [];
+  const hadScheduleEntries = vendorSchedule.some(e=>e.projectId===id);
+  vendorSchedule = vendorSchedule.filter(e=>e.projectId!==id);
   await Promise.all([
     window.storage.delete(projectKey(id), true).catch(()=>{}),
-    saveProjectsIndex()
+    saveProjectsIndex(),
+    hadScheduleEntries ? saveVendorSchedule().catch(()=>{}) : Promise.resolve()
   ]);
 }
 
@@ -3747,12 +3751,10 @@ function renderVendorCard(key, v, opts){
         ${(isVendor && v.vendorAccountId) ? `<div style="font-size:11.5px;color:var(--cream-dimmer);margin-top:4px;">🧰 Terhubung ke akun vendor — kontak otomatis terisi</div>` : ''}
       </div>
       <div class="v-field"><label>Kontak</label><input data-field="contact" value="${escapeAttr(v.contact)}" placeholder="No. WA / Email" ${isVendor?'':'disabled'}/></div>
-      ${!isSupplier ? `
+      ${(!isSupplier && (isVendor || v.dealPriceVisible)) ? `
       <div class="v-field" data-dealprice-wrap>
-        <label>Harga Deal ${isVendor ? `<button type="button" class="btn tiny ghost" data-action="toggle-dealprice" style="margin-left:6px;padding:1px 8px;font-size:10.5px;">${v.dealPriceVisible ? '🙈 Sembunyikan dari klien' : '👁️ Tampilkan ke klien'}</button>` : ''}</label>
-        ${(isVendor || v.dealPriceVisible)
-          ? `<input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/>`
-          : `<div class="empty-mini">Harga deal disembunyikan oleh admin/marketing.</div>`}
+        <label>Harga Deal ${isVendor ? `<button type="button" class="btn tiny ghost" data-action="toggle-dealprice" style="margin-left:6px;padding:1px 8px;font-size:10.5px;">${v.dealPriceVisible ? '🔒 Sembunyikan dari klien' : '👁️ Tampilkan ke klien'}</button>` : ''}</label>
+        ${v.dealPriceVisible ? `<input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/>` : ''}
       </div>` : ''}
       <div class="v-field"><label>Status</label>
         <select data-field="status" ${isVendor?'':'disabled'}>

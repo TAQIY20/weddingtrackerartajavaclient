@@ -145,10 +145,12 @@
   .hero-meta .item .label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--cream-dimmer);margin-bottom:4px;}
   .hero-meta .item .val{font-size:15px;font-weight:600;}
   .hero-meta input[type=date], .hero-meta input[type=time], .hero-meta input[type=text]{background:transparent;border:none;border-bottom:1px dashed var(--card-border);color:var(--cream);font-family:inherit;font-size:15px;font-weight:600;padding:2px 0;width:100%;max-width:280px;box-sizing:border-box;}
+  .hero-meta .dt-stack{display:flex;flex-direction:column;gap:4px;width:100%;}
+  .hero-meta .dt-stack .val-row{width:100%;}
   .hero-meta .dt-row{display:flex;gap:10px;align-items:center;}
-  .hero-meta .dt-row input[type=date]{max-width:160px;flex:1 1 auto;}
   .hero-meta .dt-row input[type=time]{max-width:100px;flex:0 0 auto;}
   .hero-meta .dt-row .tz-hint{font-size:11px;font-weight:700;color:var(--cream-dimmer);letter-spacing:.04em;flex-shrink:0;}
+  .hero-meta .time-line{font-size:13px;color:var(--cream-dimmer);font-weight:600;}
   .hero-meta input:focus{outline:none;border-color:var(--pink);}
   .names input{background:transparent;border:none;color:var(--cream);font-family:'Fraunces',serif;font-size:inherit;font-weight:600;width:47%;}
 
@@ -1876,13 +1878,6 @@ function bindPwToggles(){
 function digitsOnly(str){ return String(str||'').replace(/[^0-9]/g,''); }
 function fmtIDR(n){ n = Number(n)||0; return 'Rp ' + n.toLocaleString('id-ID'); }
 function fmtDate(iso){ if(!iso) return '-'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
-// Gabung tanggal + jam jadi satu kalimat yang nyambung, format jam ala Indonesia
-// (titik, bukan titik dua) dan selalu dikasih keterangan zona waktu WIB.
-function fmtDateTimeWIB(iso, time){
-  const d = fmtDate(iso);
-  if(!time) return d;
-  return `${d}, pukul ${time.replace(':', '.')} WIB`;
-}
 function fmtDateShort(iso){ if(!iso) return '-'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}); }
 function daysUntil(iso){ const now = new Date(); now.setHours(0,0,0,0); const d = new Date(iso+'T00:00:00'); return Math.round((d-now)/86400000); }
 function copyText(text){
@@ -3408,10 +3403,16 @@ function render(){
         </h1>
         <div class="hero-meta">
           <div class="item"><div class="label">Tanggal &amp; Lokasi Akad / Pemberkatan</div>
-            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="akadDateInput" value="${state.couple.akadDate}"><input type="time" id="akadTimeInput" value="${escapeAttr(state.couple.akadTime)}"><span class="tz-hint">WIB</span></div>` : escapeHtml(fmtDateTimeWIB(state.couple.akadDate, state.couple.akadTime))}</div>
+            <div class="val dt-stack">
+              <div class="val-row">${isVendor ? `<input type="date" id="akadDateInput" value="${state.couple.akadDate}">` : escapeHtml(fmtDate(state.couple.akadDate))}</div>
+              <div class="val-row time-line">${isVendor ? `<div class="dt-row"><input type="time" id="akadTimeInput" value="${escapeAttr(state.couple.akadTime)}"><span class="tz-hint">WIB</span></div>` : (state.couple.akadTime ? `🕐 ${escapeHtml(state.couple.akadTime.replace(':','.'))} WIB` : '')}</div>
+            </div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="akadLocationInput" placeholder="Lokasi akad/pemberkatan" value="${escapeAttr(state.couple.akadLocation)}">` : (state.couple.akadLocation || 'Lokasi belum diisi')}</div></div>
           <div class="item"><div class="label">Tanggal &amp; Lokasi Resepsi</div>
-            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="weddingDateInput" value="${state.couple.weddingDate}"><input type="time" id="weddingTimeInput" value="${escapeAttr(state.couple.weddingTime)}"><span class="tz-hint">WIB</span></div>` : escapeHtml(fmtDateTimeWIB(state.couple.weddingDate, state.couple.weddingTime))}</div>
+            <div class="val dt-stack">
+              <div class="val-row">${isVendor ? `<input type="date" id="weddingDateInput" value="${state.couple.weddingDate}">` : escapeHtml(fmtDate(state.couple.weddingDate))}</div>
+              <div class="val-row time-line">${isVendor ? `<div class="dt-row"><input type="time" id="weddingTimeInput" value="${escapeAttr(state.couple.weddingTime)}"><span class="tz-hint">WIB</span></div>` : (state.couple.weddingTime ? `🕐 ${escapeHtml(state.couple.weddingTime.replace(':','.'))} WIB` : '')}</div>
+            </div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="venueInput" placeholder="Lokasi resepsi" value="${escapeAttr(state.couple.venueName)}">` : (state.couple.venueName || 'Lokasi belum diisi')}</div></div>
         </div>
       </div>

@@ -3456,6 +3456,7 @@ function renderTimeline(){
   `;
 }
 
+function vNameListId(key, isExtra){ return 'vnl_' + (isExtra?'ex_':'c_') + String(key).replace(/[^a-zA-Z0-9_-]/g,'_'); }
 function renderVendorCard(key, v, opts){
   opts = opts || {};
   const isExtra = !!opts.extra;
@@ -3470,15 +3471,11 @@ function renderVendorCard(key, v, opts){
         </div>
         ${isVendor ? `<button class="btn small danger" data-action="delete-vendor">🗑️ Hapus</button>` : ''}
       </div>
-      <div class="v-field"><label>Nama Vendor</label><input data-field="name" value="${escapeAttr(v.name)}" placeholder="Belum diisi" ${isVendor?'':'disabled'}/></div>
+      <div class="v-field"><label>Nama Vendor</label><input data-field="name" value="${escapeAttr(v.name)}" placeholder="Belum diisi" ${isVendor?`list="${vNameListId(key,isExtra)}"`:'disabled'}/>
+        ${isVendor ? `<datalist id="${vNameListId(key,isExtra)}">${(isExtra ? vendorAccounts : vendorAccounts.filter(va=> !va.category || va.category===key)).map(va=>`<option value="${escapeAttr(va.name)}">`).join('')}</datalist>` : ''}
+        ${(isVendor && v.vendorAccountId) ? `<div style="font-size:11.5px;color:var(--cream-dimmer);margin-top:4px;">🧰 Terhubung ke akun vendor — kontak otomatis terisi</div>` : ''}
+      </div>
       <div class="v-field"><label>Kontak</label><input data-field="contact" value="${escapeAttr(v.contact)}" placeholder="No. WA / Email" ${isVendor?'':'disabled'}/></div>
-      ${isVendor ? `
-      <div class="v-field"><label>Akun Vendor Terhubung</label>
-        <select data-field="vendorAccountId">
-          <option value="">— Belum terhubung akun —</option>
-          ${(isExtra ? vendorAccounts : vendorAccounts.filter(va=> !va.category || va.category===key)).map(va=>`<option value="${escapeAttr(va.id)}" ${v.vendorAccountId===va.id?'selected':''}>${escapeHtml(va.name)}${va.category?` (${escapeHtml(va.category)})`:''}</option>`).join('')}
-        </select>
-      </div>` : (v.vendorAccountId ? (()=>{ const va = findVendorAccountById(v.vendorAccountId); return va ? `<div class="v-field"><label>Akun Vendor</label><div>🧰 ${escapeHtml(va.name)}</div></div>` : ''; })() : '')}
       <div class="v-field"><label>Harga Deal</label><input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/></div>
       <div class="v-field"><label>Status</label>
         <select data-field="status" ${isVendor?'':'disabled'}>
@@ -4186,11 +4183,26 @@ function attachHandlers(){
         return;
       }
       const evt = field.tagName==='SELECT' ? 'change' : 'input';
-      field.addEventListener(evt, e=>{
-        v[fkey] = (fkey==='vendorAccountId') ? (e.target.value || null) : e.target.value;
-        scheduleSave();
-        if(fkey==='status') render();
-      });
+      field.addEventListener(evt, e=>{ v[fkey] = e.target.value; scheduleSave(); if(fkey==='status') render(); });
+      if(fkey==='name'){
+        // Kalau nama vendor yang diketik/pilih dari saran (datalist) persis sama dengan
+        // salah satu nama di Database Vendor, otomatis hubungkan & isi kontaknya —
+        // supaya admin/marketing tidak perlu pilih dropdown terpisah lagi.
+        field.addEventListener('blur', ()=>{
+          const candidates = isExtra ? vendorAccounts : vendorAccounts.filter(va=> !va.category || va.category===key);
+          const typed = (v.name||'').trim().toLowerCase();
+          const match = typed ? candidates.find(va=> va.name.trim().toLowerCase() === typed) : null;
+          if(match){
+            const changed = v.vendorAccountId !== match.id || (match.phone && v.contact !== match.phone);
+            v.vendorAccountId = match.id;
+            if(match.phone) v.contact = match.phone;
+            if(changed){ scheduleSave(); render(); }
+          } else if(v.vendorAccountId){
+            v.vendorAccountId = null;
+            scheduleSave(); render();
+          }
+        });
+      }
       if(fkey==='category'){
         // Render ulang penuh dipicu saat SELESAI mengetik (blur), bukan tiap huruf
         // diketik — sebelumnya render() dipanggil di setiap keystroke dan bikin

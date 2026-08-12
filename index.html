@@ -526,6 +526,8 @@ async function deleteFileFromBlob(url){
 const APP_VERSION = 'v4';
 const PROJECTS_INDEX_KEY = 'wedding_projects_index_' + APP_VERSION;
 const MASTER_SETTINGS_KEY = 'wedding_master_settings_' + APP_VERSION;
+const VENDOR_ACCOUNTS_KEY = 'wedding_vendor_accounts_' + APP_VERSION;
+const VENDOR_SCHEDULE_KEY = 'wedding_vendor_schedule_' + APP_VERSION;
 const MARKETING_LIST_KEY = 'wedding_marketing_list_' + APP_VERSION;
 const PACKAGE_LIST_KEY = 'wedding_package_list_' + APP_VERSION;
 const CUSTOM_VENDOR_CATS_KEY = 'wedding_custom_vendor_cats_' + APP_VERSION;
@@ -648,12 +650,16 @@ const PIC_WA = "https://wa.me/6285755768427";
 let isVendor = false;
 let isSupplier = false;        // true when logged in via the field-vendor link (real supplier: MUA/Katering/dll — no PIN, no password)
 let supplierVendorKey = null;  // which vendor category this supplier session represents
+let isVendorAccountSession = false;   // true when currently viewing a project after logging in via a real Vendor Account (username+password)
+let currentVendorAccountSession = null; // the vendor account object ({id,name,category,phone,username,password}) for the session above
 let isAdmin = false;            // true only for the Admin role (full access to everything)
 let roleDecided = false;
 let currentProjectId = null;   // id of the currently open project (from ?p=)
 let projectsIndex = [];        // list of {id, brideName, groomName, weddingDate, createdAt, marketingId}
 let masterSettings = null;     // { vendorPin } -- vendorPin is now the Admin PIN
 let vendorAuthed = false;      // has this session passed the master vendor PIN?
+let vendorAccounts = [];       // database vendor: [{id,name,category,phone,username,password}]
+let vendorSchedule = [];       // jadwal lintas project: [{vendorAccountId,projectId,catKey,catLabel,brideName,groomName,weddingDate}]
 let viewingDashboard = false;  // showing the multi-project dashboard
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
@@ -757,7 +763,7 @@ function defaultTimeline(weddingDate){
   });
 }
 
-function blankVendor(){ return {name:'', contact:'', price:0, status:'belum', note:'', addons:[], progress:[], packageItems:[]}; }
+function blankVendor(){ return {name:'', contact:'', price:0, status:'belum', note:'', addons:[], progress:[], packageItems:[], vendorAccountId:null}; }
 function defaultVendors(){ const obj = {}; VENDOR_CATS.forEach(c => { obj[c.key] = blankVendor(); }); return obj; }
 
 function genPassword(len){
@@ -860,6 +866,7 @@ function normalizeState(s){
     if(typeof v.cateringPackageDesc !== 'string') v.cateringPackageDesc = '';
     if(typeof v.cateringPaxBuffet !== 'string') v.cateringPaxBuffet = '';
     if(isExtra && !v.emoji) v.emoji = '⭐';
+    if(typeof v.vendorAccountId === 'undefined') v.vendorAccountId = null;
     // migrate price from free text/string to number
     if(typeof v.price !== 'number'){ v.price = parseInt(digitsOnly(v.price),10) || 0; }
     v.progress.forEach(p=>{ if(!p.date) p.date = todayISO(); });
@@ -1096,6 +1103,88 @@ function findMarketingByPin(pin){
 }
 function findMarketingById(id){
   return marketingList.find(m => m.id === id) || null;
+}
+
+/* ---------- AKUN VENDOR (database vendor, admin-managed, shared across all projects) ----------
+   Ini beda dengan "Link Vendor" lama (isSupplier) yang tanpa login & cuma buat 1 project.
+   Akun Vendor di sini punya username+password sendiri, dan bisa login dari halaman utama
+   buat lihat SEMUA project/klien tempat dia dijadwalkan (lintas project), baru dari situ
+   masuk ke project yang dipilih (tetap pakai tampilan vendor lapangan yang sudah ada). */
+let vendorAccountsLoadFailed = false;
+async function loadVendorAccounts(){
+  vendorAccountsLoadFailed = false;
+  try{
+    const res = await storageGetWithRetry(VENDOR_ACCOUNTS_KEY, true);
+    vendorAccounts = (res && res.value) ? JSON.parse(res.value) : [];
+  }catch(e){
+    // Sama seperti daftar marketing/paket: jangan kosongkan daftar yang sudah ada
+    // di memori hanya karena pengambilan ulang gagal.
+    vendorAccountsLoadFailed = true;
+  }
+  vendorAccounts.forEach(v=>{ if(!v.category) v.category = ''; if(!v.phone) v.phone = ''; });
+}
+async function saveVendorAccounts(){
+  const ok = await storageSetWithRetry(VENDOR_ACCOUNTS_KEY, JSON.stringify(vendorAccounts), true);
+  if(!ok) return false;
+  try{
+    const res = await window.storage.get(VENDOR_ACCOUNTS_KEY, true);
+    const saved = (res && res.value) ? JSON.parse(res.value) : [];
+    if(JSON.stringify(saved) !== JSON.stringify(vendorAccounts)){ lastStorageError = 'Data tidak cocok setelah verifikasi baca-ulang.'; return false; }
+  }catch(e){ lastStorageError = e.message || String(e); return false; }
+  return true;
+}
+function findVendorAccountById(id){
+  return vendorAccounts.find(v => v.id === id) || null;
+}
+function findVendorAccountByUsername(username){
+  const u = (username||'').trim().toLowerCase();
+  return vendorAccounts.find(v => (v.username||'').trim().toLowerCase() === u) || null;
+}
+
+/* ---------- JADWAL VENDOR (index lintas project: akun vendor mana dijadwalkan di project mana) ----------
+   Didenormalisasi (nama klien & tanggal nikah ikut disalin ke sini) supaya akun vendor bisa
+   lihat jadwalnya tanpa harus membuka SEMUA project satu-satu. Disinkronkan ulang tiap project
+   disimpan oleh admin/marketing lewat syncVendorScheduleForProject(). */
+let vendorScheduleLoadFailed = false;
+async function loadVendorSchedule(){
+  vendorScheduleLoadFailed = false;
+  try{
+    const res = await storageGetWithRetry(VENDOR_SCHEDULE_KEY, true);
+    vendorSchedule = (res && res.value) ? JSON.parse(res.value) : [];
+  }catch(e){
+    vendorScheduleLoadFailed = true;
+    if(!Array.isArray(vendorSchedule)) vendorSchedule = [];
+  }
+}
+async function saveVendorSchedule(){
+  return await storageSetWithRetry(VENDOR_SCHEDULE_KEY, JSON.stringify(vendorSchedule), true);
+}
+function scheduleEntriesForProject(proj){
+  const entries = [];
+  activeVendorCatsFor(proj).forEach(c=>{
+    const v = proj.vendors[c.key];
+    if(v && v.vendorAccountId){
+      entries.push({ vendorAccountId: v.vendorAccountId, projectId: proj.id, catKey: c.key, catLabel: c.key,
+        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate });
+    }
+  });
+  (proj.extraVendors||[]).forEach(v=>{
+    if(v.vendorAccountId){
+      entries.push({ vendorAccountId: v.vendorAccountId, projectId: proj.id, catKey: v.id, catLabel: v.category || 'Vendor Tambahan',
+        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate });
+    }
+  });
+  return entries;
+}
+function activeVendorCatsFor(proj){
+  return VENDOR_CATS.filter(c=> !(proj.removedVendorCats||[]).includes(c.key));
+}
+// Sinkronkan bagian milik SATU project di daftar jadwal global, lalu simpan ke storage.
+async function syncVendorScheduleForProject(proj){
+  if(!Array.isArray(vendorSchedule)) vendorSchedule = [];
+  vendorSchedule = vendorSchedule.filter(e=> e.projectId !== proj.id);
+  vendorSchedule.push(...scheduleEntriesForProject(proj));
+  await saveVendorSchedule();
 }
 
 /* ---------- PAKET VENDOR (admin-managed, shared across all projects) ---------- */
@@ -1465,6 +1554,7 @@ async function persist(){
       projectsIndex,
       customVendorCatsExtra: VENDOR_CATS.filter(c=> !BUILTIN_VENDOR_CAT_KEYS.has(c.key)).map(c=>({key:c.key, emoji:c.emoji})),
     });
+    if(isVendor){ syncVendorScheduleForProject(state).catch(()=>{}); }
   } else {
     showToast('⚠️ Gagal menyimpan — cek koneksi & coba edit lagi', true);
   }
@@ -1816,12 +1906,14 @@ async function initRoleFlow(){
 
     // Jalankan semua permintaan data bersamaan (paralel), bukan berurutan,
     // supaya waktu tunggu total jauh lebih singkat.
-    const [, , , , , proj] = await Promise.all([
+    const [, , , , , , , proj] = await Promise.all([
       loadMasterSettings(),
       loadMarketingListMeta(),
       loadCustomVendorCats(),
       loadPackageList(),
       loadProjectsIndex(),
+      loadVendorAccounts(),
+      loadVendorSchedule(),
       loadProjectById(currentProjectId)
     ]);
     if(!proj){ if(!paintedFromCache) showProjectNotFound(); return; }
@@ -1853,7 +1945,9 @@ async function initRoleFlow(){
       loadMarketingListMeta(),
       loadCustomVendorCats(),
       loadPackageList(),
-      loadProjectsIndex()
+      loadProjectsIndex(),
+      loadVendorAccounts(),
+      loadVendorSchedule()
     ]);
     hydrateMarketingPhotosInBackground();
     showEntryGate();
@@ -1889,6 +1983,7 @@ function showEntryGate(){
         <div class="gate-btns">
           ${hideAdmin ? '' : `<button class="gate-btn vendor" id="gateAdminBtn"><span class="ge">🛡️</span> Saya Admin</button>`}
           <button class="gate-btn vendor" id="gateMarketingBtn"><span class="ge">🤝</span> Saya Marketing</button>
+          <button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>
           <button class="gate-btn" id="gateClientBtn"><span class="ge">💍</span> Saya Calon Pengantin (Klien)</button>
         </div>
         ${hideAdmin ? '' : `
@@ -1901,6 +1996,12 @@ function showEntryGate(){
           <input type="password" id="marketingPinInput" inputmode="numeric" maxlength="8" placeholder="Masukkan PIN Marketing kamu"/>
           <button class="btn primary" id="marketingPinSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="marketingPinError"></div>
+        </div>
+        <div class="pin-box" id="vendorAccountBox">
+          <input type="text" id="vendorAccountUserInput" placeholder="Username Vendor"/>
+          <div class="pin-box-pw-wrap"><input type="password" id="vendorAccountPassInput" placeholder="Password Vendor"/><button type="button" class="pw-toggle" data-pw-toggle="vendorAccountPassInput">👁</button></div>
+          <button class="btn primary" id="vendorAccountSubmit" style="width:100%;">Masuk</button>
+          <div class="pin-error" id="vendorAccountError"></div>
         </div>
         <div class="pin-box" id="clientCodeBox">
           <input type="text" id="clientCodeInput" placeholder="Kode Project (dari vendor kamu)" style="letter-spacing:.1em;"/>
@@ -1946,6 +2047,29 @@ function showEntryGate(){
   document.getElementById('marketingPinSubmit').addEventListener('click', tryMarketingPin);
   document.getElementById('marketingPinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryMarketingPin(); });
 
+  document.getElementById('gateVendorAccountBtn').addEventListener('click', ()=>{
+    document.getElementById('vendorAccountBox').classList.add('show');
+    document.getElementById('vendorAccountUserInput').focus();
+  });
+  const tryVendorAccountLogin = async ()=>{
+    const username = document.getElementById('vendorAccountUserInput').value.trim();
+    const password = document.getElementById('vendorAccountPassInput').value.trim();
+    if(!username || !password){ document.getElementById('vendorAccountError').textContent = 'Isi username dan password dulu.'; return; }
+    renderLoadingScreen('Memeriksa akun vendor...');
+    await Promise.all([loadVendorAccounts(), loadVendorSchedule()]);
+    const v = findVendorAccountByUsername(username);
+    if(v && v.password === password){
+      currentVendorAccountSession = v; isAdmin = false; isVendor = false; currentMarketing = null; roleDecided = false;
+      showVendorAccountDashboard();
+    } else {
+      showEntryGate();
+      document.getElementById('gateVendorAccountBtn').click();
+      showToast('Username atau password vendor salah, atau akun belum dibuat admin.', true);
+    }
+  };
+  document.getElementById('vendorAccountSubmit').addEventListener('click', tryVendorAccountLogin);
+  document.getElementById('vendorAccountPassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryVendorAccountLogin(); });
+
   document.getElementById('gateClientBtn').addEventListener('click', ()=>{
     document.getElementById('clientCodeBox').classList.add('show');
     document.getElementById('clientCodeInput').focus();
@@ -1970,6 +2094,71 @@ function showEntryGate(){
   document.getElementById('clientCodeSubmit').addEventListener('click', tryClientCode);
   document.getElementById('clientCodePassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryClientCode(); });
   bindPwToggles();
+}
+
+/* ---------- DASHBOARD AKUN VENDOR (jadwal lintas project milik satu vendor) ---------- */
+function vendorScheduleSorted(){
+  const acc = currentVendorAccountSession;
+  if(!acc) return [];
+  const todayMs = new Date(todayISO() + 'T00:00:00').getTime();
+  const distance = (e)=>{
+    if(!e.weddingDate) return Infinity;
+    const d = new Date(e.weddingDate + 'T00:00:00').getTime();
+    if(isNaN(d)) return Infinity;
+    return d >= todayMs ? (d - todayMs) : (Number.MAX_SAFE_INTEGER - (todayMs - d));
+  };
+  return vendorSchedule.filter(e=> e.vendorAccountId === acc.id).sort((a,b)=> distance(a) - distance(b));
+}
+function showVendorAccountDashboard(){
+  const acc = currentVendorAccountSession;
+  const app = document.getElementById('app');
+  const myEntries = vendorScheduleSorted();
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+      <div class="topbar-right">
+        <div class="pic-chip"><div class="pic-info"><div class="pic-name">🧰 ${escapeHtml(acc.name)}</div><div class="pic-role">Akun Vendor · ${escapeHtml(acc.category||'-')}</div></div></div>
+        <button class="btn tiny ghost" id="logoutVendorAccountBtn">Keluar</button>
+      </div>
+    </div>
+    <div class="section-head">
+      <div><h2>Jadwal Saya</h2><p>Semua klien/project tempat kamu dijadwalkan sebagai vendor.</p></div>
+    </div>
+    <div id="vendorScheduleList" class="vendor-grid">
+      ${myEntries.length ? myEntries.map(e=>`
+        <div class="v-card">
+          <div class="v-cat"><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(e.brideName)} &amp; ${escapeHtml(e.groomName)}</span></div></div>
+          <div class="v-field"><label>Tanggal Nikah</label><div>${fmtDate(e.weddingDate)}</div></div>
+          <div class="v-field"><label>Kategori Kamu</label><div>${escapeHtml(e.catLabel)}</div></div>
+          <div class="row-actions" style="margin-top:10px;">
+            <button class="btn small primary" data-action="open-vendor-project" data-pid="${escapeAttr(e.projectId)}" data-catlabel="${escapeAttr(e.catLabel)}">Buka Project →</button>
+          </div>
+        </div>
+      `).join('') : `<div class="empty-mini">Belum ada project yang menjadwalkan kamu. Hubungi admin/marketing kalau menurut kamu ini keliru.</div>`}
+    </div>
+  `;
+  document.getElementById('logoutVendorAccountBtn').addEventListener('click', ()=>{
+    isVendorAccountSession = false; currentVendorAccountSession = null; roleDecided = false;
+    currentProjectId = null; state = null; isSupplier = false; supplierVendorKey = null;
+    history.replaceState(null, '', location.pathname);
+    showEntryGate();
+  });
+  document.querySelectorAll('[data-action="open-vendor-project"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const pid = btn.dataset.pid, catLabel = btn.dataset.catlabel;
+    renderLoadingScreen('Membuka project...');
+    const proj = await loadProjectById(pid);
+    if(!proj){
+      showToast('Project ini sudah tidak ditemukan (mungkin dihapus admin).', true);
+      showVendorAccountDashboard();
+      return;
+    }
+    currentProjectId = pid; state = proj; attachmentsHydrated = false;
+    isSupplier = true; supplierVendorKey = catLabel; isVendor = false; isAdmin = false; currentMarketing = null;
+    isVendorAccountSession = true; roleDecided = true; currentTab = 'beranda';
+    history.replaceState(null, '', location.pathname + '?p=' + pid + '#vendor');
+    render();
+    hydrateAttachmentsInBackground();
+  }));
 }
 
 function showProjectGate(){
@@ -2318,6 +2507,16 @@ function renderProjectDashboard(){
       ${marketingList.length ? marketingList.map(marketingCardHtml).join('') : `<div class="empty-mini">Belum ada akun marketing. Tambahkan supaya mereka bisa punya link klien sendiri-sendiri.</div>`}
     </div>
     ` : ''}
+    ${isAdmin ? `
+    <div class="linkpanel">
+      <div class="lp-title">Login Khusus Akun Vendor</div>
+      <div class="lp-note">Vendor login pakai username &amp; password dari akun yang kamu buat di bawah ini (bukan link project). Setelah login, vendor otomatis lihat SEMUA project tempat dia dijadwalkan (tab "Jadwal Saya"), lalu tinggal klik "Buka Project" — bukan cuma bisa akses 1 project seperti Link Vendor biasa.</div>
+    </div>
+    <div class="extra-vendor-head"><h2>Database Vendor</h2><button class="btn primary small" id="newVendorAccountBtn">+ Tambah Vendor</button></div>
+    <div id="vendorAccountListBox" class="vendor-grid">
+      ${vendorAccounts.length ? vendorAccounts.map(vendorAccountCardHtml).join('') : `<div class="empty-mini">Belum ada akun vendor. Tambahkan dulu di sini, baru bisa dijadwalkan ke project lewat tab "Vendor" di tiap project.</div>`}
+    </div>
+    ` : ''}
   `;
   document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
   const copyMarketingLinkBtn = document.getElementById('copyMarketingLink');
@@ -2327,6 +2526,7 @@ function renderProjectDashboard(){
     // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan.
     const keepHash = location.hash === '#marketing' ? '#marketing' : '';
     isVendor=false; isAdmin=false; vendorAuthed=false; currentMarketing=null; viewingDashboard=false; roleDecided=false;
+    isVendorAccountSession=false; currentVendorAccountSession=null; isSupplier=false; supplierVendorKey=null;
     currentProjectId = null; state = null;
     history.replaceState(null, '', location.pathname + keepHash);
     showEntryGate();
@@ -2404,6 +2604,36 @@ function renderProjectDashboard(){
           }))
         ]);
         await saveProjectsIndex();
+        hideLoadingOverlay();
+        renderProjectDashboard();
+      }
+    }));
+    const newVendorAccountBtn = document.getElementById('newVendorAccountBtn');
+    if(newVendorAccountBtn) newVendorAccountBtn.addEventListener('click', ()=> showVendorAccountForm());
+    document.querySelectorAll('[data-action="edit-vendor-account"]').forEach(btn=> btn.addEventListener('click', ()=> showVendorAccountForm(btn.dataset.id)));
+    document.querySelectorAll('[data-action="delete-vendor-account"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+      if(vendorAccountsLoadFailed){
+        await customAlert('Daftar akun vendor gagal dimuat lengkap dari server (koneksi lambat/gagal). Untuk menghindari akun vendor lain ikut terhapus, refresh halaman dulu sebelum menghapus.');
+        return;
+      }
+      if(await customConfirm('Hapus akun vendor ini? Semua penugasan vendor ini di project-project yang sudah ada akan dilepas (jadi "belum terhubung akun").')){
+        btn.disabled = true;
+        showLoadingOverlay('Menghapus akun vendor...');
+        const vid = btn.dataset.id;
+        // Lepas dulu semua penugasan vendor ini di project-project terkait (dari index jadwal),
+        // supaya field vendorAccountId di tiap project ikut bersih, bukan cuma link jadwalnya saja.
+        const affectedProjectIds = [...new Set(vendorSchedule.filter(e=>e.vendorAccountId===vid).map(e=>e.projectId))];
+        await Promise.all(affectedProjectIds.map(async pid=>{
+          const proj = await loadProjectById(pid);
+          if(!proj) return;
+          let changed = false;
+          Object.keys(proj.vendors||{}).forEach(k=>{ if(proj.vendors[k].vendorAccountId===vid){ proj.vendors[k].vendorAccountId=null; changed=true; } });
+          (proj.extraVendors||[]).forEach(v=>{ if(v.vendorAccountId===vid){ v.vendorAccountId=null; changed=true; } });
+          if(changed) await storageSetWithRetry(projectKey(pid), JSON.stringify(proj), true);
+        }));
+        vendorAccounts = vendorAccounts.filter(v=>v.id!==vid);
+        vendorSchedule = vendorSchedule.filter(e=>e.vendorAccountId!==vid);
+        await Promise.all([ saveVendorAccounts(), saveVendorSchedule() ]);
         hideLoadingOverlay();
         renderProjectDashboard();
       }
@@ -2552,6 +2782,94 @@ function showMarketingForm(editId){
       return;
     }
     showToast('Data marketing tersimpan ✓');
+    renderProjectDashboard();
+  });
+}
+
+function vendorAccountCardHtml(v){
+  const scheduleCount = vendorSchedule.filter(e=>e.vendorAccountId===v.id).length;
+  return `
+        <div class="v-card">
+          <div class="v-cat"><div class="catleft"><span class="emoji">🧰</span><span>${escapeHtml(v.name)}</span></div></div>
+          <div class="v-field"><label>Kategori</label><div>${escapeHtml(v.category || '-')}</div></div>
+          <div class="v-field"><label>No. Telepon</label><div>${escapeHtml(v.phone||'-')}</div></div>
+          <div class="v-field"><label>Username Login</label><div style="font-family:monospace;font-weight:700;">${escapeHtml(v.username)}</div></div>
+          <div class="v-field"><label>Password Login</label><div style="font-family:monospace;font-weight:700;">${escapeHtml(v.password)}</div></div>
+          <div class="v-field"><label>Dijadwalkan Di</label><div>${scheduleCount} project</div></div>
+          <div class="row-actions" style="margin-top:10px;">
+            <button class="btn small" data-action="edit-vendor-account" data-id="${v.id}">✏️ Edit</button>
+            <button class="btn small danger" data-action="delete-vendor-account" data-id="${v.id}">🗑️ Hapus</button>
+          </div>
+        </div>
+  `;
+}
+
+function showVendorAccountForm(editId){
+  const editing = editId ? findVendorAccountById(editId) : null;
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="gate-wrap">
+      <div class="gate-card">
+        <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
+        <h2>${editing ? 'Edit Akun Vendor' : 'Tambah Akun Vendor'}</h2>
+        <p>Nama usaha vendor, kategori, kontak, dan username/password buat mereka login lintas project.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
+          <input id="vaName" placeholder="Nama Vendor (misal: MUA Kartika)" value="${editing?escapeHtml(editing.name):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <select id="vaCategory" style="padding:12px 14px;border-radius:12px;width:100%;">
+            <option value="">— Pilih kategori —</option>
+            ${VENDOR_CATS.map(c=>`<option value="${escapeAttr(c.key)}" ${editing && editing.category===c.key?'selected':''}>${c.emoji||'⭐'} ${escapeHtml(c.key)}</option>`).join('')}
+          </select>
+          <input id="vaPhone" placeholder="Nomor Telepon / WA" value="${editing?escapeHtml(editing.phone||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="vaUsername" placeholder="Username Login" value="${editing?escapeHtml(editing.username):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="vaPassword" placeholder="Password Login" value="${editing?escapeHtml(editing.password):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn ghost" id="cancelVaForm" style="flex:1;">Batal</button>
+          <button class="btn primary" id="saveVaBtn" style="flex:1;">Simpan</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('cancelVaForm').addEventListener('click', ()=> renderProjectDashboard());
+  document.getElementById('saveVaBtn').addEventListener('click', async ()=>{
+    const name = document.getElementById('vaName').value.trim();
+    const category = document.getElementById('vaCategory').value;
+    const phone = document.getElementById('vaPhone').value.trim();
+    const username = document.getElementById('vaUsername').value.trim();
+    const password = document.getElementById('vaPassword').value.trim();
+    if(!name || !username || !password){ await customAlert('Nama, username, dan password wajib diisi.'); return; }
+    const btn = document.getElementById('saveVaBtn');
+    btn.disabled = true;
+    showLoadingOverlay('Menyimpan akun vendor...');
+    await loadVendorAccounts();
+    if(vendorAccountsLoadFailed){
+      hideLoadingOverlay();
+      btn.disabled = false;
+      await customAlert('Gagal mengambil daftar akun vendor terbaru dari server (koneksi lambat/gagal). Supaya akun vendor lain tidak ikut terhapus, coba lagi setelah koneksi stabil.');
+      return;
+    }
+    const stillEditing = editing ? findVendorAccountById(editing.id) : null;
+    if(vendorAccounts.some(v => v.username.trim().toLowerCase()===username.toLowerCase() && v.id!==(stillEditing?stillEditing.id:null))){
+      hideLoadingOverlay();
+      btn.disabled = false;
+      await customAlert('Username ini sudah dipakai akun vendor lain, pakai username lain.');
+      return;
+    }
+    if(stillEditing){
+      stillEditing.name=name; stillEditing.category=category; stillEditing.phone=phone; stillEditing.username=username; stillEditing.password=password;
+    } else if(editing){
+      vendorAccounts.push({ id: editing.id, name, category, phone, username, password });
+    } else {
+      vendorAccounts.push({ id: uid('va'), name, category, phone, username, password });
+    }
+    const ok = await saveVendorAccounts();
+    hideLoadingOverlay();
+    if(!ok){
+      btn.disabled = false;
+      await customAlert('Gagal menyimpan ke storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui'));
+      return;
+    }
+    showToast('Data akun vendor tersimpan ✓');
     renderProjectDashboard();
   });
 }
@@ -2835,6 +3153,7 @@ function render(){
       <div class="topbar-right">
         ${topPicChipHtml}
         ${isVendor ? `<button class="btn tiny ghost" id="backToDashboardBtn">📁 Semua Project</button>` : ''}
+        ${(isSupplier && isVendorAccountSession) ? `<button class="btn tiny ghost" id="backToVendorScheduleBtn">📅 Jadwal Saya</button>` : ''}
         ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
         ${!isVendor ? `<button class="btn tiny ghost" id="clientLogoutBtn">Keluar</button>` : ''}
       </div>
@@ -3153,6 +3472,13 @@ function renderVendorCard(key, v, opts){
       </div>
       <div class="v-field"><label>Nama Vendor</label><input data-field="name" value="${escapeAttr(v.name)}" placeholder="Belum diisi" ${isVendor?'':'disabled'}/></div>
       <div class="v-field"><label>Kontak</label><input data-field="contact" value="${escapeAttr(v.contact)}" placeholder="No. WA / Email" ${isVendor?'':'disabled'}/></div>
+      ${isVendor ? `
+      <div class="v-field"><label>Akun Vendor Terhubung</label>
+        <select data-field="vendorAccountId">
+          <option value="">— Belum terhubung akun —</option>
+          ${(isExtra ? vendorAccounts : vendorAccounts.filter(va=> !va.category || va.category===key)).map(va=>`<option value="${escapeAttr(va.id)}" ${v.vendorAccountId===va.id?'selected':''}>${escapeHtml(va.name)}${va.category?` (${escapeHtml(va.category)})`:''}</option>`).join('')}
+        </select>
+      </div>` : (v.vendorAccountId ? (()=>{ const va = findVendorAccountById(v.vendorAccountId); return va ? `<div class="v-field"><label>Akun Vendor</label><div>🧰 ${escapeHtml(va.name)}</div></div>` : ''; })() : '')}
       <div class="v-field"><label>Harga Deal</label><input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/></div>
       <div class="v-field"><label>Status</label>
         <select data-field="status" ${isVendor?'':'disabled'}>
@@ -3569,6 +3895,12 @@ function attachHandlers(){
   const backToDashboardBtn = document.getElementById('backToDashboardBtn');
   if(backToDashboardBtn) backToDashboardBtn.addEventListener('click', ()=>{ roleDecided = false; showProjectDashboard(true); });
 
+  const backToVendorScheduleBtn = document.getElementById('backToVendorScheduleBtn');
+  if(backToVendorScheduleBtn) backToVendorScheduleBtn.addEventListener('click', ()=>{
+    roleDecided = false; isSupplier = false; supplierVendorKey = null;
+    showVendorAccountDashboard();
+  });
+
   const changeMyPinBtn = document.getElementById('changeMyPin');
   if(changeMyPinBtn) changeMyPinBtn.addEventListener('click', async ()=>{
     const newPin = await customPrompt('PIN baru kamu:', currentMarketing.pin);
@@ -3592,6 +3924,15 @@ function attachHandlers(){
 
   const clientLogoutBtn = document.getElementById('clientLogoutBtn');
   if(clientLogoutBtn) clientLogoutBtn.addEventListener('click', ()=>{
+    if(isVendorAccountSession){
+      // Keluar total dari akun vendor (bukan cuma balik ke pilih kategori project ini).
+      isVendorAccountSession = false; currentVendorAccountSession = null;
+      roleDecided = false; isSupplier = false; supplierVendorKey = null;
+      currentProjectId = null; state = null;
+      history.replaceState(null, '', location.pathname);
+      showEntryGate();
+      return;
+    }
     roleDecided = false; isSupplier = false; supplierVendorKey = null;
     if(location.hash === '#client'){ showClientPasswordGate(); }
     else if(location.hash === '#vendor'){ showSupplierGate(); }
@@ -3845,7 +4186,11 @@ function attachHandlers(){
         return;
       }
       const evt = field.tagName==='SELECT' ? 'change' : 'input';
-      field.addEventListener(evt, e=>{ v[fkey] = e.target.value; scheduleSave(); if(fkey==='status') render(); });
+      field.addEventListener(evt, e=>{
+        v[fkey] = (fkey==='vendorAccountId') ? (e.target.value || null) : e.target.value;
+        scheduleSave();
+        if(fkey==='status') render();
+      });
       if(fkey==='category'){
         // Render ulang penuh dipicu saat SELESAI mengetik (blur), bukan tiap huruf
         // diketik — sebelumnya render() dipanggil di setiap keystroke dan bikin

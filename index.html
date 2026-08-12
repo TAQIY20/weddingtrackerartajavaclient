@@ -144,7 +144,10 @@
   .hero-meta .item{flex:1 1 200px;min-width:180px;max-width:100%;}
   .hero-meta .item .label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--cream-dimmer);margin-bottom:4px;}
   .hero-meta .item .val{font-size:15px;font-weight:600;}
-  .hero-meta input[type=date], .hero-meta input[type=text]{background:transparent;border:none;border-bottom:1px dashed var(--card-border);color:var(--cream);font-family:inherit;font-size:15px;font-weight:600;padding:2px 0;width:100%;max-width:280px;box-sizing:border-box;}
+  .hero-meta input[type=date], .hero-meta input[type=time], .hero-meta input[type=text]{background:transparent;border:none;border-bottom:1px dashed var(--card-border);color:var(--cream);font-family:inherit;font-size:15px;font-weight:600;padding:2px 0;width:100%;max-width:280px;box-sizing:border-box;}
+  .hero-meta .dt-row{display:flex;gap:10px;align-items:center;}
+  .hero-meta .dt-row input[type=date]{max-width:160px;flex:1 1 auto;}
+  .hero-meta .dt-row input[type=time]{max-width:100px;flex:0 0 auto;}
   .hero-meta input:focus{outline:none;border-color:var(--pink);}
   .names input{background:transparent;border:none;color:var(--cream);font-family:'Fraunces',serif;font-size:inherit;font-weight:600;width:47%;}
 
@@ -316,6 +319,9 @@
   input[type="date"]{position:relative;}
   input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(21%) sepia(45%) saturate(1600%) hue-rotate(315deg) brightness(85%);cursor:pointer;opacity:.85;width:15px;height:15px;padding:3px;background-size:15px 15px;}
   input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
+  input[type="time"]{position:relative;}
+  input[type="time"]::-webkit-calendar-picker-indicator{filter:invert(21%) sepia(45%) saturate(1600%) hue-rotate(315deg) brightness(85%);cursor:pointer;opacity:.85;width:15px;height:15px;padding:3px;background-size:15px 15px;}
+  input[type="time"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
   .ref-link{display:flex;justify-content:space-between;align-items:center;background:rgba(122,31,46,.05);border:1px solid var(--card-border);border-radius:12px;padding:10px 12px;margin-top:8px;gap:8px;}
   .ref-link a{color:var(--gold);text-decoration:none;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .ref-link a:hover{text-decoration:underline;}
@@ -529,6 +535,25 @@ const MASTER_SETTINGS_KEY = 'wedding_master_settings_' + APP_VERSION;
 const VENDOR_ACCOUNTS_KEY = 'wedding_vendor_accounts_' + APP_VERSION;
 const VENDOR_SCHEDULE_KEY = 'wedding_vendor_schedule_' + APP_VERSION;
 const MARKETING_LIST_KEY = 'wedding_marketing_list_' + APP_VERSION;
+/* Kunci "mode marketing" per-browser. DULU status "sembunyikan opsi Admin" HANYA
+   dibaca langsung dari location.hash === '#marketing' di setiap layar gate —
+   akibatnya begitu hash itu hilang (mis. HP/browser marketing menyimpan/refresh
+   link project polos "?p=xxx" tanpa "#marketing", entah dari histori browser atau
+   link yang diteruskan tanpa hash), opsi "Saya Admin" & PIN Admin muncul lagi.
+   Sekarang begitu browser ini pernah membuka link "#marketing" satu kali, statusnya
+   disimpan permanen di localStorage supaya opsi Admin TETAP tersembunyi selamanya
+   di browser ini, walau nanti hash-nya hilang. */
+const MARKETING_LOCK_KEY = 'wedding_marketing_lock_' + APP_VERSION;
+function isMarketingLocked(){
+  try{
+    return location.hash === '#marketing' || localStorage.getItem(MARKETING_LOCK_KEY) === '1';
+  }catch(e){ return location.hash === '#marketing'; }
+}
+function lockMarketingModeIfNeeded(){
+  if(location.hash === '#marketing'){
+    try{ localStorage.setItem(MARKETING_LOCK_KEY, '1'); }catch(e){ /* penuh/diblokir, abaikan */ }
+  }
+}
 const PACKAGE_LIST_KEY = 'wedding_package_list_' + APP_VERSION;
 const CUSTOM_VENDOR_CATS_KEY = 'wedding_custom_vendor_cats_' + APP_VERSION;
 function projectKey(id){ return 'wedding_project_' + APP_VERSION + '_' + id; }
@@ -815,7 +840,7 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     clientSource: '',
     clientSourceDate: '',
     documents: { mou: null, rundown: null },
-    couple: { brideName: brideName || 'Nama Mempelai Wanita', groomName: groomName || 'Nama Mempelai Pria', hashtag:'#TheWeddingOf', weddingDate, venueName:'', akadDate: weddingDate, akadLocation:'' },
+    couple: { brideName: brideName || 'Nama Mempelai Wanita', groomName: groomName || 'Nama Mempelai Pria', hashtag:'#TheWeddingOf', weddingDate, weddingTime:'', venueName:'', akadDate: weddingDate, akadTime:'', akadLocation:'' },
     timeline: defaultTimeline(weddingDate),
     vendors: vendors,
     extraVendors: [],
@@ -889,6 +914,8 @@ function normalizeState(s){
   (s.payments||[]).forEach(p=>{ if(!p.dueDate) p.dueDate = s.couple.weddingDate; if(typeof p.invoice === 'undefined') p.invoice = null; });
   if(!s.couple.akadDate) s.couple.akadDate = s.couple.weddingDate;
   if(typeof s.couple.akadLocation !== 'string') s.couple.akadLocation = '';
+  if(typeof s.couple.akadTime !== 'string') s.couple.akadTime = '';
+  if(typeof s.couple.weddingTime !== 'string') s.couple.weddingTime = '';
   if(!s.moodboard) s.moodboard = defaultData().moodboard;
   if(!Array.isArray(s.moodboard.notes)){
     s.moodboard.notes = s.moodboard.concept ? [{id:uid('mn'), vendorKey:'Umum', text:s.moodboard.concept, by:'client', date:new Date().toISOString()}] : [];
@@ -1184,6 +1211,17 @@ function findVendorAccountById(id){
 function findVendorAccountByUsername(username){
   const u = (username||'').trim().toLowerCase();
   return vendorAccounts.find(v => (v.username||'').trim().toLowerCase() === u) || null;
+}
+// Ambil logo (foto profil) akun Database Vendor yang sedang terhubung ke satu
+// entry vendor project (v.vendorAccountId) — dipakai buat nampilin logo vendor
+// otomatis di kartu Fixasi Vendor, Status Vendor, dan layar Link Vendor,
+// menggantikan ikon emoji generik begitu vendornya sudah dipilih.
+function vendorLogoUrl(v){
+  if(v && v.vendorAccountId){
+    const va = findVendorAccountById(v.vendorAccountId);
+    if(va && va.photoUrl) return va.photoUrl;
+  }
+  return null;
 }
 
 /* ---------- JADWAL VENDOR (index lintas project: akun vendor mana dijadwalkan di project mana) ----------
@@ -2030,8 +2068,9 @@ function showProjectNotFound(){
 
 function showEntryGate(){
   if(location.hash === '#vendorlink'){ showVendorLinkProjectPicker(); return; }
+  lockMarketingModeIfNeeded();
   const app = document.getElementById('app');
-  const hideAdmin = location.hash === '#marketing';
+  const hideAdmin = isMarketingLocked();
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
@@ -2225,9 +2264,10 @@ function showVendorAccountDashboard(){
 }
 
 function showProjectGate(){
+  lockMarketingModeIfNeeded();
   const app = document.getElementById('app');
   const coupleLabel = `${state.couple.brideName} & ${state.couple.groomName}`;
-  const hideAdminVendor = location.hash === '#marketing';
+  const hideAdminVendor = isMarketingLocked();
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
@@ -2377,7 +2417,11 @@ function showSupplierGate(){
         <h2>${escapeHtml(coupleLabel)}</h2>
         <p>Kamu masuk sebagai vendor lapangan — tidak perlu PIN. Pilih kamu vendor yang mana:</p>
         <div class="gate-btns" style="flex-wrap:wrap;flex-direction:row;">
-          ${cats.length ? cats.map(c=>`<button class="gate-btn" style="flex:1 1 45%;" data-supplier-key="${escapeAttr(c.key)}">${c.emoji||'⭐'} ${escapeHtml(c.key)}</button>`).join('') : `<p style="color:var(--cream-dimmer);font-size:13px;">Belum ada kategori vendor di paket project ini.</p>`}
+          ${cats.length ? cats.map(c=>{
+            const logo = vendorLogoUrl(state.vendors[c.key]);
+            const iconHtml = logo ? `<img src="${escapeAttr(logo)}" alt="${escapeAttr(c.key)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:2px;"/>` : (c.emoji||'⭐');
+            return `<button class="gate-btn" style="flex:1 1 45%;" data-supplier-key="${escapeAttr(c.key)}">${iconHtml} ${escapeHtml(c.key)}</button>`;
+          }).join('') : `<p style="color:var(--cream-dimmer);font-size:13px;">Belum ada kategori vendor di paket project ini.</p>`}
         </div>
       </div>
     </div>
@@ -2641,9 +2685,10 @@ function renderProjectDashboard(){
   const copyGlobalVendorLinkBtn = document.getElementById('copyGlobalVendorLink');
   if(copyGlobalVendorLinkBtn) copyGlobalVendorLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalVendorLinkBox').value));
   document.getElementById('logoutRoleBtn').addEventListener('click', ()=>{
-    // Kalau tadi masuk lewat link khusus marketing (#marketing), pertahankan hash itu
+    // Kalau tadi masuk lewat link khusus marketing (#marketing) atau browser ini
+    // sudah pernah terkunci ke mode marketing sebelumnya, pertahankan hash itu
     // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan.
-    const keepHash = location.hash === '#marketing' ? '#marketing' : '';
+    const keepHash = isMarketingLocked() ? '#marketing' : '';
     isVendor=false; isAdmin=false; vendorAuthed=false; currentMarketing=null; viewingDashboard=false; roleDecided=false;
     isVendorAccountSession=false; currentVendorAccountSession=null; isSupplier=false; supplierVendorKey=null;
     currentProjectId = null; state = null;
@@ -2794,7 +2839,7 @@ function renderProjectDashboard(){
     viewingDashboard = false;
     roleDecided = true;
     const baseUrl = location.href.split('?')[0].split('#')[0];
-    const hash = location.hash === '#marketing' ? '#marketing' : '';
+    const hash = isMarketingLocked() ? '#marketing' : '';
     history.pushState({}, '', baseUrl + '?p=' + id + hash);
     render();
     hydrateAttachmentsInBackground();
@@ -3241,7 +3286,7 @@ function showNewProjectForm(){
       viewingDashboard = false;
       roleDecided = true;
       currentTab = 'beranda';
-      const hash = location.hash === '#marketing' ? '#marketing' : '';
+      const hash = isMarketingLocked() ? '#marketing' : '';
       history.pushState({}, '', baseUrl + '?p=' + project.id + hash);
       hideLoadingOverlay();
       render();
@@ -3265,7 +3310,7 @@ function render(){
   const totalItems = state.timeline.length;
   const doneItems = state.timeline.filter(t=>t.status==='done').length;
   const progressPct = totalItems ? Math.round(doneItems/totalItems*100) : 0;
-  const allVendorList = [...activeVendorCats().map(c=>({key:c.key, v:state.vendors[c.key]})), ...state.extraVendors.map(v=>({key:v.category||'Vendor Tambahan', v}))];
+  const allVendorList = [...activeVendorCats().map(c=>({key:c.key, v:state.vendors[c.key], emoji:c.emoji})), ...state.extraVendors.map(v=>({key:v.category||'Vendor Tambahan', v, emoji:v.emoji||'⭐'}))];
   const vendorsBooked = allVendorList.filter(x=>x.v.status!=='belum').length;
   const vendorProgressPct = allVendorList.length ? Math.round(allVendorList.reduce((s,x)=> s + (VENDOR_STATUS_WEIGHT[x.v.status] ?? 0), 0) / allVendorList.length) : 0;
   const paidCount = state.payments.filter(p=>p.status==='paid').length;
@@ -3285,10 +3330,18 @@ function render(){
   const picPhone = projMkt ? (projMkt.phone || '-') : PIC_PHONE_DISPLAY;
   const picWa = projMkt ? (projMkt.phone ? ('https://wa.me/62' + projMkt.phone.replace(/^0/, '')) : '#') : PIC_WA;
   const picRoleLabel = projMkt ? 'Marketing' : 'PIC WO';
+  // Logo vendor lapangan yang sedang akses: prioritaskan foto akun vendor yang
+  // sedang login (kalau masuk lewat Link Vendor akun/username), kalau tidak ada
+  // pakai logo vendor yang sudah ditugaskan admin/marketing ke kategori ini.
+  const supplierLogo = isSupplier
+    ? ((isVendorAccountSession && currentVendorAccountSession && currentVendorAccountSession.photoUrl)
+        ? currentVendorAccountSession.photoUrl
+        : vendorLogoUrl(state.vendors[supplierVendorKey]))
+    : null;
   const topPicChipHtml = isAdmin
     ? `<div class="pic-chip"><div class="pic-info"><div class="pic-name">🛡️ Admin</div><div class="pic-role">Akses penuh ke semua project &amp; marketing</div></div></div>`
     : isSupplier
-    ? `<div class="pic-chip"><div class="pic-info"><div class="pic-name">🧰 ${escapeHtml(supplierVendorKey||'Vendor')}</div><div class="pic-role">Akses vendor lapangan</div></div></div>`
+    ? `<div class="pic-chip">${supplierLogo ? `<img class="pic-avatar" src="${escapeAttr(supplierLogo)}" alt="${escapeHtml(supplierVendorKey||'Vendor')}"/>` : ''}<div class="pic-info"><div class="pic-name">${supplierLogo ? '' : '🧰 '}${escapeHtml(supplierVendorKey||'Vendor')}</div><div class="pic-role">Akses vendor lapangan</div></div></div>`
     : `<div class="pic-chip">
           <img class="pic-avatar" src="${picPhoto}" alt="${escapeHtml(picName)}"/>
           <div class="pic-info">
@@ -3342,10 +3395,10 @@ function render(){
         </h1>
         <div class="hero-meta">
           <div class="item"><div class="label">Tanggal &amp; Lokasi Akad / Pemberkatan</div>
-            <div class="val">${isVendor ? `<input type="date" id="akadDateInput" value="${state.couple.akadDate}">` : fmtDate(state.couple.akadDate)}</div>
+            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="akadDateInput" value="${state.couple.akadDate}"><input type="time" id="akadTimeInput" value="${escapeAttr(state.couple.akadTime)}"></div>` : (fmtDate(state.couple.akadDate) + (state.couple.akadTime ? ' • ' + escapeHtml(state.couple.akadTime) : ''))}</div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="akadLocationInput" placeholder="Lokasi akad/pemberkatan" value="${escapeAttr(state.couple.akadLocation)}">` : (state.couple.akadLocation || 'Lokasi belum diisi')}</div></div>
           <div class="item"><div class="label">Tanggal &amp; Lokasi Resepsi</div>
-            <div class="val">${isVendor ? `<input type="date" id="weddingDateInput" value="${state.couple.weddingDate}">` : fmtDate(state.couple.weddingDate)}</div>
+            <div class="val">${isVendor ? `<div class="dt-row"><input type="date" id="weddingDateInput" value="${state.couple.weddingDate}"><input type="time" id="weddingTimeInput" value="${escapeAttr(state.couple.weddingTime)}"></div>` : (fmtDate(state.couple.weddingDate) + (state.couple.weddingTime ? ' • ' + escapeHtml(state.couple.weddingTime) : ''))}</div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="venueInput" placeholder="Lokasi resepsi" value="${escapeAttr(state.couple.venueName)}">` : (state.couple.venueName || 'Lokasi belum diisi')}</div></div>
         </div>
       </div>
@@ -3547,8 +3600,18 @@ function renderBeranda(dLeft, allVendorList){
           ${allVendorList.map(x=>{
             const v = x.v;
             const lastProgress = (v.progress||[]).slice().sort((a,b)=> a.date.localeCompare(b.date)).pop();
+            const logo = vendorLogoUrl(v);
+            const iconHtml = logo
+              ? `<img src="${escapeAttr(logo)}" alt="${escapeAttr(v.name||x.key)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid var(--card-border);"/>`
+              : `<span style="width:28px;height:28px;border-radius:50%;background:rgba(122,31,46,.08);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;">${x.emoji||'⭐'}</span>`;
             return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--card-border);font-size:13.5px;gap:8px;">
-              <span>${escapeHtml(x.key)}${lastProgress ? `<div style="font-size:11px;color:var(--cream-dimmer);">📅 ${fmtDate(lastProgress.date)} · ${escapeHtml(lastProgress.label)}</div>` : ''}</span>
+              <span style="display:flex;align-items:center;gap:9px;min-width:0;">
+                ${iconHtml}
+                <span style="min-width:0;">
+                  <div>${escapeHtml(x.key)}${v.name ? ` · <span style="color:var(--cream-dimmer);font-weight:400;">${escapeHtml(v.name)}</span>` : ''}</div>
+                  ${lastProgress ? `<div style="font-size:11px;color:var(--cream-dimmer);">📅 ${fmtDate(lastProgress.date)} · ${escapeHtml(lastProgress.label)}</div>` : ''}
+                </span>
+              </span>
               <span class="chip" style="background:${statusColor(v.status).bg};color:${statusColor(v.status).fg};flex-shrink:0;">${statusLabel(v.status)}</span>
             </div>`;
           }).join('')}
@@ -3607,11 +3670,14 @@ function renderVendorCard(key, v, opts){
   const isExtra = !!opts.extra;
   const emoji = opts.emoji || '⭐';
   const addonSum = totalAddonsForVendor(v);
+  const logoUrl = vendorLogoUrl(v);
   return `
     <div class="v-card" data-vendorkey="${escapeAttr(key)}" data-extra="${isExtra?'1':'0'}">
       <div class="v-cat">
         <div class="catleft">
-          ${isExtra ? `<input class="v-emoji-input" data-field="emoji" value="${escapeAttr(v.emoji||'⭐')}" maxlength="4" ${isVendor?'':'disabled'} title="Ganti simbol/emoji vendor ini"/>` : `<span class="emoji">${emoji}</span>`}
+          ${logoUrl
+            ? `<img class="v-cat-logo" src="${escapeAttr(logoUrl)}" alt="${escapeAttr(v.name||key)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid var(--card-border);"/>`
+            : (isExtra ? `<input class="v-emoji-input" data-field="emoji" value="${escapeAttr(v.emoji||'⭐')}" maxlength="4" ${isVendor?'':'disabled'} title="Ganti simbol/emoji vendor ini"/>` : `<span class="emoji">${emoji}</span>`)}
           ${isExtra ? `<input class="catname" data-field="category" value="${escapeAttr(v.category||'')}" placeholder="Nama kategori" ${isVendor?'':'disabled'}/>` : `<span>${escapeHtml(key)}</span>`}
         </div>
         ${isVendor ? `<button class="btn small danger" data-action="delete-vendor">🗑️ Hapus</button>` : ''}
@@ -3630,7 +3696,7 @@ function renderVendorCard(key, v, opts){
         ${(isVendor && v.vendorAccountId) ? `<div style="font-size:11.5px;color:var(--cream-dimmer);margin-top:4px;">🧰 Terhubung ke akun vendor — kontak otomatis terisi</div>` : ''}
       </div>
       <div class="v-field"><label>Kontak</label><input data-field="contact" value="${escapeAttr(v.contact)}" placeholder="No. WA / Email" ${isVendor?'':'disabled'}/></div>
-      <div class="v-field"><label>Harga Deal</label><input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/></div>
+      ${isExtra ? `<div class="v-field"><label>Harga Deal</label><input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/></div>` : ''}
       <div class="v-field"><label>Status</label>
         <select data-field="status" ${isVendor?'':'disabled'}>
           <option value="belum" ${v.status==='belum'?'selected':''}>Belum Booking</option>
@@ -4133,8 +4199,12 @@ function attachHandlers(){
     if(venueInput) venueInput.addEventListener('input', e=>{ state.couple.venueName = e.target.value; scheduleSave(); });
     const akadDateInput = document.getElementById('akadDateInput');
     if(akadDateInput) akadDateInput.addEventListener('change', e=>{ state.couple.akadDate = e.target.value; scheduleSave(); render(); });
+    const akadTimeInput = document.getElementById('akadTimeInput');
+    if(akadTimeInput) akadTimeInput.addEventListener('change', e=>{ state.couple.akadTime = e.target.value; scheduleSave(); render(); });
     const akadLocationInput = document.getElementById('akadLocationInput');
     if(akadLocationInput) akadLocationInput.addEventListener('input', e=>{ state.couple.akadLocation = e.target.value; scheduleSave(); });
+    const weddingTimeInput = document.getElementById('weddingTimeInput');
+    if(weddingTimeInput) weddingTimeInput.addEventListener('change', e=>{ state.couple.weddingTime = e.target.value; scheduleSave(); render(); });
 
     const addTimelineItem = document.getElementById('addTimelineItem');
     if(addTimelineItem) addTimelineItem.addEventListener('click', ()=>{
@@ -4348,7 +4418,7 @@ function attachHandlers(){
           const val = e.target.value;
           const candidates = isExtra ? vendorAccounts : vendorAccounts.filter(va=> !va.category || va.category===key);
           if(val === ''){
-            v.name = ''; v.vendorAccountId = null;
+            v.name = ''; v.vendorAccountId = null; v.contact = '';
           } else if(val === '__manual__'){
             const typed = await customPrompt('Nama vendor (manual):', v.name || '');
             if(typed && typed.trim()){

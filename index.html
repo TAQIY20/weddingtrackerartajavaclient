@@ -540,25 +540,16 @@ const MASTER_SETTINGS_KEY = 'wedding_master_settings_' + APP_VERSION;
 const VENDOR_ACCOUNTS_KEY = 'wedding_vendor_accounts_' + APP_VERSION;
 const VENDOR_SCHEDULE_KEY = 'wedding_vendor_schedule_' + APP_VERSION;
 const MARKETING_LIST_KEY = 'wedding_marketing_list_' + APP_VERSION;
-/* Kunci "mode marketing" per-browser. DULU status "sembunyikan opsi Admin" HANYA
-   dibaca langsung dari location.hash === '#marketing' di setiap layar gate —
-   akibatnya begitu hash itu hilang (mis. HP/browser marketing menyimpan/refresh
-   link project polos "?p=xxx" tanpa "#marketing", entah dari histori browser atau
-   link yang diteruskan tanpa hash), opsi "Saya Admin" & PIN Admin muncul lagi.
-   Sekarang begitu browser ini pernah membuka link "#marketing" satu kali, statusnya
-   disimpan permanen di localStorage supaya opsi Admin TETAP tersembunyi selamanya
-   di browser ini, walau nanti hash-nya hilang. */
-const MARKETING_LOCK_KEY = 'wedding_marketing_lock_' + APP_VERSION;
+/* Sembunyikan opsi "Saya Admin" HANYA selama hash saat ini persis "#marketing"
+   (link khusus tim marketing). Tidak dikunci/disimpan permanen di localStorage lagi —
+   supaya link utama (tanpa hash) selalu tetap menampilkan opsi Admin, walau browser
+   ini pernah dipakai buka link marketing sebelumnya. */
 function isMarketingLocked(){
-  try{
-    return location.hash === '#marketing' || localStorage.getItem(MARKETING_LOCK_KEY) === '1';
-  }catch(e){ return location.hash === '#marketing'; }
+  return location.hash === '#marketing';
 }
 function lockMarketingModeIfNeeded(){
-  if(location.hash === '#marketing'){
-    try{ localStorage.setItem(MARKETING_LOCK_KEY, '1'); }catch(e){ /* penuh/diblokir, abaikan */ }
-  }
 }
+
 const PACKAGE_LIST_KEY = 'wedding_package_list_' + APP_VERSION;
 const CUSTOM_VENDOR_CATS_KEY = 'wedding_custom_vendor_cats_' + APP_VERSION;
 function projectKey(id){ return 'wedding_project_' + APP_VERSION + '_' + id; }
@@ -2700,9 +2691,8 @@ function renderProjectDashboard(){
   const copyGlobalVendorLinkBtn = document.getElementById('copyGlobalVendorLink');
   if(copyGlobalVendorLinkBtn) copyGlobalVendorLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalVendorLinkBox').value));
   document.getElementById('logoutRoleBtn').addEventListener('click', ()=>{
-    // Kalau tadi masuk lewat link khusus marketing (#marketing) atau browser ini
-    // sudah pernah terkunci ke mode marketing sebelumnya, pertahankan hash itu
-    // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan.
+    // Kalau tadi masuk lewat link khusus marketing (#marketing), pertahankan hash itu
+    // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan di layar ini.
     const keepHash = isMarketingLocked() ? '#marketing' : '';
     isVendor=false; isAdmin=false; vendorAuthed=false; currentMarketing=null; viewingDashboard=false; roleDecided=false;
     isVendorAccountSession=false; currentVendorAccountSession=null; isSupplier=false; supplierVendorKey=null;

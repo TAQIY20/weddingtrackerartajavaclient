@@ -261,6 +261,8 @@
   .addon-total-badge{color:var(--gold);font-weight:700;font-size:11.5px;}
 
   .extra-vendor-head{display:flex;justify-content:space-between;align-items:center;margin:26px 0 14px;}
+  .vendor-cat-group{margin-bottom:22px;}
+  .vendor-cat-group-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;color:var(--gold);margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--card-border);}
 
   .pay-summary{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
   .pay-item{flex:1;min-width:170px;background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px 16px;}
@@ -710,6 +712,9 @@ const VENDOR_CATS = [
   {key:'Photobooth', emoji:'🖼️'},{key:'Souvenir', emoji:'🎁'},{key:'Undangan', emoji:'✉️'},
   {key:'Lighting', emoji:'💡'},{key:'Sound System', emoji:'🔊'},{key:'Usher', emoji:'🙋'},
   {key:'Digital Guest Book', emoji:'📱'},{key:'Tenda', emoji:'⛺'},
+  {key:'Sanggar Tari', emoji:'💃'},{key:'Wedding Content Creator', emoji:'🎥'},
+  {key:'Backdrop', emoji:'🖼️'},{key:'LED Screen', emoji:'📺'},
+  {key:'Projector', emoji:'📽️'},{key:'Stall Makanan', emoji:'🍢'},
 ];
 const BUILTIN_VENDOR_CAT_KEYS = new Set(VENDOR_CATS.map(c=>c.key));
 
@@ -800,7 +805,7 @@ function defaultTimeline(weddingDate){
   });
 }
 
-function blankVendor(){ return {name:'', contact:'', price:0, status:'belum', note:'', addons:[], progress:[], packageItems:[], vendorAccountId:null}; }
+function blankVendor(){ return {name:'', contact:'', price:0, dealPriceVisible:false, status:'belum', note:'', addons:[], progress:[], packageItems:[], vendorAccountId:null}; }
 function defaultVendors(){ const obj = {}; VENDOR_CATS.forEach(c => { obj[c.key] = blankVendor(); }); return obj; }
 
 function genPassword(len){
@@ -904,6 +909,9 @@ function normalizeState(s){
     if(typeof v.cateringPaxBuffet !== 'string') v.cateringPaxBuffet = '';
     if(isExtra && !v.emoji) v.emoji = '⭐';
     if(typeof v.vendorAccountId === 'undefined') v.vendorAccountId = null;
+    // Harga Deal: disembunyikan dari klien secara default. Hanya admin/marketing
+    // yang bisa memunculkan/menyembunyikannya per-vendor lewat tombol toggle.
+    if(typeof v.dealPriceVisible !== 'boolean') v.dealPriceVisible = false;
     // migrate price from free text/string to number
     if(typeof v.price !== 'number'){ v.price = parseInt(digitsOnly(v.price),10) || 0; }
     v.progress.forEach(p=>{ if(!p.date) p.date = todayISO(); });
@@ -2677,8 +2685,8 @@ function renderProjectDashboard(){
       <div class="lp-note">Bagikan <b>satu link ini</b> ke semua vendor lapangan (MUA, katering, dekorasi, dll) di semua project — tidak perlu password. Vendor tinggal buka link ini, pilih project (nama pengantin), lalu pilih kategori vendornya sendiri. Link ini <b>hanya bisa dipakai buat akses vendor</b> — tidak ada opsi masuk sebagai Admin, Marketing, atau Klien sama sekali.<br>Vendor login pakai username &amp; password dari akun yang kamu buat di bawah ini (bukan link project). Setelah login, vendor otomatis lihat SEMUA project tempat dia dijadwalkan (tab "Jadwal Saya"), lalu tinggal klik "Buka Project" — bukan cuma bisa akses 1 project seperti Link Vendor biasa.</div>
     </div>
     <div class="extra-vendor-head"><h2>Database Vendor</h2><button class="btn primary small" id="newVendorAccountBtn">+ Tambah Vendor</button></div>
-    <div id="vendorAccountListBox" class="vendor-grid">
-      ${vendorAccounts.length ? vendorAccounts.map(vendorAccountCardHtml).join('') : `<div class="empty-mini">Belum ada akun vendor. Tambahkan dulu di sini, baru bisa dijadwalkan ke project lewat tab "Vendor" di tiap project.</div>`}
+    <div id="vendorAccountListBox">
+      ${vendorAccountsGroupedHtml(vendorAccounts)}
     </div>
     ` : ''}
   `;
@@ -2951,6 +2959,35 @@ function showMarketingForm(editId){
     showToast('Data marketing tersimpan ✓');
     renderProjectDashboard();
   });
+}
+
+function vendorAccountsGroupedHtml(vendorAccounts){
+  if(!vendorAccounts.length) return `<div class="empty-mini">Belum ada akun vendor. Tambahkan dulu di sini, baru bisa dijadwalkan ke project lewat tab "Vendor" di tiap project.</div>`;
+  // Kelompokkan per kategori, urut sesuai VENDOR_CATS (kategori inti dulu), lalu
+  // kategori custom (dibuat dari tab "+ Tambah Vendor" di project) di bawahnya,
+  // dan yang belum diisi kategorinya masuk grup "Lainnya" paling akhir.
+  const byCat = {};
+  vendorAccounts.forEach(v=>{
+    const key = v.category && v.category.trim() ? v.category.trim() : 'Lainnya';
+    (byCat[key] = byCat[key] || []).push(v);
+  });
+  const orderedKeys = [];
+  VENDOR_CATS.forEach(c=>{ if(byCat[c.key]) orderedKeys.push(c.key); });
+  Object.keys(byCat).sort((a,b)=>a.localeCompare(b,'id')).forEach(k=>{
+    if(k!=='Lainnya' && !orderedKeys.includes(k)) orderedKeys.push(k);
+  });
+  if(byCat['Lainnya']) orderedKeys.push('Lainnya');
+  return orderedKeys.map(key=>{
+    const found = VENDOR_CATS.find(c=>c.key===key);
+    const emoji = found ? (found.emoji||'⭐') : (key==='Lainnya' ? '❔' : '🧰');
+    const list = byCat[key];
+    return `
+      <div class="vendor-cat-group">
+        <div class="vendor-cat-group-title">${emoji} ${escapeHtml(key)} <span style="font-weight:400;color:var(--cream-dim);font-size:12.5px;">(${list.length})</span></div>
+        <div class="vendor-grid">${list.map(vendorAccountCardHtml).join('')}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function vendorAccountCardHtml(v){
@@ -3710,7 +3747,13 @@ function renderVendorCard(key, v, opts){
         ${(isVendor && v.vendorAccountId) ? `<div style="font-size:11.5px;color:var(--cream-dimmer);margin-top:4px;">🧰 Terhubung ke akun vendor — kontak otomatis terisi</div>` : ''}
       </div>
       <div class="v-field"><label>Kontak</label><input data-field="contact" value="${escapeAttr(v.contact)}" placeholder="No. WA / Email" ${isVendor?'':'disabled'}/></div>
-      ${isExtra ? `<div class="v-field"><label>Harga Deal</label><input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/></div>` : ''}
+      ${!isSupplier ? `
+      <div class="v-field" data-dealprice-wrap>
+        <label>Harga Deal ${isVendor ? `<button type="button" class="btn tiny ghost" data-action="toggle-dealprice" style="margin-left:6px;padding:1px 8px;font-size:10.5px;">${v.dealPriceVisible ? '🙈 Sembunyikan dari klien' : '👁️ Tampilkan ke klien'}</button>` : ''}</label>
+        ${(isVendor || v.dealPriceVisible)
+          ? `<input data-field="price" data-currency="1" value="${fmtIDR(v.price)}" placeholder="Rp 0" ${isVendor?'':'disabled'}/>`
+          : `<div class="empty-mini">Harga deal disembunyikan oleh admin/marketing.</div>`}
+      </div>` : ''}
       <div class="v-field"><label>Status</label>
         <select data-field="status" ${isVendor?'':'disabled'}>
           <option value="belum" ${v.status==='belum'?'selected':''}>Belum Booking</option>
@@ -4228,7 +4271,7 @@ function attachHandlers(){
 
     const addVendor = document.getElementById('addVendor');
     if(addVendor) addVendor.addEventListener('click', ()=>{
-      state.extraVendors.push({ id:uid('ev'), category:'Vendor Baru', name:'', contact:'', price:'', status:'belum', note:'', addons:[], progress:[], emoji:'⭐' });
+      state.extraVendors.push({ id:uid('ev'), category:'Vendor Baru', name:'', contact:'', price:'', dealPriceVisible:false, status:'belum', note:'', addons:[], progress:[], emoji:'⭐' });
       scheduleSave(); render();
     });
     document.querySelectorAll('[data-action="restore-vendor-cat"]').forEach(btn=> btn.addEventListener('click', ()=>{
@@ -4459,6 +4502,11 @@ function attachHandlers(){
         // layar mendadak lompat/scroll ke atas tiap kali mengetik nama vendor baru.
         field.addEventListener('blur', ()=> render());
       }
+    });
+
+    const toggleDealPriceBtn = el.querySelector('[data-action="toggle-dealprice"]');
+    if(toggleDealPriceBtn) toggleDealPriceBtn.addEventListener('click', ()=>{
+      v.dealPriceVisible = !v.dealPriceVisible; scheduleSave(); render();
     });
 
     const delVendorBtn = el.querySelector('[data-action="delete-vendor"]');

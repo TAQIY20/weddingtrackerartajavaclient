@@ -2750,23 +2750,6 @@ function renderProjectDashboard(){
       </div>
       <div class="lp-note">Kirim link ini ke tim marketing kamu — halaman login lewat link ini <b>tidak menampilkan opsi "Saya Admin"</b>, jadi mereka cuma bisa masuk lewat PIN Marketing atau sebagai Klien.</div>
     </div>
-    ` : ''}
-    <div id="projectList" class="vendor-grid">
-      ${myList.length ? myList.map(projectCardHtml).join('') : `<div class="empty-mini">Belum ada project. Klik "+ Project Baru" buat mulai.</div>`}
-    </div>
-    ${isAdmin ? `
-    <div class="extra-vendor-head"><h2>Paket Vendor</h2><button class="btn primary small" id="newPackageBtn">+ Tambah Paket</button></div>
-    <div id="packageListBox" class="vendor-grid">
-      ${packageList.length ? packageList.map(packageCardHtml).join('') : `<div class="empty-mini">Belum ada paket. Bikin dulu di sini, nanti tinggal dipilih tiap bikin project baru.</div>`}
-    </div>
-    ` : ''}
-    ${isAdmin ? `
-    <div class="extra-vendor-head"><h2>Tim Marketing</h2><button class="btn primary small" id="newMarketingBtn">+ Tambah Marketing</button></div>
-    <div id="marketingList" class="vendor-grid">
-      ${marketingList.length ? marketingList.map(marketingCardHtml).join('') : `<div class="empty-mini">Belum ada akun marketing. Tambahkan supaya mereka bisa punya link klien sendiri-sendiri.</div>`}
-    </div>
-    ` : ''}
-    ${isAdmin ? `
     <div class="linkpanel">
       <div class="lp-title">Login Khusus Akun Klien</div>
       <div class="lp-row">
@@ -2785,6 +2768,23 @@ function renderProjectDashboard(){
       </div>
       <div class="lp-note">Bagikan <b>satu link ini</b> ke semua vendor lapangan (MUA, katering, dekorasi, dll) di semua project — tidak perlu password. Vendor tinggal buka link ini, pilih project (nama pengantin), lalu pilih kategori vendornya sendiri. Link ini <b>hanya bisa dipakai buat akses vendor</b> — tidak ada opsi masuk sebagai Admin, Marketing, atau Klien sama sekali.<br>Vendor login pakai username &amp; password dari akun yang kamu buat di bawah ini (bukan link project). Setelah login, vendor otomatis lihat SEMUA project tempat dia dijadwalkan (tab "Jadwal Saya"), lalu tinggal klik "Buka Project" — bukan cuma bisa akses 1 project seperti Link Vendor biasa.</div>
     </div>
+    ` : ''}
+    <div id="projectList" class="vendor-grid">
+      ${myList.length ? myList.map(projectCardHtml).join('') : `<div class="empty-mini">Belum ada project. Klik "+ Project Baru" buat mulai.</div>`}
+    </div>
+    ${isAdmin ? `
+    <div class="extra-vendor-head"><h2>Paket Vendor</h2><button class="btn primary small" id="newPackageBtn">+ Tambah Paket</button></div>
+    <div id="packageListBox" class="vendor-grid">
+      ${packageList.length ? packageList.map(packageCardHtml).join('') : `<div class="empty-mini">Belum ada paket. Bikin dulu di sini, nanti tinggal dipilih tiap bikin project baru.</div>`}
+    </div>
+    ` : ''}
+    ${isAdmin ? `
+    <div class="extra-vendor-head"><h2>Tim Marketing</h2><button class="btn primary small" id="newMarketingBtn">+ Tambah Marketing</button></div>
+    <div id="marketingList" class="vendor-grid">
+      ${marketingList.length ? marketingList.map(marketingCardHtml).join('') : `<div class="empty-mini">Belum ada akun marketing. Tambahkan supaya mereka bisa punya link klien sendiri-sendiri.</div>`}
+    </div>
+    ` : ''}
+    ${isAdmin ? `
     <div class="extra-vendor-head"><h2>Database Vendor</h2><button class="btn primary small" id="newVendorAccountBtn">+ Tambah Vendor</button></div>
     <div id="vendorAccountListBox">
       ${vendorAccountsGroupedHtml(vendorAccounts)}

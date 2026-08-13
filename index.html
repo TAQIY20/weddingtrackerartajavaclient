@@ -3548,21 +3548,9 @@ function render(){
     ${isVendor ? `
     <div class="linkpanel">
       <div class="lp-title">Bagikan akses ke klien: ${escapeHtml(state.couple.brideName)} &amp; ${escapeHtml(state.couple.groomName)}</div>
-      <div class="lp-row">
-        <span class="lp-label">Kode Project</span>
-        <input class="lp-input" id="projectCodeBox" readonly value="${escapeAttr(state.id)}" style="font-family:monospace;font-weight:700;letter-spacing:.03em;"/>
-        <button class="btn small" id="changeProjectCode">✏️ Ganti Kode</button>
-      </div>
-      <div class="lp-row">
-        <span class="lp-label">Link Klien</span>
-        <input class="lp-input" id="vendorLinkBox" readonly value="${escapeAttr(clientLink)}"/>
-        <button class="btn small" id="copyVendorLink">📋 Salin</button>
-      </div>
-      <div class="lp-row">
-        <span class="lp-label">Password Klien</span>
-        <input class="lp-input" id="pinEditInput" style="max-width:140px;flex:none;" value="${escapeAttr(state.clientPassword)}" maxlength="20"/>
-        <button class="btn small" id="regenClientPass">🎲 Acak Baru</button>
-      </div>
+      <input type="hidden" id="projectCodeBox" value="${escapeAttr(state.id)}"/>
+      <input type="hidden" id="vendorLinkBox" value="${escapeAttr(clientLink)}"/>
+      <input type="hidden" id="pinEditInput" value="${escapeAttr(state.clientPassword)}"/>
       <div class="lp-row">
         <span class="lp-label">Akun Klien</span>
         <input class="lp-input" id="clientAcctUsernameBox" readonly value="${state.clientUsername ? escapeAttr(state.clientUsername) : 'Belum ada akun'}" style="font-family:monospace;font-weight:700;"/>

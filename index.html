@@ -759,6 +759,7 @@ const PIC_WA = "https://wa.me/6285755768427";
 let isVendor = false;
 let isSupplier = false;        // true when logged in via the field-vendor link (real supplier: MUA/Katering/dll — no PIN, no password)
 let vendorLinkMode = false;    // true when this session entered via the global admin "Link Vendor" (#vendorlink) — keeps logout inside the vendor-only flow, never back to the full Admin/Marketing/Client entry gate
+let clientLinkMode = false;    // true when this session entered via the global "Link Klien Umum" (#clientlink) — keeps logout inside the client-only flow, never back to the full Admin/Marketing/Vendor entry gate
 let supplierVendorKey = null;  // which vendor category this supplier session represents
 let isVendorAccountSession = false;   // true when currently viewing a project after logging in via a real Vendor Account (username+password)
 let currentVendorAccountSession = null; // the vendor account object ({id,name,category,phone,username,password}) for the session above
@@ -2158,19 +2159,21 @@ function showProjectNotFound(){
 
 function showEntryGate(){
   if(location.hash === '#vendorlink'){ showVendorLinkProjectPicker(); return; }
+  const clientOnlyMode = (location.hash === '#clientlink');
+  if(clientOnlyMode) clientLinkMode = true;
   lockMarketingModeIfNeeded();
   const app = document.getElementById('app');
-  const hideAdmin = isMarketingLocked();
+  const hideAdmin = isMarketingLocked() || clientOnlyMode;
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
         <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
-        <h2>Wedding Project Tracker</h2>
-        <p>Pilih tampilan sesuai perananmu.</p>
+        <h2>${clientOnlyMode ? 'Login Klien' : 'Wedding Project Tracker'}</h2>
+        <p>${clientOnlyMode ? 'Masuk pakai Username &amp; Password klien yang diberikan vendor kamu.' : 'Pilih tampilan sesuai perananmu.'}</p>
         <div class="gate-btns">
           ${hideAdmin ? '' : `<button class="gate-btn vendor" id="gateAdminBtn"><span class="ge">🛡️</span> Saya Admin</button>`}
-          <button class="gate-btn vendor" id="gateMarketingBtn"><span class="ge">🤝</span> Saya Marketing</button>
-          <button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>
+          ${clientOnlyMode ? '' : `<button class="gate-btn vendor" id="gateMarketingBtn"><span class="ge">🤝</span> Saya Marketing</button>`}
+          ${clientOnlyMode ? '' : `<button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>`}
           <button class="gate-btn" id="gateClientBtn"><span class="ge">💍</span> Saya Calon Pengantin (Klien)</button>
         </div>
         ${hideAdmin ? '' : `
@@ -2179,6 +2182,7 @@ function showEntryGate(){
           <button class="btn primary" id="pinSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="pinError"></div>
         </div>`}
+        ${clientOnlyMode ? '' : `
         <div class="pin-box" id="marketingPinBox">
           <input type="password" id="marketingPinInput" inputmode="numeric" maxlength="8" placeholder="Masukkan PIN Marketing kamu"/>
           <button class="btn primary" id="marketingPinSubmit" style="width:100%;">Masuk</button>
@@ -2189,8 +2193,8 @@ function showEntryGate(){
           <div class="pin-box-pw-wrap"><input type="password" id="vendorAccountPassInput" placeholder="Password Vendor"/><button type="button" class="pw-toggle" data-pw-toggle="vendorAccountPassInput">👁</button></div>
           <button class="btn primary" id="vendorAccountSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="vendorAccountError"></div>
-        </div>
-        <div class="pin-box" id="clientCodeBox">
+        </div>`}
+        <div class="pin-box${clientOnlyMode ? ' show' : ''}" id="clientCodeBox">
           <input type="text" id="clientCodeInput" placeholder="Username Klien"/>
           <div class="pin-box-pw-wrap"><input type="password" id="clientCodePassInput" placeholder="Password Klien"/><button type="button" class="pw-toggle" data-pw-toggle="clientCodePassInput">👁</button></div>
           <button class="btn primary" id="clientCodeSubmit" style="width:100%;">Masuk</button>
@@ -2199,6 +2203,7 @@ function showEntryGate(){
       </div>
     </div>
   `;
+  if(clientOnlyMode){ const f = document.getElementById('clientCodeInput'); if(f) f.focus(); }
   const gateAdminBtn = document.getElementById('gateAdminBtn');
   if(gateAdminBtn) gateAdminBtn.addEventListener('click', ()=>{
     document.getElementById('pinBox').classList.add('show');
@@ -2215,6 +2220,7 @@ function showEntryGate(){
     document.getElementById('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryPin(); });
   }
 
+  if(!clientOnlyMode){
   document.getElementById('gateMarketingBtn').addEventListener('click', ()=>{
     document.getElementById('marketingPinBox').classList.add('show');
     document.getElementById('marketingPinInput').focus();
@@ -2256,6 +2262,7 @@ function showEntryGate(){
   };
   document.getElementById('vendorAccountSubmit').addEventListener('click', tryVendorAccountLogin);
   document.getElementById('vendorAccountPassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryVendorAccountLogin(); });
+  }
 
   document.getElementById('gateClientBtn').addEventListener('click', ()=>{
     document.getElementById('clientCodeBox').classList.add('show');
@@ -2761,6 +2768,15 @@ function renderProjectDashboard(){
     ` : ''}
     ${isAdmin ? `
     <div class="linkpanel">
+      <div class="lp-title">Login Khusus Akun Klien</div>
+      <div class="lp-row">
+        <span class="lp-label">Link Klien Umum</span>
+        <input class="lp-input" id="globalClientLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '#clientlink')}"/>
+        <button class="btn small" id="copyGlobalClientLink">📋 Salin</button>
+      </div>
+      <div class="lp-note">Bagikan <b>satu link ini</b> ke klien mana pun — halaman yang kebuka cuma nampilin login klien saja (tidak ada opsi Admin, Marketing, atau Vendor sama sekali). Klien login pakai <b>Username &amp; Password</b> dari Akun Klien yang kamu buat di masing-masing project (lihat panel "Link Klien" di halaman project, tombol "➕ Buat Akun" / "🔁 Ganti Akun"), lalu otomatis masuk ke project miliknya sendiri — tidak perlu Kode Project sama sekali.<br>Kalau kliennya belum punya Akun Klien (project lama), pakai dulu <b>Link Klien</b> per-project (Kode Project + Password) di halaman project itu, sambil kamu buatkan Akun Klien-nya.</div>
+    </div>
+    <div class="linkpanel">
       <div class="lp-title">Login Khusus Akun Vendor</div>
       <div class="lp-row">
         <span class="lp-label">Link Vendor</span>
@@ -2780,6 +2796,8 @@ function renderProjectDashboard(){
   if(copyMarketingLinkBtn) copyMarketingLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('marketingLinkBox').value));
   const copyGlobalVendorLinkBtn = document.getElementById('copyGlobalVendorLink');
   if(copyGlobalVendorLinkBtn) copyGlobalVendorLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalVendorLinkBox').value));
+  const copyGlobalClientLinkBtn = document.getElementById('copyGlobalClientLink');
+  if(copyGlobalClientLinkBtn) copyGlobalClientLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalClientLinkBox').value));
   document.getElementById('logoutRoleBtn').addEventListener('click', ()=>{
     // Kalau tadi masuk lewat link khusus marketing (#marketing), pertahankan hash itu
     // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan di layar ini.
@@ -4343,6 +4361,15 @@ function attachHandlers(){
       return;
     }
     roleDecided = false; isSupplier = false; supplierVendorKey = null;
+    if(clientLinkMode){
+      // Keluar total dari akun klien yang login lewat Link Klien Umum — balik
+      // ke halaman login klien umum lagi, bukan ke gate password project ini.
+      clientLinkMode = false;
+      currentProjectId = null; state = null;
+      history.replaceState(null, '', location.pathname + '#clientlink');
+      showEntryGate();
+      return;
+    }
     if(location.hash === '#client'){ showClientPasswordGate(); }
     else if(location.hash === '#vendor'){ showSupplierGate(); }
     else { showProjectGate(); }

@@ -67,7 +67,7 @@
 
   /* Gate screen */
   .gate-wrap{min-height:100vh;min-height:100dvh;margin:-20px calc(-50vw + 50%) -80px;width:100vw;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;padding:20px;background-repeat:no-repeat!important;background-position:center center!important;background-size:cover!important;}
-  .gate-card{max-width:460px;width:100%;background:rgba(140,38,56,.36);border:1px solid rgba(255,255,255,.15);border-radius:28px;padding:36px 30px;text-align:center;box-shadow:0 18px 40px rgba(59,16,21,.4);}
+  .gate-card{max-width:460px;width:100%;background:rgba(140,38,56,.36);border:1px solid rgba(255,255,255,.15);border-radius:28px;padding:36px 30px;text-align:center;box-shadow:0 18px 40px rgba(59,16,21,.4);color:rgba(255,255,255,.85);}
   .gate-logo{max-width:220px;margin:0 auto 18px;display:block;}
   .gate-card h2{margin:0 0 8px;font-size:24px;color:#fff;}
   .gate-card p{color:rgba(255,255,255,.78);font-size:13.5px;margin:0 0 26px;}
@@ -2521,7 +2521,7 @@ function showSupplierGate(){
             const logo = vendorLogoUrl(state.vendors[c.key]);
             const iconHtml = logo ? `<img src="${escapeAttr(logo)}" alt="${escapeAttr(c.key)}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:2px;"/>` : (c.emoji||'⭐');
             return `<button class="gate-btn" style="flex:1 1 45%;" data-supplier-key="${escapeAttr(c.key)}">${iconHtml} ${escapeHtml(c.key)}</button>`;
-          }).join('') : `<p style="color:var(--cream-dimmer);font-size:13px;">Belum ada kategori vendor di paket project ini.</p>`}
+          }).join('') : `<p style="color:rgba(255,255,255,.6);font-size:13px;">Belum ada kategori vendor di paket project ini.</p>`}
         </div>
       </div>
     </div>
@@ -3241,7 +3241,7 @@ function showPackageForm(editId, draft){
         <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
           <input id="pkgName" placeholder="Nama Paket (mis. Paket Silver)" value="${base?escapeAttr(base.name||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <textarea id="pkgNote" placeholder="Catatan/deskripsi paket (opsional)" style="padding:12px 14px;border-radius:12px;width:100%;min-height:60px;">${base?escapeHtml(base.note||''):''}</textarea>
-          <div style="font-size:12px;font-weight:700;color:var(--cream-dim);margin-top:4px;">Vendor yang termasuk dalam paket ini:</div>
+          <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.85);margin-top:4px;">Vendor yang termasuk dalam paket ini:</div>
           <div id="pkgCatsBox" style="display:grid;grid-template-columns:1fr 1fr;gap:7px 14px;max-height:220px;overflow-y:auto;padding:4px 2px;">
             ${VENDOR_CATS.map(c=>`
               <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
@@ -3254,8 +3254,8 @@ function showPackageForm(editId, draft){
             <input id="newVendorCatName" placeholder="Nama vendor baru (mis. Wedding Car)" style="flex:1;padding:8px 10px;border-radius:10px;"/>
             <button class="btn small ghost" id="addVendorCatBtn" type="button" style="flex-shrink:0;">+ Tambah Vendor</button>
           </div>
-          <div style="font-size:12px;font-weight:700;color:var(--cream-dim);margin-top:8px;">Rincian isi paket per vendor (opsional):</div>
-          <div style="font-size:11px;color:var(--cream-dimmer);margin-top:-4px;line-height:1.5;">Isi apa saja yang didapat klien dari tiap vendor. Satu baris = satu item. Ini otomatis muncul di kartu vendor tiap project baru yang pakai paket ini, jadi klien langsung tau isinya tanpa perlu diisi ulang.</div>
+          <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.85);margin-top:8px;">Rincian isi paket per vendor (opsional):</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:-4px;line-height:1.5;">Isi apa saja yang didapat klien dari tiap vendor. Satu baris = satu item. Ini otomatis muncul di kartu vendor tiap project baru yang pakai paket ini, jadi klien langsung tau isinya tanpa perlu diisi ulang.</div>
           <div id="pkgItemsBox" style="display:flex;flex-direction:column;gap:10px;max-height:280px;overflow-y:auto;padding:4px 2px;">
             ${VENDOR_CATS.map(c=>{
               const existing = (base && base.catItems && base.catItems[c.key]) ? base.catItems[c.key].join('\n') : '';
@@ -3266,7 +3266,7 @@ function showPackageForm(editId, draft){
               return `
               <div class="pkg-item-block" data-catkey="${escapeAttr(c.key)}" style="display:${selectedCats.includes(c.key)?'block':'none'};">
                 <div style="font-size:12px;font-weight:700;margin-bottom:4px;">${c.emoji} ${escapeHtml(c.key)}</div>
-                ${isKatering ? `<div style="font-size:11px;color:var(--cream-dimmer);margin-bottom:4px;line-height:1.4;">Sertakan nama paket kateringnya (mis. &quot;Paket Prasmanan Deluxe&quot;) dan jumlah pax buffet (mis. &quot;500 pax buffet&quot;) sebagai baris terpisah.</div>` : ''}
+                ${isKatering ? `<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:4px;line-height:1.4;">Sertakan nama paket kateringnya (mis. &quot;Paket Prasmanan Deluxe&quot;) dan jumlah pax buffet (mis. &quot;500 pax buffet&quot;) sebagai baris terpisah.</div>` : ''}
                 <textarea data-catitems="${escapeAttr(c.key)}" placeholder="${placeholder}" style="padding:8px 10px;border-radius:10px;width:100%;min-height:52px;font-size:12.5px;">${escapeHtml(existing)}</textarea>
               </div>`;
             }).join('')}
@@ -3395,7 +3395,7 @@ function showNewProjectForm(){
           </select>` : ''}
           ${isAdmin ? `
           <div style="border-top:1px dashed var(--card-border);margin-top:4px;padding-top:10px;">
-            <p style="font-size:12px;color:var(--cream-dimmer);margin:0 0 8px;">Akun login klien (1 klien = 1 project) — username &amp; password ini yang dipakai klien masuk lewat tombol "Saya Calon Pengantin (Klien)" di halaman utama.</p>
+            <p style="font-size:12px;color:rgba(255,255,255,.6);margin:0 0 8px;">Akun login klien (1 klien = 1 project) — username &amp; password ini yang dipakai klien masuk lewat tombol "Saya Calon Pengantin (Klien)" di halaman utama.</p>
             <input id="newClientUsername" placeholder="Username Klien" style="padding:12px 14px;border-radius:12px;width:100%;margin-bottom:8px;"/>
             <div class="pin-box-pw-wrap"><input type="password" id="newClientPassword" placeholder="Password Klien (min. 6 karakter)" style="padding:12px 14px;border-radius:12px;width:100%;"/><button type="button" class="pw-toggle" data-pw-toggle="newClientPassword">👁</button></div>
           </div>` : ''}
@@ -3562,7 +3562,6 @@ function render(){
         <button class="btn primary" id="clientAcctSubmitBtn" style="width:100%;">Simpan Akun</button>
         <div class="pin-error" id="clientAcctError"></div>
       </div>
-      <div class="lp-note">Kirim <b>link + password</b> ini ke klien ini saja — tiap klien punya link &amp; password sendiri, jadi datanya tidak akan tercampur dengan klien lain. Admin masuk lewat PIN Admin, dan tiap anggota marketing masuk lewat PIN Marketing masing-masing di halaman "Semua Project" — marketing hanya akan melihat klien yang dia buat sendiri, sementara Admin bisa melihat &amp; mengubah semuanya.<br>Kalau link di atas tidak mau kebuka di HP klien, minta klien buka halaman utama lalu pilih <b>"Saya Calon Pengantin (Klien)"</b> dan masukkan <b>Kode Project</b> + Password secara manual — cara ini selalu berfungsi.<br>Untuk vendor lapangan (MUA, katering, dekorasi, dll), pakai <b>Link Vendor</b> di halaman "Semua Project" (tab Admin) — satu link itu berlaku untuk semua vendor di semua project, jadi tidak perlu dibagikan per-project lagi.</div>
     </div>` : ''}
 
     <div class="hero">

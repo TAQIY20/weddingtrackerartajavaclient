@@ -801,7 +801,7 @@ function computePaymentFlags(payments){
   const list = Array.isArray(payments) ? payments : [];
   const findPay = kw => list.find(p => (p.label||'').toLowerCase().includes(kw));
   const dp1 = findPay('dp 1');
-  const dp20 = findPay('dp 20');
+  const dp20 = findPay('dp 25');
   const pelunasan = findPay('pelunasan');
   const totalPaid = list.filter(p=>p.status==='paid').reduce((s,p)=>s+(Number(p.amount)||0),0);
   const totalTagihan = list.reduce((s,p)=>s+(Number(p.amount)||0),0);
@@ -855,7 +855,7 @@ function defaultTimeline(weddingDate){
   const offsets = [
     ['Booking & DP 1 (Rp1.000.000)', -90, 'Admin', 'Pembayaran tanda jadi buat lock tanggal & tim vendor kalian.'],
     ['Konsultasi Konsep & Moodboard Prewedding', -75, 'Prewedding', 'Ngobrolin tema, lokasi, dan referensi gaya bareng tim kreatif.'],
-    ['Pelunasan DP 20%', -70, 'Admin', 'Pembayaran tahap kedua, 20% dari total paket.'],
+    ['Pelunasan DP 25%', -70, 'Admin', 'Pembayaran tahap kedua, 25% dari total paket.'],
     ['Penjadwalan Meeting ke Kantor', -65, 'Koordinasi', 'Ketemu langsung sama tim WO buat bahas detail teknis & konsep acara.'],
     ['Fitting Baju Prewedding', -55, 'Attire', 'Coba baju & aksesoris khusus sesi foto prewedding.'],
     ['Sesi Foto Prewedding', -50, 'Prewedding', 'Hunting foto sesuai konsep & lokasi yang sudah disepakati.'],
@@ -900,7 +900,7 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
   const weddingDate = wd.toISOString().slice(0,10);
   const budget = pkg ? (Number(pkg.price)||0) : 0;
   const dp1 = 1000000;
-  const dp20 = pkg ? Math.round(budget*0.2) : 0;
+  const dp20 = pkg ? Math.round(budget*0.25) : 0;
   const pelunasan = pkg ? Math.max(budget - dp1 - dp20, 0) : 0;
   const removedVendorCats = pkg ? VENDOR_CATS.filter(c=> !pkg.includedCats.includes(c.key)).map(c=>c.key) : [];
   const vendors = defaultVendors();
@@ -930,8 +930,8 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     subsidiTakeOut: 0,
     payments: [
       {id:uid('p'), label:'DP 1 — Tanda Jadi', amount:dp1, dueDate: weddingDate, status:'unpaid'},
-      {id:uid('p'), label:'DP 20%', amount:dp20, dueDate: weddingDate, status:'unpaid'},
-      {id:uid('p'), label:'Pelunasan (Sisa 80%)', amount:pelunasan, dueDate: weddingDate, status:'unpaid'},
+      {id:uid('p'), label:'DP 25%', amount:dp20, dueDate: weddingDate, status:'unpaid'},
+      {id:uid('p'), label:'Pelunasan (Sisa 75%)', amount:pelunasan, dueDate: weddingDate, status:'unpaid'},
     ],
     moodboard: { concept: pkg ? (pkg.note||'') : '', notes:[], tags:['Minimalis','Garden Party'], palette:['#7A1F2E','#C6A15B','#F5E8D0'], links:[] },
     requests: [],
@@ -2012,7 +2012,7 @@ function computeDp20(payments, packageHarga){
   const dp1Item = list.find(p => (p.label||'').toLowerCase().includes('dp 1'));
   const dp1Paid = !!(dp1Item && dp1Item.status === 'paid');
   const dp1Amount = dp1Item ? (Number(dp1Item.amount)||0) : 1000000;
-  const dp20Base = Math.round((Number(packageHarga)||0) * 0.2);
+  const dp20Base = Math.round((Number(packageHarga)||0) * 0.25);
   return {
     dp20Base,
     dp1Paid,
@@ -3562,7 +3562,6 @@ function render(){
         <button class="btn primary" id="clientAcctSubmitBtn" style="width:100%;">Simpan Akun</button>
         <div class="pin-error" id="clientAcctError"></div>
       </div>
-      <div class="lp-note">Akun ini yang dipakai klien login lewat tombol <b>"Saya Calon Pengantin (Klien)"</b> di halaman utama (username + password saja, tanpa perlu kode project). Kalau project ini belum punya akun (project lama), bikin dulu di sini. Mengganti akun akan mematikan akses username lama — klien wajib pakai akun baru.</div>
       <div class="lp-note">Kirim <b>link + password</b> ini ke klien ini saja — tiap klien punya link &amp; password sendiri, jadi datanya tidak akan tercampur dengan klien lain. Admin masuk lewat PIN Admin, dan tiap anggota marketing masuk lewat PIN Marketing masing-masing di halaman "Semua Project" — marketing hanya akan melihat klien yang dia buat sendiri, sementara Admin bisa melihat &amp; mengubah semuanya.<br>Kalau link di atas tidak mau kebuka di HP klien, minta klien buka halaman utama lalu pilih <b>"Saya Calon Pengantin (Klien)"</b> dan masukkan <b>Kode Project</b> + Password secara manual — cara ini selalu berfungsi.<br>Untuk vendor lapangan (MUA, katering, dekorasi, dll), pakai <b>Link Vendor</b> di halaman "Semua Project" (tab Admin) — satu link itu berlaku untuk semua vendor di semua project, jadi tidak perlu dibagikan per-project lagi.</div>
     </div>` : ''}
 
@@ -3975,7 +3974,7 @@ function renderVendors(){
   const grandHarga = totalVendorHarga();
   const removedCats = VENDOR_CATS.filter(c=> (state.removedVendorCats||[]).includes(c.key));
   return `
-    <div class="section-head"><div><h2>Fixasi Vendor</h2>${!isSupplier ? `<p>17 kategori inti, plus add-on & progres pengerjaan tiap vendor. Total harga deal seluruh vendor saat ini: <b style="color:var(--gold);">${fmtIDR(grandHarga)}</b>${grandAddon?` + add-on <b style="color:var(--gold);">${fmtIDR(grandAddon)}</b>`:''} — otomatis masuk ke tab Pembayaran.</p>` : ''}</div></div>
+    <div class="section-head"><div><h2>Fixasi Vendor</h2>${!isSupplier ? `<p>Total harga deal seluruh vendor saat ini: <b style="color:var(--gold);">${fmtIDR(grandHarga)}</b>${grandAddon?` + add-on <b style="color:var(--gold);">${fmtIDR(grandAddon)}</b>`:''} — otomatis masuk ke tab Pembayaran.</p>` : ''}</div></div>
     <div class="vendor-grid">${activeVendorCats().map(c=> renderVendorCard(c.key, state.vendors[c.key], {emoji:c.emoji})).join('')}</div>
     ${isVendor && removedCats.length ? `
     <div class="mb-card" style="margin-top:14px;">
@@ -4014,7 +4013,7 @@ function renderPayments(){
   const totalPaid = state.payments.filter(p=>p.status==='paid').reduce((s,p)=>s+(Number(p.amount)||0),0);
   const sisaTagihan = Math.max(totalKontrak - totalPaid - subsidi, 0);
   return `
-    <div class="section-head"><div><h2>Pembayaran</h2><p>DP 1 senilai Rp1.000.000, lanjut DP 20%, dan pelunasan sebelum hari H. Harga paket, harga vendor &amp; add-on otomatis terhitung ke total keseluruhan dan sisa tagihan. Kalau ada subsidi vendor take-out, isi manual di kolom Subsidi Take-Out — nilainya otomatis mengurangi Sisa Tagihan.</p></div></div>
+    <div class="section-head"><div><h2>Pembayaran</h2><p>DP 1 senilai Rp1.000.000, lanjut DP 25%, dan pelunasan sebelum hari H. Harga paket, harga vendor &amp; add-on otomatis terhitung ke total keseluruhan dan sisa tagihan. Kalau ada subsidi vendor take-out, isi manual di kolom Subsidi Take-Out — nilainya otomatis mengurangi Sisa Tagihan.</p></div></div>
     <div class="pay-summary">
       <div class="pay-item pay-item-package"><div class="lbl">Harga Paket</div>
         ${state.packageName ? `<div class="pkg-name">${escapeHtml(state.packageName)}</div>` : ''}
@@ -4023,7 +4022,7 @@ function renderPayments(){
       <div class="pay-item"><div class="lbl">Total Add-Ons Vendor</div><div class="val" id="totalAddonsVal">${fmtIDR(totalAddons)}</div></div>
       <div class="pay-item highlight"><div class="lbl">Total Kontrak Keseluruhan</div><div class="val" id="totalKontrakVal">${fmtIDR(totalKontrak)}</div></div>
       <div class="pay-item"><div class="lbl">Subsidi Take-Out</div><div class="val" id="totalSubsidiVal" style="${subsidi>0?'color:var(--danger);':''}">${isVendor ? `<input class="currency" id="subsidiInput" value="${fmtIDR(state.subsidiTakeOut)}">` : ((subsidi>0 ? '- ' : '') + fmtIDR(subsidi))}</div></div>
-      <div class="pay-item"><div class="lbl">Estimasi DP 20% (dari Harga Paket)${dp1Paid ? ' &mdash; sudah dikurangi DP 1' : ''}</div><div class="val" id="dp20Val">${fmtIDR(dp20)}</div></div>
+      <div class="pay-item"><div class="lbl">Estimasi DP 25% (dari Harga Paket)${dp1Paid ? ' &mdash; sudah dikurangi DP 1' : ''}</div><div class="val" id="dp20Val">${fmtIDR(dp20)}</div></div>
       <div class="pay-item"><div class="lbl">Sudah Dibayar</div><div class="val" id="totalPaidVal">${fmtIDR(totalPaid)}</div></div>
       <div class="pay-item highlight"><div class="lbl">Sisa Tagihan</div><div class="val" id="sisaTagihanVal">${fmtIDR(sisaTagihan)}</div></div>
     </div>
@@ -4470,7 +4469,7 @@ function attachHandlers(){
 
     const budgetInput = document.getElementById('budgetInput');
     setupCurrencyInput(budgetInput, ()=>state.budget, v=>{ state.budget=v; }, ()=>{
-      // Harga Paket otomatis masuk ke Total Kontrak, Sisa Tagihan, dan Estimasi DP 20%.
+      // Harga Paket otomatis masuk ke Total Kontrak, Sisa Tagihan, dan Estimasi DP 25%.
       refreshPaymentSummary();
     });
 

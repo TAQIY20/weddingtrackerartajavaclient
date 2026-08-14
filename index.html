@@ -2039,7 +2039,11 @@ function contactWaLink(contact, message){
   const d = digitsOnly(contact);
   if(!d || d.length < 8) return null;
   const num = d.startsWith('0') ? ('62' + d.slice(1)) : (d.startsWith('62') ? d : ('62' + d));
-  return 'https://wa.me/' + num + (message ? ('?text=' + encodeURIComponent(message)) : '');
+  // Pakai api.whatsapp.com (bukan wa.me) — di banyak kasus Windows, link wa.me
+  // "diserahkan" ke aplikasi WhatsApp Desktop lewat OS, dan proses handoff itu yang
+  // suka merusak emoji 4-byte (📅🕓📝📍🗺️ dll jadi �). api.whatsapp.com/send lebih
+  // sering dibuka langsung di browser (WhatsApp Web), yang decode teksnya normal.
+  return 'https://api.whatsapp.com/send?phone=' + num + (message ? ('&text=' + encodeURIComponent(message)) : '');
 }
 function contactMailtoLink(email, subject, message){
   return 'mailto:' + encodeURIComponent(email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(message);

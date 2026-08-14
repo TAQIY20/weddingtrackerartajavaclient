@@ -2135,7 +2135,7 @@ function buildProjectReminders(){
         if(match && match.v) relatedVendors.push(match);
       });
     } else if(t.cat==='Koordinasi' || t.cat==='Acara'){
-      allVendorListR.forEach(x=>{ if(x.v && x.v.status && x.v.status!=='belum') relatedVendors.push(x); });
+      // Tidak ada fallback otomatis untuk kategori ini — vendor harus dicentang manual dulu.
     } else {
       const match = allVendorListR.find(x=> x.label===t.cat || x.key===t.cat);
       if(match && match.v && match.v.status && match.v.status!=='belum') relatedVendors.push(match);
@@ -4053,7 +4053,7 @@ function renderTimeline(){
                     </label>
                   `).join('')}
                 </div>
-                <div class="t-vendor-picker-hint">${(item.vendorKeys && item.vendorKeys.length) ? 'Manual — cuma vendor yang dicentang di atas yang diingatkan.' : `Belum dipilih manual — otomatis pakai kategori "${escapeHtml(item.cat)}" (atau semua vendor booked kalau kategorinya "Koordinasi"/"Acara").`}</div>
+                <div class="t-vendor-picker-hint">${(item.vendorKeys && item.vendorKeys.length) ? 'Manual — cuma vendor yang dicentang di atas yang diingatkan.' : (item.cat==='Koordinasi'||item.cat==='Acara') ? 'Belum ada vendor dicentang — belum ada notif vendor yang muncul untuk agenda ini sampai kamu centang manual.' : `Belum dipilih manual — otomatis pakai kategori "${escapeHtml(item.cat)}".`}</div>
               </div>` : ''}
             </div>
             <div class="t-right">

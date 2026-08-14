@@ -2054,7 +2054,7 @@ function buildEventReminderMessage(recipientLabel, coupleLabel, weddingDateFmt, 
 }
 function buildPaymentReminderMessage(recipientLabel, coupleLabel, paymentLabel, amountFmt, dueDateFmt, daysLeft){
   const dText = daysLeft < 0 ? ('sudah melewati jatuh tempo sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'jatuh tempo hari ini' : ('jatuh tempo dalam ' + daysLeft + ' hari'));
-  return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan kewajiban pembayaran untuk project ${coupleLabel}:\n\n💳 ${paymentLabel}\n💰 ${amountFmt}\n📅 Jatuh tempo: ${dueDateFmt} (${dText})\n\nMohon kesediaan Bapak/Ibu melakukan pembayaran sesuai nominal dan batas waktu di atas, lalu konfirmasikan ke kami disertai bukti transfer. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan kewajiban pembayaran untuk project Anda:\n\n💳 ${paymentLabel}\n💰 ${amountFmt}\n📅 Jatuh tempo: ${dueDateFmt} (${dText})\n\nMohon kesediaan Bapak/Ibu melakukan pembayaran sesuai nominal dan batas waktu di atas, lalu konfirmasikan ke kami disertai bukti transfer. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
 function buildAgendaReminderMessage(recipientLabel, coupleLabel, agendaTitle, agendaDesc, dateFmt, daysLeft, location, mapsUrl){
   const dText = daysLeft < 0 ? ('sudah melewati jadwal sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'dijadwalkan hari ini' : ('dijadwalkan dalam ' + daysLeft + ' hari'));

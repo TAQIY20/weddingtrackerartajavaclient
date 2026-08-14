@@ -903,7 +903,7 @@ function defaultTimeline(weddingDate, akadDate){
     ['Final Foto & Video Cinematic Prewedding', -45, '13:00', 'Prewedding', 'Foto & video cinematic prewedding selesai & final.'],
     ['Final Dekorasi', -40, '13:00', 'Koordinasi', 'Fiksasi konsep & detail dekorasi acara.'],
     ['Diskusi Additional (bila ada)', -35, '13:00', 'Koordinasi', 'Diskusi kebutuhan tambahan di luar paket, kalau ada.'],
-    ['Fitting Baju (Akad & Temu, Baju Bapak-Ibu, Baju Pendukung)', -30, '10:00', 'Attire', 'Fitting baju akad & temu manten, baju orang tua kedua calon, & baju pendukung.'],
+    ['Fitting Baju (Akad, Temu dan Baju Bapak-Ibu) dan Pemilihan Baju Pendukung', -30, '10:00', 'Attire', 'Fitting baju akad & temu manten serta baju orang tua kedua calon, dan pemilihan baju pendukung.'],
     ['List Internal', -25, '13:00', 'Koordinasi', 'Fiksasi semua detail sampai pengisian detail acara.'],
     ['Final Fitting Baju Resepsi', -20, '10:00', 'Attire', 'Fitting terakhir baju resepsi sebelum hari H.'],
     ['TM All Vendor & Keluarga', -14, '13:00', 'Koordinasi', 'Technical meeting bareng semua vendor & keluarga.'],
@@ -4382,8 +4382,11 @@ function reminderCardHtml(item, idx){
         <span class="reminder-badge tone-${item.status.tone}">${item.status.badge}</span>
         <div class="reminder-title">${escapeHtml(item.title)}</div>
       </div>
-      <pre class="reminder-msg">${escapeHtml(item.message)}</pre>
+      <div class="reminder-msg-wrap" style="display:none;">
+        <pre class="reminder-msg">${escapeHtml(item.message)}</pre>
+      </div>
       <div class="reminder-actions">
+        <button class="btn small ghost" data-action="toggle-reminder-msg" data-idx="${idx}">👁️ Lihat Pesan</button>
         ${actionHtml}
         <button class="btn small ghost" data-action="copy-reminder-msg" data-idx="${idx}">📋 Salin Pesan</button>
       </div>
@@ -4410,6 +4413,7 @@ function renderNotifikasi(){
     <div class="mb-card" style="text-align:center;">
       <div style="font-size:28px;font-weight:700;color:var(--gold);">${readyCount}</div>
       <div style="font-size:12.5px;color:var(--cream-dim);">reminder aktif, siap dikirim</div>
+      ${items.length ? `<button class="btn small ghost" id="toggleAllReminderMsg" style="margin-top:10px;">👁️ Buka Semua Pesan</button>` : ''}
     </div>
 
     <div class="mb-card">
@@ -4536,6 +4540,26 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
+  const toggleAllReminderMsg = document.getElementById('toggleAllReminderMsg');
+  if(toggleAllReminderMsg) toggleAllReminderMsg.addEventListener('click', ()=>{
+    const wraps = document.querySelectorAll('.reminder-msg-wrap');
+    const anyHidden = Array.from(wraps).some(w=> w.style.display === 'none');
+    wraps.forEach(w=>{ w.style.display = anyHidden ? 'block' : 'none'; });
+    document.querySelectorAll('[data-action="toggle-reminder-msg"]').forEach(btn=>{
+      btn.textContent = anyHidden ? '🙈 Sembunyikan Pesan' : '👁️ Lihat Pesan';
+    });
+    toggleAllReminderMsg.textContent = anyHidden ? '🙈 Tutup Semua Pesan' : '👁️ Buka Semua Pesan';
+  });
+  document.querySelectorAll('[data-action="toggle-reminder-msg"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const card = btn.closest('.reminder-card');
+      const wrap = card ? card.querySelector('.reminder-msg-wrap') : null;
+      if(!wrap) return;
+      const showing = wrap.style.display !== 'none';
+      wrap.style.display = showing ? 'none' : 'block';
+      btn.textContent = showing ? '👁️ Lihat Pesan' : '🙈 Sembunyikan Pesan';
+    });
+  });
   document.querySelectorAll('[data-action="copy-reminder-msg"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const it = (window.__reminderItems||[])[Number(btn.dataset.idx)];

@@ -5100,7 +5100,7 @@ function attachHandlers(){
     const labelInp = el.querySelector('[data-field="label"]');
     if(labelInp) labelInp.addEventListener('input', e=>{ p.label = e.target.value; scheduleSave(); });
     const dueInp = el.querySelector('[data-field="dueDate"]');
-    if(dueInp) dueInp.addEventListener('change', e=>{ p.dueDate = e.target.value; scheduleSave(); });
+    if(dueInp) dueInp.addEventListener('change', e=>{ p.dueDate = e.target.value; scheduleSave(); render(); });
     const amtInp = el.querySelector('[data-field="amount"]');
     setupCurrencyInput(amtInp, ()=>p.amount, v=>{ p.amount=v; });
     const toggle = el.querySelector('[data-action="toggle-paid"]');

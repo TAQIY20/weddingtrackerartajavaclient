@@ -885,29 +885,47 @@ async function saveCustomVendorCats(){
   return await storageSetWithRetry(CUSTOM_VENDOR_CATS_KEY, JSON.stringify(extra), true);
 }
 
-function defaultTimeline(weddingDate){
-  const offsets = [
-    ['Booking & DP 1 (Rp1.000.000)', -90, 'Admin', 'Pembayaran tanda jadi buat lock tanggal & tim vendor kalian.'],
-    ['Konsultasi Konsep & Moodboard Prewedding', -75, 'Prewedding', 'Ngobrolin tema, lokasi, dan referensi gaya bareng tim kreatif.'],
-    ['Pelunasan DP 25%', -70, 'Admin', 'Pembayaran tahap kedua, 25% dari total paket.'],
-    ['Penjadwalan Meeting ke Kantor', -65, 'Koordinasi', 'Ketemu langsung sama tim WO buat bahas detail teknis & konsep acara.'],
-    ['Fitting Baju Prewedding', -55, 'Attire', 'Coba baju & aksesoris khusus sesi foto prewedding.'],
-    ['Sesi Foto Prewedding', -50, 'Prewedding', 'Hunting foto sesuai konsep & lokasi yang sudah disepakati.'],
-    ['Review & Revisi Hasil Prewedding', -40, 'Prewedding', 'Cek hasil edit foto/video prewedding, request revisi kalau perlu.'],
-    ['Fitting Baju Akad & Resepsi', -30, 'Attire', 'Fitting pertama baju pengantin buat hari H.'],
-    ['Technical Meeting (H-2 Minggu)', -14, 'Koordinasi', 'Rapat teknis final: rundown acara, denah venue, & briefing semua vendor.'],
-    ['Final Fitting Baju', -7, 'Attire', 'Fitting terakhir sebelum hari H, pastikan semua pas & nyaman.'],
-    ['Gladi Resik & Briefing Vendor', -2, 'Koordinasi', 'Simulasi rundown acara bareng seluruh tim vendor.'],
-    ['Hari H — Akad & Resepsi', 0, 'Acara', 'Hari besarnya! Semua tim standby sesuai rundown.'],
-    ['Handover Raw Footage', 3, 'Dokumentasi', 'Tim dokumentasi serahin file mentah foto & video.'],
-    ['Preview Album & Teaser Video', 10, 'Dokumentasi', 'Preview awal desain album & teaser video untuk direview.'],
-    ['Revisi Album & Video', 20, 'Dokumentasi', 'Klien kasih catatan revisi, tim edit langsung follow up.'],
-    ['Album & Video Final Selesai', 30, 'Dokumentasi', 'Album cetak & video final delivered. Selesai! 🎉'],
+function defaultTimeline(weddingDate, akadDate){
+  akadDate = akadDate || weddingDate;
+  // offset = hari relatif ke weddingDate (hari resepsi). anchor:'akad' -> pakai akadDate langsung.
+  const items = [
+    ['DP 1 Juta', -120, '10:00', 'Admin', 'Pembayaran tanda jadi buat lock tanggal & tim vendor kalian.'],
+    ['Survei Kantor/Galeri', -115, '13:00', 'Koordinasi', 'Calon pengantin survei kantor/galeri ArtaJava.'],
+    ['DP 25%', -110, '10:00', 'Admin', 'Tanda jadi project wedding — mulai kerja & tanda tangan MOU.'],
+    ['Survei Gedung & Fix Venue', -100, '13:00', 'Koordinasi', 'Survei venue bareng tim & fiksasi lokasi acara.'],
+    ['Konsultasi Moodboard', -90, '13:00', 'Prewedding', 'Ngobrolin tema, lokasi, dan referensi gaya bareng tim kreatif.'],
+    ['Diskusi Konsep Design Baju Baru (Perdana)', -85, '13:00', 'Attire', 'Diskusi awal konsep design baju pengantin.'],
+    ['Final Konsep Design Baju Baru Resepsi', -75, '13:00', 'Attire', 'Fiksasi konsep design baju resepsi.'],
+    ['Diskusi Konsep Prewedding', -70, '13:00', 'Prewedding', 'Ngobrolin konsep, tema, & lokasi sesi foto prewedding.'],
+    ['Prewedding', -60, '08:00', 'Prewedding', 'Hunting foto sesuai konsep & lokasi yang sudah disepakati.'],
+    ['Handover Raw Footage Akad', -55, '10:00', 'Dokumentasi', 'Tim dokumentasi serahin file mentah foto & video akad.'],
+    ['Pemilihan Foto Prewedding (untuk Digital Invitation)', -50, '13:00', 'Prewedding', 'Klien pilih foto prewedding yang akan diedit untuk digital invitation.'],
+    ['Final Foto & Video Cinematic Prewedding', -45, '13:00', 'Prewedding', 'Foto & video cinematic prewedding selesai & final.'],
+    ['Final Dekorasi', -40, '13:00', 'Koordinasi', 'Fiksasi konsep & detail dekorasi acara.'],
+    ['Diskusi Additional (bila ada)', -35, '13:00', 'Koordinasi', 'Diskusi kebutuhan tambahan di luar paket, kalau ada.'],
+    ['Fitting Baju (Akad & Temu, Baju Bapak-Ibu, Baju Pendukung)', -30, '10:00', 'Attire', 'Fitting baju akad & temu manten, baju orang tua kedua calon, & baju pendukung.'],
+    ['List Internal', -25, '13:00', 'Koordinasi', 'Fiksasi semua detail sampai pengisian detail acara.'],
+    ['Final Fitting Baju Resepsi', -20, '10:00', 'Attire', 'Fitting terakhir baju resepsi sebelum hari H.'],
+    ['TM All Vendor & Keluarga', -14, '13:00', 'Koordinasi', 'Technical meeting bareng semua vendor & keluarga.'],
+    ['Pelunasan 75% + Additional', -10, '10:00', 'Admin', 'Pelunasan sisa pembayaran beserta additional yang sudah didiskusikan.'],
+    ['D-Day Akad', null, '08:00', 'Acara', 'Hari akad nikah! Semua tim standby sesuai rundown.', 'akad'],
+    ['D-Day Resepsi', 0, '11:00', 'Acara', 'Hari resepsi! Semua tim standby sesuai rundown.'],
+    ['Handover Raw Footage Akad & Resepsi', 3, '10:00', 'Dokumentasi', 'Tim dokumentasi serahin file mentah foto & video akad & resepsi.'],
+    ['Pemilihan Foto Wedding yang Diedit', 10, '13:00', 'Dokumentasi', 'Klien pilih foto wedding yang akan diedit.'],
+    ['Final Video Wedding', 20, '13:00', 'Dokumentasi', 'Video wedding cinematic final selesai.'],
+    ['Album Jadi', 30, '13:00', 'Dokumentasi', 'Album cetak selesai & siap diserahkan. Selesai! 🎉'],
   ];
-  return offsets.map(([title, offset, cat, desc]) => {
-    const d = new Date(weddingDate + 'T00:00:00');
-    d.setDate(d.getDate() + offset);
-    return { id: uid('t'), title, cat, desc, date: d.toISOString().slice(0,10), status: 'upcoming', clientConfirmed: false };
+  return items.map(([title, offset, time, cat, desc, anchor]) => {
+    const base = anchor === 'akad' ? akadDate : weddingDate;
+    let dateStr;
+    if(offset === null){
+      dateStr = base;
+    } else {
+      const d = new Date(base + 'T00:00:00');
+      d.setDate(d.getDate() + offset);
+      dateStr = d.toISOString().slice(0,10);
+    }
+    return { id: uid('t'), title, cat, desc, date: dateStr, time: time || '', location: '', mapsUrl: '', status: 'upcoming', clientConfirmed: false };
   });
 }
 
@@ -955,7 +973,7 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     clientSourceDate: '',
     documents: { mou: null, rundown: null },
     couple: { brideName: brideName || 'Nama Mempelai Wanita', groomName: groomName || 'Nama Mempelai Pria', hashtag:'#TheWeddingOf', weddingDate, weddingTime:'', venueName:'', akadDate: weddingDate, akadTime:'', akadLocation:'' },
-    timeline: defaultTimeline(weddingDate),
+    timeline: defaultTimeline(weddingDate, weddingDate),
     vendors: vendors,
     extraVendors: [],
     removedVendorCats,
@@ -2034,13 +2052,17 @@ function buildPaymentReminderMessage(recipientLabel, coupleLabel, paymentLabel, 
   const dText = daysLeft < 0 ? ('sudah melewati jatuh tempo sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'jatuh tempo hari ini' : ('jatuh tempo dalam ' + daysLeft + ' hari'));
   return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan kewajiban pembayaran untuk project ${coupleLabel}:\n\n💳 ${paymentLabel}\n💰 ${amountFmt}\n📅 Jatuh tempo: ${dueDateFmt} (${dText})\n\nMohon kesediaan Bapak/Ibu melakukan pembayaran sesuai nominal dan batas waktu di atas, lalu konfirmasikan ke kami disertai bukti transfer. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
-function buildAgendaReminderMessage(recipientLabel, coupleLabel, agendaTitle, agendaDesc, dateFmt, daysLeft){
+function buildAgendaReminderMessage(recipientLabel, coupleLabel, agendaTitle, agendaDesc, dateFmt, daysLeft, location, mapsUrl){
   const dText = daysLeft < 0 ? ('sudah melewati jadwal sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'dijadwalkan hari ini' : ('dijadwalkan dalam ' + daysLeft + ' hari'));
-  return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan salah satu agenda persiapan pernikahan ${coupleLabel} berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}\n\nMohon kesediaan Bapak/Ibu mempersiapkan dan mengonfirmasi kembali kesiapannya, agar rangkaian acara berjalan lancar sesuai jadwal. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  const locLine = location ? ('\n📍 Lokasi: ' + location) : '';
+  const mapsLine = mapsUrl ? ('\n🗺️ Share Lokasi: ' + mapsUrl) : '';
+  return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan salah satu agenda persiapan pernikahan ${coupleLabel} berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}${locLine}${mapsLine}\n\nMohon kesediaan Bapak/Ibu mempersiapkan dan mengonfirmasi kembali kesiapannya, agar rangkaian acara berjalan lancar sesuai jadwal. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
-function buildAgendaVendorReminderMessage(vendorName, coupleLabel, agendaTitle, agendaDesc, dateFmt, daysLeft){
+function buildAgendaVendorReminderMessage(vendorName, coupleLabel, agendaTitle, agendaDesc, dateFmt, daysLeft, location, mapsUrl){
   const dText = daysLeft < 0 ? ('sudah melewati jadwal sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'dijadwalkan hari ini' : ('dijadwalkan dalam ' + daysLeft + ' hari'));
-  return `Assalamu'alaikum / Selamat pagi Bapak/Ibu ${vendorName},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan jadwal koordinasi untuk project ${coupleLabel} berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}\n\nMohon kesediaan tim untuk mempersiapkan kebutuhan terkait dan mengonfirmasi kesiapannya. Jika ada kendala atau perubahan jadwal, silakan hubungi kami kembali.\n\nTerima kasih atas kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  const locLine = location ? ('\n📍 Lokasi: ' + location) : '';
+  const mapsLine = mapsUrl ? ('\n🗺️ Share Lokasi: ' + mapsUrl) : '';
+  return `Assalamu'alaikum / Selamat pagi Bapak/Ibu ${vendorName},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan jadwal koordinasi untuk project ${coupleLabel} berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}${locLine}${mapsLine}\n\nMohon kesediaan tim untuk mempersiapkan kebutuhan terkait dan mengonfirmasi kesiapannya. Jika ada kendala atau perubahan jadwal, silakan hubungi kami kembali.\n\nTerima kasih atas kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
 /* Kumpulkan SEMUA reminder (acara, pembayaran & agenda timeline) untuk project yang
    sedang dibuka (pakai variabel global `state`) — baik yang statusnya sudah aktif
@@ -2099,7 +2121,7 @@ function buildProjectReminders(){
     [['cpwContact','CPW · ' + (cd.cpwName || 'Mempelai Wanita')], ['cppContact','CPP · ' + (cd.cppName || 'Mempelai Pria')]].forEach(([field,label])=>{
       const contact = cd[field];
       const recipientName = label.split(' · ')[1];
-      const msg = buildAgendaReminderMessage(recipientName, coupleLabel, t.title, t.desc, dateFmt, dLeftAgenda);
+      const msg = buildAgendaReminderMessage(recipientName, coupleLabel, t.title, t.desc, dateFmt, dLeftAgenda, t.location, t.mapsUrl);
       items.push({ group:'client', kind:'agenda', title:'🗓️ Agenda: ' + t.title + ' — ' + label, status:agendaStatus, message:msg, contact, recipientLabel:label, doneAgenda:isDoneAgenda });
     });
     const relatedVendors = [];
@@ -2116,7 +2138,7 @@ function buildProjectReminders(){
     }
     relatedVendors.forEach(x=>{
       const vendorBooked = x.v.status && x.v.status!=='belum';
-      const msg = buildAgendaVendorReminderMessage(x.v.name||x.label, coupleLabel, t.title, t.desc, dateFmt, dLeftAgenda);
+      const msg = buildAgendaVendorReminderMessage(x.v.name||x.label, coupleLabel, t.title, t.desc, dateFmt, dLeftAgenda, t.location, t.mapsUrl);
       items.push({ group:'vendor', kind:'agenda', title:'🗓️ Agenda: ' + t.title + ' — ' + (x.v.name||x.label), status:agendaStatus, message:msg, contact:x.v.contact, recipientLabel:x.v.name||x.label, doneAgenda:isDoneAgenda, vendorNotBooked: !vendorBooked });
     });
   });
@@ -3984,12 +4006,12 @@ function statusColor(s){
 function statusLabel(s){ return {belum:'Belum Booking', nego:'Survey', dp:'Sudah DP', progres:'On Progres', lunas:'Lunas', final:'Final'}[s] || s; }
 
 function renderTimeline(){
-  const sorted = [...state.timeline].sort((a,b)=> a.date.localeCompare(b.date));
+  const sorted = [...state.timeline].sort((a,b)=> (a.date+' '+(a.time||'00:00')).localeCompare(b.date+' '+(b.time||'00:00')));
   const vendorOptions = isVendor ? getReminderVendorOptions() : [];
   return `
     <div class="section-head">
-      <div><h2>Timeline Persiapan</h2><p>Fleksibel — ${isVendor?'geser tanggal kapan aja sesuai kebutuhan lapangan.':(isSupplier?'kamu bisa pantau agenda & progresnya di sini.':'kamu bisa konfirmasi kehadiran & pantau progres di sini.')}</p></div>
-      ${isVendor ? `<button class="btn primary" id="addTimelineItem">+ Tambah Agenda</button>` : ''}
+      <div><h2>Timeline Persiapan</h2><p>Fleksibel — ${isVendor?'geser tanggal & jam kapan aja sesuai kebutuhan lapangan.':(isSupplier?'kamu bisa pantau agenda & progresnya di sini.':'kamu bisa konfirmasi kehadiran & pantau progres di sini.')}</p></div>
+      ${isVendor ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn" id="resetTimelineDefault">↺ Set Default</button><button class="btn primary" id="addTimelineItem">+ Tambah Agenda</button></div>` : ''}
     </div>
     <div class="timeline">
       ${sorted.map(item => `
@@ -4001,7 +4023,20 @@ function renderTimeline(){
               <textarea class="t-desc" data-field="desc" rows="2" ${isVendor?'':'disabled'}>${escapeHtml(item.desc)}</textarea>
               <div class="t-meta">
                 <div class="t-date">📅 <input type="date" data-field="date" value="${item.date}" ${isVendor?'':'disabled'} /></div>
+                <div class="t-date">🕐 <input type="time" data-field="time" value="${escapeAttr(item.time||'')}" ${isVendor?'':'disabled'} /></div>
                 ${(!isVendor && !isSupplier) ? `<label class="confirm-toggle"><input type="checkbox" data-field="clientConfirmed" ${item.clientConfirmed?'checked':''}/> Aku konfirmasi bisa di jadwal ini</label>` : (item.clientConfirmed ? `<span class="chip done">✓ Dikonfirmasi klien</span>` : `<span class="chip upcoming">Menunggu konfirmasi klien</span>`)}
+              </div>
+              <div class="t-loc-row" style="margin-top:8px;">
+                ${isVendor ? `
+                <div class="t-loc-edit" style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <div class="t-date" style="flex:1;min-width:160px;">📍 <input type="text" data-field="location" placeholder="Lokasi (alamat)" value="${escapeAttr(item.location||'')}"/></div>
+                  <div class="t-date" style="flex:1;min-width:160px;">🗺️ <input type="url" data-field="mapsUrl" placeholder="Link share lokasi Google Maps" value="${escapeAttr(item.mapsUrl||'')}"/></div>
+                </div>` : ''}
+                ${(!isVendor && (item.location || item.mapsUrl)) ? `
+                <div style="font-size:12.5px;color:var(--cream-dim);display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                  ${item.location ? `<span>📍 ${escapeHtml(item.location)}</span>` : ''}
+                  ${item.mapsUrl ? `<a href="${escapeAttr(item.mapsUrl)}" target="_blank" rel="noopener" class="btn tiny ghost" style="padding:2px 10px;font-size:11px;">🗺️ Buka Lokasi</a>` : ''}
+                </div>` : ''}
               </div>
               ${isVendor ? `
               <div class="t-vendor-picker">
@@ -4703,9 +4738,17 @@ function attachHandlers(){
     const weddingTimeInput = document.getElementById('weddingTimeInput');
     if(weddingTimeInput) weddingTimeInput.addEventListener('change', e=>{ state.couple.weddingTime = e.target.value; scheduleSave(); render(); });
 
+    const resetTimelineDefault = document.getElementById('resetTimelineDefault');
+    if(resetTimelineDefault) resetTimelineDefault.addEventListener('click', async ()=>{
+      if(await customConfirm('Set ulang Timeline ke urutan default ArtaJava? Semua agenda & status (selesai/belum) yang sudah diedit di timeline ini akan diganti dengan 25 agenda default (tanggalnya dihitung otomatis dari tanggal akad & resepsi).')){
+        state.timeline = defaultTimeline(state.couple.weddingDate, state.couple.akadDate);
+        scheduleSave();
+        render();
+      }
+    });
     const addTimelineItem = document.getElementById('addTimelineItem');
     if(addTimelineItem) addTimelineItem.addEventListener('click', ()=>{
-      state.timeline.push({ id:uid('t'), title:'Agenda Baru', cat:'Custom', desc:'Klik untuk edit deskripsi...', date:todayISO(), status:'upcoming', clientConfirmed:false });
+      state.timeline.push({ id:uid('t'), title:'Agenda Baru', cat:'Custom', desc:'Klik untuk edit deskripsi...', date:todayISO(), time:'', location:'', mapsUrl:'', status:'upcoming', clientConfirmed:false });
       scheduleSave(); render();
     });
 
@@ -4880,11 +4923,11 @@ function attachHandlers(){
     const item = state.timeline.find(t=>t.id===id);
     el.querySelectorAll('[data-field]').forEach(field=>{
       const key = field.dataset.field;
-      const evt = (field.tagName==='SELECT' || field.type==='date' || field.type==='checkbox') ? 'change' : 'input';
+      const evt = (field.tagName==='SELECT' || field.type==='date' || field.type==='time' || field.type==='checkbox') ? 'change' : 'input';
       field.addEventListener(evt, e=>{
         item[key] = field.type==='checkbox' ? e.target.checked : e.target.value;
         scheduleSave();
-        if(key==='date' || key==='clientConfirmed') render();
+        if(key==='date' || key==='time' || key==='clientConfirmed') render();
       });
     });
     const toggleBtn = el.querySelector('[data-action="toggle-status"]');

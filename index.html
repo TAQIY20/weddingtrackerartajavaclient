@@ -70,6 +70,11 @@
 
   input,textarea,select{background:var(--field-bg);color:var(--cream);border:1px solid rgba(198,161,91,.45);box-shadow:inset 0 1px 2px rgba(122,31,46,.05);font-family:inherit;accent-color: var(--pink);}
   input::placeholder,textarea::placeholder{color:var(--cream-dimmer);}
+  /* Field yang non-edit (disabled) — di link klien maupun vendor — dulu masih nyisain garis tipis kotak
+     (dari inset box-shadow) meski border & background-nya udah transparan, jadi kelihatan kayak bekas
+     kolom form. Dihapus di sini biar tampilannya bersih rapi seperti teks biasa. Checkbox & radio
+     dikecualikan karena kotaknya memang harus tetap kelihatan buat nunjukin status centang. */
+  input:disabled:not([type="checkbox"]):not([type="radio"]),textarea:disabled,select:disabled{box-shadow:none;}
   select option{background:var(--field-bg);color:var(--cream);}
   input:focus,textarea:focus,select:focus{outline:none;border-color:var(--pink);}
 
@@ -249,7 +254,7 @@
      atau di-scroll kayak <input> biasa. Tinggi diatur otomatis oleh autoGrowTextarea()/initAutoGrowTextareas()
      tiap habis render(), dipakai di semua field Timeline & Detail Acara (Tamu VIP, Foto Keluarga, Catering,
      Buffet, Stall, Make Up, Busana, Request Lagu) plus judul Pembayaran. */
-  textarea.autofit{resize:none;overflow:hidden;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;font-family:inherit;line-height:1.35;min-height:1.4em;}
+  textarea.autofit{resize:none !important;overflow:hidden !important;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;font-family:inherit;line-height:1.35;min-height:0 !important;}
   .t-desc{font-size:13.5px;color:var(--cream-dim);margin:2px 0 8px;border:none;background:none !important;width:100%;resize:none;font-family:inherit;line-height:1.4;padding:0;}
   .t-desc:disabled{opacity:1;-webkit-text-fill-color:var(--cream-dim);}
   .t-vendor-picker{margin-top:10px;padding-top:10px;border-top:1px dashed var(--card-border);}
@@ -283,7 +288,7 @@
   .v-field input, .v-field textarea, .v-field select{width:100%;background:rgba(122,31,46,.05);border:1px solid var(--card-border);border-radius:9px;color:var(--cream);padding:7px 9px;font-family:inherit;font-size:13px;}
   .v-field textarea{resize:none;min-height:44px;-webkit-appearance:none;}
   .v-field textarea::-webkit-resizer{display:none;}
-  .v-field input:disabled,.v-field textarea:disabled,.v-field select:disabled{opacity:.85;background:transparent;border-color:transparent;padding-left:0;}
+  .v-field input:disabled,.v-field textarea:disabled,.v-field select:disabled{opacity:.85;background:transparent;border-color:transparent;padding-left:0;box-shadow:none;}
   .cd-card .v-field label{font-size:12px;}
   .cd-card .v-field input, .cd-card .v-field textarea{font-size:15px;}
   .cd-card .v-field textarea{min-height:32px;padding:6px 9px;line-height:1.3;overflow:hidden;}

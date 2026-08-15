@@ -1141,7 +1141,6 @@ function normalizeState(s){
   if(typeof s.couple.akadLocation !== 'string') s.couple.akadLocation = '';
   if(typeof s.couple.akadTime !== 'string') s.couple.akadTime = '';
   if(typeof s.couple.weddingTime !== 'string') s.couple.weddingTime = '';
-  if(typeof s.couple.invitationTemplate !== 'string') s.couple.invitationTemplate = 'elegan';
   if(!s.moodboard) s.moodboard = defaultData().moodboard;
   if(!Array.isArray(s.moodboard.notes)){
     s.moodboard.notes = s.moodboard.concept ? [{id:uid('mn'), vendorKey:'Umum', text:s.moodboard.concept, by:'client', date:new Date().toISOString()}] : [];
@@ -2840,68 +2839,80 @@ function showClientPasswordGate(){
    publik yang dipakai di sini (nama, tanggal, lokasi, foto moodboard, ucapan
    tamu lain) -- TIDAK PERNAH menyentuh state.vendors, state.payments, dst.
 
-   TEMA & ANIMASI: ada beberapa pilihan tema visual (INVITATION_TEMPLATES),
-   dipilih klien lewat panel "Tema Undangan Digital" di dashboard. Halaman
-   undangan dibuka lewat layar sampul "Buka Undangan" dulu (kaya undangan
-   digital pada umumnya) -- baru setelah diklik, konten utama muncul dengan
-   animasi fade + hitung mundur berjalan (live) + tiap bagian muncul pelan-pelan
-   pas discroll (scroll-reveal), plus elemen dekoratif melayang sesuai tema. */
-const INVITATION_TEMPLATES = {
-  elegan: {
-    label: 'Elegan Klasik', motif: '🌸', motifCount: 10,
-    vars: { '--inv-bg-a':'#3B1015', '--inv-bg-b':'#7A1F2E', '--inv-card-bg':'rgba(255,255,255,.08)', '--inv-card-border':'rgba(255,255,255,.18)', '--inv-ink':'#FFF8E9', '--inv-ink-dim':'rgba(255,248,233,.72)', '--inv-ink-dimmer':'rgba(255,248,233,.5)', '--inv-accent':'#E9C88A' }
-  },
-  minimalis: {
-    label: 'Modern Minimalis', motif: '✦', motifCount: 7,
-    vars: { '--inv-bg-a':'#141414', '--inv-bg-b':'#2c2c2c', '--inv-card-bg':'rgba(255,255,255,.05)', '--inv-card-border':'rgba(255,255,255,.14)', '--inv-ink':'#F5F5F0', '--inv-ink-dim':'rgba(245,245,240,.68)', '--inv-ink-dimmer':'rgba(245,245,240,.46)', '--inv-accent':'#C6A15B' }
-  },
-  botanikal: {
-    label: 'Botanikal Hijau', motif: '🍃', motifCount: 10,
-    vars: { '--inv-bg-a':'#20301F', '--inv-bg-b':'#4B6B41', '--inv-card-bg':'rgba(255,255,255,.09)', '--inv-card-border':'rgba(255,255,255,.2)', '--inv-ink':'#F5F3E7', '--inv-ink-dim':'rgba(245,243,231,.72)', '--inv-ink-dimmer':'rgba(245,243,231,.5)', '--inv-accent':'#D8C48A' }
-  }
-};
+   TEMA: satu tema tetap bernuansa Adat Jawa (motif parang, ornamen
+   gunungan, aksara hias). Halaman undangan dibuka lewat layar sampul
+   "Buka Undangan" dulu (kaya undangan digital pada umumnya) -- baru
+   setelah diklik, konten utama muncul dengan animasi fade + hitung mundur
+   berjalan (live) + tiap bagian muncul pelan-pelan pas discroll
+   (scroll-reveal), plus elemen dekoratif (motif melayang & gunungan). */
+/* ---------- TEMA UNDANGAN: ADAT JAWA ----------
+   Satu tema tetap bernuansa Jawa (motif parang, ornamen gunungan,
+   palet maroon-emas-krem). Sistem multi-tema lama sudah dilepas supaya
+   semua project pakai tampilan undangan yang sama & konsisten. */
+const JAVA_INV_VARS = { '--inv-bg-a':'#3B1015', '--inv-bg-b':'#7A1F2E', '--inv-card-bg':'rgba(255,248,233,.07)', '--inv-card-border':'rgba(198,161,91,.35)', '--inv-ink':'#FFF8E9', '--inv-ink-dim':'rgba(255,248,233,.74)', '--inv-ink-dimmer':'rgba(255,248,233,.52)', '--inv-accent':'#D9B26B' };
 function ensureInvitationStyle(){
   if(document.getElementById('invTemplateStyle')) return;
   const style = document.createElement('style');
   style.id = 'invTemplateStyle';
   style.textContent = `
     .inv-page{position:relative;min-height:100vh;overflow:hidden;background:linear-gradient(160deg,var(--inv-bg-a),var(--inv-bg-b));color:var(--inv-ink);margin:-20px calc(-50vw + 50%) -80px;width:100vw;}
-    .inv-motif{position:absolute;top:-40px;font-size:22px;opacity:.55;animation-name:invFloatDown;animation-timing-function:linear;animation-iteration-count:infinite;pointer-events:none;z-index:1;}
-    @keyframes invFloatDown{0%{transform:translateY(-6vh) rotate(0deg);opacity:0;}10%{opacity:.6;}90%{opacity:.5;}100%{transform:translateY(106vh) rotate(340deg);opacity:0;}}
+    .inv-page::before,.inv-page::after{content:'';position:absolute;left:0;right:0;height:14px;z-index:5;background:repeating-linear-gradient(45deg,var(--inv-accent) 0 3px,transparent 3px 16px);opacity:.55;}
+    .inv-page::before{top:0;} .inv-page::after{bottom:0;}
+    .inv-motif{position:absolute;top:-40px;font-size:20px;opacity:.4;animation-name:invFloatDown;animation-timing-function:linear;animation-iteration-count:infinite;pointer-events:none;z-index:1;filter:sepia(.3) saturate(1.4);}
+    @keyframes invFloatDown{0%{transform:translateY(-6vh) rotate(0deg);opacity:0;}10%{opacity:.45;}90%{opacity:.35;}100%{transform:translateY(106vh) rotate(340deg);opacity:0;}}
+    .inv-gunungan{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:260px;max-width:70vw;opacity:.16;z-index:1;pointer-events:none;}
     .inv-cover{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--inv-bg-a),var(--inv-bg-b));transition:opacity .6s ease,visibility .6s ease;padding:24px;text-align:center;}
     .inv-cover-hide{opacity:0;visibility:hidden;pointer-events:none;}
     .inv-cover-inner{max-width:380px;position:relative;z-index:2;}
-    .inv-cover-logo{max-width:90px;margin-bottom:14px;opacity:.9;}
+    .inv-cover-frame{border:1px solid var(--inv-card-border);border-radius:2px;padding:26px 20px;position:relative;}
+    .inv-cover-frame::before,.inv-cover-frame::after{content:'꧁ ꧂';display:block;color:var(--inv-accent);letter-spacing:.3em;font-size:13px;opacity:.85;}
+    .inv-cover-frame::before{margin-bottom:12px;} .inv-cover-frame::after{margin-top:12px;transform:scaleY(-1);}
+    .inv-cover-logo{max-width:70px;margin-bottom:12px;opacity:.9;}
+    .inv-cover-kicker{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:6px;}
     .inv-cover-hashtag{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:10px;}
-    .inv-cover-names{font-family:'Fraunces',serif;font-size:30px;margin:0 0 10px;color:var(--inv-ink);}
-    .inv-cover-guest{font-size:13.5px;color:var(--inv-ink-dim);margin:12px 0 24px;line-height:1.7;}
+    .inv-cover-names{font-family:'Fraunces',serif;font-size:29px;margin:0 0 10px;color:var(--inv-ink);}
+    .inv-cover-guest{font-size:13.5px;color:var(--inv-ink-dim);margin:12px 0 22px;line-height:1.7;}
     .inv-cover-guest strong{color:var(--inv-ink);font-family:'Fraunces',serif;font-size:17px;display:block;margin-top:2px;}
-    .inv-open-btn{cursor:pointer;border:1px solid var(--inv-accent);background:transparent;color:var(--inv-accent);padding:13px 28px;border-radius:100px;font-family:inherit;font-weight:700;font-size:13.5px;letter-spacing:.04em;animation:invPulse 2.4s ease-in-out infinite;}
-    @keyframes invPulse{0%,100%{box-shadow:0 0 0 0 rgba(198,161,91,.35);}50%{box-shadow:0 0 0 10px rgba(198,161,91,0);}}
+    .inv-open-btn{cursor:pointer;border:1px solid var(--inv-accent);background:transparent;color:var(--inv-accent);padding:13px 28px;border-radius:4px;font-family:inherit;font-weight:700;font-size:13.5px;letter-spacing:.06em;animation:invPulse 2.4s ease-in-out infinite;}
+    @keyframes invPulse{0%,100%{box-shadow:0 0 0 0 rgba(217,178,107,.35);}50%{box-shadow:0 0 0 10px rgba(217,178,107,0);}}
     .inv-main{position:relative;z-index:2;max-width:540px;margin:0 auto;padding:52px 20px 60px;opacity:0;transition:opacity .6s ease;}
     .inv-main-show{opacity:1;}
-    .inv-section{opacity:0;transform:translateY(26px);transition:opacity .8s ease,transform .8s ease;margin-bottom:20px;}
+    .inv-section{opacity:0;transform:translateY(26px);transition:opacity .8s ease,transform .8s ease;margin-bottom:26px;}
     .inv-section.reveal-in{opacity:1;transform:translateY(0);}
-    .inv-hero{text-align:center;margin-bottom:26px;}
+    .inv-divider{text-align:center;color:var(--inv-accent);letter-spacing:.3em;font-size:13px;margin:0 0 18px;opacity:.85;}
+    .inv-eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;text-align:center;color:var(--inv-ink-dim);margin-bottom:8px;}
+    .inv-hero{text-align:center;margin-bottom:8px;}
     .inv-hero .inv-hashtag{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:10px;}
     .inv-hero h1{font-family:'Fraunces',serif;font-size:32px;margin:0 0 6px;color:var(--inv-ink);}
     .inv-hero .inv-sub{font-size:13.5px;color:var(--inv-ink-dim);}
-    .inv-card{text-align:left;background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:18px;padding:17px 19px;backdrop-filter:blur(6px);margin-bottom:14px;}
-    .inv-card .inv-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--inv-ink-dim);font-weight:700;margin-bottom:5px;}
+    .inv-quote{text-align:center;font-family:'Fraunces',serif;font-style:italic;font-size:15px;line-height:1.8;color:var(--inv-ink-dim);padding:0 8px;}
+    .inv-quote .src{display:block;font-style:normal;font-size:11.5px;letter-spacing:.08em;color:var(--inv-ink-dimmer);margin-top:8px;}
+    .inv-couple-grid{display:grid;grid-template-columns:1fr;gap:16px;}
+    .inv-couple-card{text-align:center;background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:4px;padding:22px 18px;position:relative;}
+    .inv-couple-photo{width:96px;height:96px;border-radius:50%;margin:0 auto 12px;border:2px solid var(--inv-accent);padding:4px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:30px;background:rgba(255,255,255,.04);}
+    .inv-couple-name{font-family:'Fraunces',serif;font-size:22px;margin:0 0 6px;color:var(--inv-ink);}
+    .inv-couple-parents{font-size:12.5px;color:var(--inv-ink-dim);line-height:1.7;}
+    .inv-couple-and{text-align:center;color:var(--inv-accent);font-family:'Fraunces',serif;font-style:italic;font-size:20px;margin:2px 0;}
+    .inv-card{text-align:left;background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:4px;padding:17px 19px;backdrop-filter:blur(6px);margin-bottom:14px;}
+    .inv-card .inv-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--inv-accent);font-weight:700;margin-bottom:5px;}
     .inv-card .inv-card-main{font-weight:700;color:var(--inv-ink);}
     .inv-card .inv-card-sub{font-size:13px;color:var(--inv-ink-dim);margin-top:2px;}
     .inv-card a.inv-maps{font-size:12px;color:var(--inv-accent);font-weight:700;text-decoration:none;display:inline-block;margin-top:6px;}
     .inv-countdown{display:flex;gap:8px;justify-content:center;margin:20px 0 4px;}
-    .inv-countdown .box{background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:12px;padding:10px 4px;flex:1;max-width:70px;}
+    .inv-countdown .box{background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:4px;padding:10px 4px;flex:1;max-width:70px;}
     .inv-countdown .num{font-family:'Fraunces',serif;font-size:21px;font-weight:600;display:block;color:var(--inv-ink);}
     .inv-countdown .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--inv-ink-dimmer);}
-    .inv-footer{text-align:center;font-size:12px;color:var(--inv-ink-dimmer);padding-top:16px;}
+    .inv-footer{text-align:center;font-size:12px;color:var(--inv-ink-dimmer);padding-top:6px;line-height:1.9;}
+    .inv-footer .inv-thanks{font-family:'Fraunces',serif;font-style:italic;font-size:16px;color:var(--inv-ink-dim);display:block;margin-bottom:6px;}
     .inv-page h3{color:var(--inv-ink);}
     .inv-page .btn{border-color:var(--inv-accent);color:var(--inv-accent);background:rgba(255,255,255,.06);}
     .inv-page .btn.primary{background:var(--inv-accent);color:var(--inv-bg-a);border-color:var(--inv-accent);}
+    @media(min-width:520px){ .inv-couple-grid{grid-template-columns:1fr auto 1fr;align-items:center;} .inv-couple-and{margin-top:34px;} }
   `;
   document.head.appendChild(style);
 }
+/* Siluet gunungan (wayang) sederhana, dipakai sebagai ornamen dekoratif */
+const INV_GUNUNGAN_SVG = `<svg class="inv-gunungan" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg" fill="var(--inv-accent)"><path d="M100 4 L118 30 L112 30 L134 62 L122 62 L150 100 L136 100 L170 140 L30 140 L64 100 L50 100 L78 62 L66 62 L88 30 L82 30 Z"/></svg>`;
 let invitationSubmitting = false;
 let invCountdownTimer = null;
 let invRevealObserver = null;
@@ -2941,32 +2952,73 @@ function showInvitationPage(){
   ensureInvitationStyle();
   const app = document.getElementById('app');
   const c = state.couple;
+  const cd = (state.details && state.details.clientData) ? state.details.clientData : {};
   const guest = findGuestByRequestParam();
-  const tplKey = INVITATION_TEMPLATES[c.invitationTemplate] ? c.invitationTemplate : 'elegan';
-  const tpl = INVITATION_TEMPLATES[tplKey];
-  const varsCss = Object.entries(tpl.vars).map(([k,v])=> `${k}:${v}`).join(';');
+  const varsCss = Object.entries(JAVA_INV_VARS).map(([k,v])=> `${k}:${v}`).join(';');
   const mapsUrl = (loc)=> loc ? ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(loc)) : '';
-  const motifs = Array.from({length: tpl.motifCount}).map((_,i)=> `<span class="inv-motif" style="left:${(i*97)%100}%;animation-delay:${(i*1.7)%9}s;animation-duration:${9+((i*37)%7)}s;">${tpl.motif}</span>`).join('');
+  const motifCount = 8;
+  const motifs = Array.from({length: motifCount}).map((_,i)=> `<span class="inv-motif" style="left:${(i*97)%100}%;animation-delay:${(i*1.7)%9}s;animation-duration:${9+((i*37)%7)}s;">🏵️</span>`).join('');
+  const brideName = c.brideName || cd.cpwName || 'Mempelai Wanita';
+  const groomName = c.groomName || cd.cppName || 'Mempelai Pria';
+  const brideParents = [cd.cpwFatherName, cd.cpwMotherName].filter(Boolean).join(' &amp; Ibu ');
+  const groomParents = [cd.cppFatherName, cd.cppMotherName].filter(Boolean).join(' &amp; Ibu ');
+  const parentLine = (label, fname, mname)=>{
+    if(!fname && !mname) return '';
+    const bapak = fname ? `Bapak ${escapeHtml(fname)}` : '';
+    const ibu = mname ? `Ibu ${escapeHtml(mname)}` : '';
+    return `<div class="inv-couple-parents">${label}<br>${[bapak, ibu].filter(Boolean).join(' &amp; ')}</div>`;
+  };
   app.innerHTML = `
     <div class="inv-page" style="${varsCss}">
       ${motifs}
+      ${INV_GUNUNGAN_SVG}
       <div class="inv-cover" id="invCover">
         <div class="inv-cover-inner">
-          <img src="${LOGO_SRC}" class="inv-cover-logo" alt="ArtaJava"/>
-          <div class="inv-cover-hashtag">${escapeHtml(c.hashtag||'')}</div>
-          <h1 class="inv-cover-names">${escapeHtml(c.brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(c.groomName)}</h1>
-          <div class="inv-cover-guest">${guest ? `Kepada Yth. Bapak/Ibu/Saudara/i<strong>${escapeHtml(guest.name)}</strong>` : 'Anda diundang ke hari bahagia kami'}</div>
-          <button class="inv-open-btn" id="invOpenBtn">💌 Buka Undangan</button>
+          <div class="inv-cover-frame">
+            <img src="${LOGO_SRC}" class="inv-cover-logo" alt="ArtaJava"/>
+            <div class="inv-cover-kicker">Wedding Invitation</div>
+            <div class="inv-cover-hashtag">${escapeHtml(c.hashtag||'')}</div>
+            <h1 class="inv-cover-names">${escapeHtml(brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(groomName)}</h1>
+            <div class="inv-cover-guest">${guest ? `Kepada Yth. Bapak/Ibu/Saudara/i<strong>${escapeHtml(guest.name)}</strong>` : 'Anda diundang ke hari bahagia kami'}</div>
+            <button class="inv-open-btn" id="invOpenBtn">💌 Buka Undangan</button>
+          </div>
         </div>
       </div>
       <div class="inv-main" id="invMain">
+
         <div class="inv-section inv-hero">
           <div class="inv-hashtag">${escapeHtml(c.hashtag||'')}</div>
-          <h1>${escapeHtml(c.brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(c.groomName)}</h1>
+          <h1>${escapeHtml(brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(groomName)}</h1>
           <div class="inv-sub">${guest ? `Kepada Yth. Bapak/Ibu/Saudara/i ${escapeHtml(guest.name)}` : 'Merupakan suatu kehormatan bagi kami'}</div>
           <div class="inv-countdown" id="invCountdown"></div>
         </div>
-        <div class="inv-section">
+
+        <div class="inv-section reveal">
+          <div class="inv-divider">꧁ ꧂</div>
+          <div class="inv-quote">"Dan di antara tanda-tanda kekuasaan-Nya ialah Dia menciptakan untukmu pasangan dari jenismu sendiri, supaya kamu merasa tenteram kepadanya, dan dijadikan-Nya di antaramu rasa kasih dan sayang."
+            <span class="src">QS. Ar-Rum : 21</span>
+          </div>
+        </div>
+
+        <div class="inv-section reveal">
+          <div class="inv-eyebrow">Mempelai</div>
+          <div class="inv-couple-grid">
+            <div class="inv-couple-card">
+              <div class="inv-couple-photo">${escapeHtml((groomName||'?').charAt(0))}</div>
+              <h3 class="inv-couple-name">${escapeHtml(groomName)}</h3>
+              ${parentLine('Putra dari', cd.cppFatherName, cd.cppMotherName)}
+            </div>
+            <div class="inv-couple-and">&amp;</div>
+            <div class="inv-couple-card">
+              <div class="inv-couple-photo">${escapeHtml((brideName||'?').charAt(0))}</div>
+              <h3 class="inv-couple-name">${escapeHtml(brideName)}</h3>
+              ${parentLine('Putri dari', cd.cpwFatherName, cd.cpwMotherName)}
+            </div>
+          </div>
+        </div>
+
+        <div class="inv-section reveal">
+          <div class="inv-eyebrow">Waktu &amp; Tempat Acara</div>
           <div class="inv-card">
             <div class="inv-card-label">Akad / Pemberkatan</div>
             <div class="inv-card-main">${escapeHtml(fmtDate(c.akadDate))}${c.akadTime ? ' · ' + escapeHtml(c.akadTime.replace(':','.')) + ' WIB' : ''}</div>
@@ -2980,10 +3032,22 @@ function showInvitationPage(){
             ${c.venueName ? `<a href="${mapsUrl(c.venueName)}" target="_blank" rel="noopener" class="inv-maps">📍 Buka di Google Maps</a>` : ''}
           </div>
         </div>
-        <div class="inv-section">
+
+        <div class="inv-section reveal">
+          <div class="inv-divider">꧁ ꧂</div>
+          <div class="inv-quote" style="font-size:13.5px;">Merupakan suatu kehormatan dan kebahagiaan bagi kami apabila Bapak/Ibu/Saudara/i berkenan hadir memberikan doa restu kepada kedua mempelai.</div>
+        </div>
+
+        <div class="inv-section reveal">
+          <div class="inv-eyebrow">Konfirmasi Kehadiran</div>
           <div class="inv-card" id="invRsvpArea"></div>
         </div>
-        <div class="inv-footer">Dengan penuh sukacita, kami menantikan kehadiran Bapak/Ibu/Saudara/i 🤍</div>
+
+        <div class="inv-footer">
+          <em class="inv-thanks">Rahayu, rahayu, rahayu</em>
+          Dengan penuh sukacita, kami menantikan kehadiran Bapak/Ibu/Saudara/i 🤍<br>
+          <span style="opacity:.7;">${escapeHtml(brideName)} &amp; ${escapeHtml(groomName)}</span>
+        </div>
       </div>
     </div>
   `;
@@ -4617,20 +4681,14 @@ function renderFamilyGroup(groupKey, title){
 }
 
 function renderInvitationTemplateCard(){
-  const current = INVITATION_TEMPLATES[state.couple.invitationTemplate] ? state.couple.invitationTemplate : 'elegan';
-  const swatches = Object.entries(INVITATION_TEMPLATES).map(([key,t])=>{
-    const active = key === current;
-    return `
-      <button type="button" class="btn small ${active?'primary':'ghost'}" data-action="set-invitation-template" data-template="${escapeAttr(key)}" style="display:flex;align-items:center;gap:6px;">
-        <span style="width:16px;height:16px;border-radius:50%;display:inline-block;background:linear-gradient(135deg,${escapeAttr(t.vars['--inv-bg-a'])},${escapeAttr(t.vars['--inv-accent'])});"></span>
-        ${escapeHtml(t.label)}${active ? ' ✓' : ''}
-      </button>`;
-  }).join('');
   return `
     <div class="mb-card">
       <h3>🎨 Tema Undangan Digital</h3>
-      <p style="color:var(--cream-dimmer);font-size:13px;margin:0 0 10px;">Pilih tampilan &amp; animasi halaman undangan digital yang dilihat tamu. Ganti kapan saja, berlaku langsung buat semua link tamu.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">${swatches}</div>
+      <p style="color:var(--cream-dimmer);font-size:13px;margin:0 0 10px;">Undangan digital tamu pakai satu tema tetap bernuansa <strong>Adat Jawa</strong> — motif parang, ornamen gunungan, dan palet maroon–emas–krem. Isi data mempelai &amp; orang tua di tab "Detail Klien" supaya otomatis tampil di halaman undangan.</p>
+      <div style="display:flex;align-items:center;gap:10px;background:rgba(198,161,91,.12);border:1px solid var(--card-border);border-radius:12px;padding:10px 12px;">
+        <span style="width:16px;height:16px;border-radius:50%;display:inline-block;background:linear-gradient(135deg,#3B1015,#D9B26B);"></span>
+        <span style="font-weight:700;font-size:13px;">Adat Jawa — Motif Parang &amp; Gunungan</span>
+      </div>
     </div>`;
 }
 
@@ -4986,12 +5044,6 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
-  document.querySelectorAll('[data-action="set-invitation-template"]').forEach(btn=> btn.addEventListener('click', ()=>{
-    state.couple.invitationTemplate = btn.dataset.template;
-    scheduleSave(); render();
-    showToast('Tema undangan diganti ✓');
-  }));
-
   const guestNameInput = document.getElementById('guestNameInput');
   const addGuestBtn = document.querySelector('[data-action="add-guest"]');
   function addGuestByName(name){

@@ -805,6 +805,8 @@ let viewingDashboard = false;  // showing the multi-project dashboard
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
+let rsvpListCache = null;      // rekap tamu (RSVP) untuk project yang lagi dibuka: null = belum dimuat, [] = sudah dimuat tapi kosong
+let rsvpListLoading = false;   // lagi proses ambil rekap tamu dari storage
 
 const VENDOR_STATUS_WEIGHT = { belum:0, nego:20, dp:40, progres:60, lunas:80, final:100 };
 const VENDOR_CATS = [
@@ -822,6 +824,44 @@ const BUILTIN_VENDOR_CAT_KEYS = new Set(VENDOR_CATS.map(c=>c.key));
 
 function uid(p){ return (p||'id')+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7); }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+/* ---------- RSVP TAMU (Undangan Digital Publik) ----------
+   Tiap tamu yang isi RSVP disimpan sebagai KEY TERPISAH (bukan ditumpuk dalam
+   satu array besar di dalam state project). Ini sengaja: kalau banyak tamu
+   submit hampir bersamaan lalu kita pakai pola read-modify-write ke 1 key,
+   ada resiko submit tamu yang satu ketimpa/hilang karena race condition.
+   Dengan key per-tamu (rsvp_<projectId>_<guestId>) setiap submit itu independen
+   -- tinggal ditulis, tidak perlu baca-ubah-tulis balik daftar yang lama. Buat
+   ambil rekapnya, kita pakai window.storage.list() untuk cari semua key dengan
+   prefix project ini, baru masing-masing di-get. */
+function rsvpPrefix(projectId){ return 'rsvp_' + projectId + '_'; }
+function rsvpKey(projectId, guestId){ return rsvpPrefix(projectId) + guestId; }
+
+async function submitRsvpEntry(projectId, entry){
+  const id = uid('g');
+  const payload = Object.assign({}, entry, { id, createdAt: new Date().toISOString() });
+  await storageSetWithRetry(rsvpKey(projectId, id), JSON.stringify(payload), true);
+  return payload;
+}
+
+async function loadRsvpList(projectId){
+  const res = await window.storage.list(rsvpPrefix(projectId), true).catch(()=>null);
+  const keys = (res && res.keys) ? res.keys : [];
+  const items = await Promise.all(keys.map(async k=>{
+    try{
+      const full = await storageGetWithRetry(rsvpPrefix(projectId) + k, true);
+      return (full && full.value) ? JSON.parse(full.value) : null;
+    }catch(e){ return null; }
+  }));
+  return items.filter(Boolean).sort((a,b)=> String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+}
+
+function rsvpSummary(list){
+  const hadir = list.filter(g=>g.confirm==='hadir');
+  const tidak = list.filter(g=>g.confirm==='tidak');
+  const totalOrang = hadir.reduce((s,g)=> s + (Number(g.headcount)||1), 0);
+  return { totalTamu: list.length, hadirCount: hadir.length, tidakCount: tidak.length, totalOrang };
+}
 
 /* ---------- STATUS PROJECT (otomatis, hanya terlihat oleh admin & marketing) ----------
    Dihitung dari status pembayaran (DP1 / DP20 / Pelunasan), tanggal hari H, dan progres agenda.
@@ -2225,7 +2265,8 @@ function refreshPaymentSummary(){
 
 /* ---------- ROLE / PROJECT GATE ---------- */
 function paintGateForCurrentHash(){
-  if(location.hash === '#client'){ showClientPasswordGate(); }
+  if(location.hash === '#undangan'){ showInvitationPage(); }
+  else if(location.hash === '#client'){ showClientPasswordGate(); }
   else if(location.hash === '#vendor'){
     // Ini cuma kepanggil pas HALAMAN BARU DIBUKA/DI-REFRESH (bukan pas navigasi
     // biasa di dalam sesi yang sedang jalan). Dulu di sini langsung showSupplierGate()
@@ -2242,6 +2283,7 @@ function paintGateForCurrentHash(){
 async function initRoleFlow(){
   const params = new URLSearchParams(location.search);
   currentProjectId = params.get('p');
+  rsvpListCache = null; rsvpListLoading = false;
 
   if(currentProjectId){
     // Kalau link ini sudah pernah dibuka sebelumnya di HP/browser ini, tampilkan
@@ -2300,6 +2342,10 @@ async function initRoleFlow(){
       // Orang sudah lewat gate/password pakai data lama; perbarui layar diam-diam
       // dengan data terbaru tanpa mereset posisi mereka di dalam aplikasi.
       render();
+    } else if(location.hash === '#undangan'){
+      // Halaman undangan publik tidak lewat gate/password (roleDecided tetap
+      // false), jadi perlu dicek terpisah supaya tetap ikut diperbarui diam-diam.
+      showInvitationPage();
     }
     // Kalau paintedFromCache dan belum roleDecided, biarkan saja — mereka masih
     // di layar PIN/password, dan `state` di baliknya sudah diam-diam ter-update
@@ -2740,6 +2786,109 @@ function showClientPasswordGate(){
   bindPwToggles();
 }
 
+/* ---------- UNDANGAN DIGITAL PUBLIK (link tamu) ----------
+   Halaman ini SENGAJA tidak lewat paintGateForCurrentHash yang butuh PIN/password
+   -- siapa saja yang buka link "?p=<id>#undangan" langsung lihat undangan +
+   form RSVP, tanpa login apapun. Makanya cuma data yang memang aman dilihat
+   publik yang dipakai di sini (nama, tanggal, lokasi, foto moodboard, ucapan
+   tamu lain) -- TIDAK PERNAH menyentuh state.vendors, state.payments, dst. */
+let invitationSubmitting = false;
+function showInvitationPage(){
+  const app = document.getElementById('app');
+  const c = state.couple;
+  const dLeft = daysUntil(c.weddingDate);
+  const mapsUrl = (loc)=> loc ? ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(loc)) : '';
+  app.innerHTML = `
+    <div class="gate-wrap" style="align-items:flex-start;padding-top:32px;padding-bottom:60px;">
+      <div class="gate-card" style="max-width:520px;text-align:center;">
+        <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava" style="max-width:130px;"/>
+        <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:6px;">${escapeHtml(c.hashtag||'')}</div>
+        <h2 style="font-family:'Playfair Display',serif;font-size:30px;margin:0 0 4px;">${escapeHtml(c.brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(c.groomName)}</h2>
+        <p style="margin:0 0 20px;">${dLeft >= 0 ? `${dLeft} hari lagi menuju hari bahagia` : 'Terima kasih sudah menjadi bagian dari hari bahagia kami 🎉'}</p>
+
+        <div style="text-align:left;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:16px 18px;margin-bottom:14px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.6);font-weight:700;margin-bottom:4px;">Akad / Pemberkatan</div>
+          <div style="font-weight:700;">${escapeHtml(fmtDate(c.akadDate))}${c.akadTime ? ' · ' + escapeHtml(c.akadTime.replace(':','.')) + ' WIB' : ''}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:2px;">${c.akadLocation ? escapeHtml(c.akadLocation) : 'Lokasi menyusul'}</div>
+          ${c.akadLocation ? `<a href="${mapsUrl(c.akadLocation)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--gold);font-weight:700;text-decoration:none;">📍 Buka di Google Maps</a>` : ''}
+        </div>
+        <div style="text-align:left;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:16px 18px;margin-bottom:22px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.6);font-weight:700;margin-bottom:4px;">Resepsi</div>
+          <div style="font-weight:700;">${escapeHtml(fmtDate(c.weddingDate))}${c.weddingTime ? ' · ' + escapeHtml(c.weddingTime.replace(':','.')) + ' WIB' : ''}</div>
+          <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:2px;">${c.venueName ? escapeHtml(c.venueName) : 'Lokasi menyusul'}</div>
+          ${c.venueName ? `<a href="${mapsUrl(c.venueName)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--gold);font-weight:700;text-decoration:none;">📍 Buka di Google Maps</a>` : ''}
+        </div>
+
+        <div id="invRsvpArea"></div>
+      </div>
+    </div>
+  `;
+  renderInvitationRsvpArea();
+}
+
+function invitationRsvpFormHtml(){
+  return `
+    <div style="text-align:left;">
+      <h3 style="margin:0 0 12px;font-size:16px;color:#fff;">Konfirmasi Kehadiran</h3>
+      <input type="text" id="invGuestName" placeholder="Nama kamu" style="width:100%;border-radius:12px;padding:11px 12px;margin-bottom:10px;box-sizing:border-box;"/>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button type="button" class="btn small" data-rsvp-confirm="hadir" style="flex:1;">✅ Hadir</button>
+        <button type="button" class="btn small" data-rsvp-confirm="tidak" style="flex:1;">🙏 Tidak Bisa Hadir</button>
+      </div>
+      <input type="hidden" id="invConfirmValue" value=""/>
+      <input type="number" id="invHeadcount" placeholder="Jumlah orang yang hadir" min="1" value="1" style="width:100%;border-radius:12px;padding:11px 12px;margin-bottom:10px;box-sizing:border-box;"/>
+      <textarea id="invMessage" placeholder="Ucapan & doa (opsional)" rows="3" style="width:100%;border-radius:12px;padding:11px 12px;margin-bottom:10px;box-sizing:border-box;resize:vertical;"></textarea>
+      <div class="pin-error" id="invRsvpError"></div>
+      <button class="btn primary" id="invRsvpSubmit" style="width:100%;">Kirim Konfirmasi</button>
+    </div>
+  `;
+}
+
+function renderInvitationRsvpArea(){
+  const area = document.getElementById('invRsvpArea');
+  if(!area) return;
+  area.innerHTML = invitationRsvpFormHtml();
+  const confirmBtns = area.querySelectorAll('[data-rsvp-confirm]');
+  const headcountInput = document.getElementById('invHeadcount');
+  confirmBtns.forEach(b=> b.addEventListener('click', ()=>{
+    document.getElementById('invConfirmValue').value = b.dataset.rsvpConfirm;
+    confirmBtns.forEach(x=> x.classList.toggle('primary', x===b));
+    if(headcountInput) headcountInput.style.display = (b.dataset.rsvpConfirm === 'hadir') ? '' : 'none';
+  }));
+  const submitBtn = document.getElementById('invRsvpSubmit');
+  submitBtn.addEventListener('click', async ()=>{
+    if(invitationSubmitting) return;
+    const errEl = document.getElementById('invRsvpError');
+    errEl.textContent = '';
+    const name = document.getElementById('invGuestName').value.trim();
+    const confirm = document.getElementById('invConfirmValue').value;
+    const headcount = Math.max(1, Number(document.getElementById('invHeadcount').value) || 1);
+    const message = document.getElementById('invMessage').value.trim();
+    if(!name){ errEl.textContent = 'Nama belum diisi.'; return; }
+    if(!confirm){ errEl.textContent = 'Pilih dulu Hadir atau Tidak Bisa Hadir ya.'; return; }
+    invitationSubmitting = true;
+    submitBtn.textContent = 'Mengirim...';
+    submitBtn.disabled = true;
+    try{
+      await submitRsvpEntry(state.id, { name, confirm, headcount: confirm==='hadir' ? headcount : 0, message });
+      area.innerHTML = `
+        <div style="text-align:center;padding:10px 0;">
+          <div style="font-size:34px;margin-bottom:6px;">🎉</div>
+          <h3 style="margin:0 0 6px;color:#fff;">Terima kasih, ${escapeHtml(name)}!</h3>
+          <p style="margin:0;">Konfirmasi kehadiran kamu sudah kami terima.</p>
+        </div>
+      `;
+    }catch(e){
+      console.error('submit RSVP gagal', e);
+      errEl.textContent = 'Gagal mengirim, coba lagi sebentar lagi ya.';
+    }finally{
+      invitationSubmitting = false;
+      submitBtn.textContent = 'Kirim Konfirmasi';
+      submitBtn.disabled = false;
+    }
+  });
+}
+
 let loadingScreenGen = 0;
 function renderLoadingScreen(message){
   // Dibungkus gate-wrap supaya background foto slideshow tetap tampil (tidak
@@ -3137,6 +3286,7 @@ function renderProjectDashboard(){
     attachmentsHydrated = false;
     viewingDashboard = false;
     roleDecided = true;
+    rsvpListCache = null; rsvpListLoading = false;
     const baseUrl = location.href.split('?')[0].split('#')[0];
     const hash = isMarketingLocked() ? '#marketing' : '';
     history.pushState({}, '', baseUrl + '?p=' + id + hash);
@@ -3688,6 +3838,7 @@ function render(){
   const projectUrl = baseUrl + '?p=' + state.id;
   const clientLink = projectUrl + '#client';
   const supplierLink = projectUrl + '#vendor';
+  const invitationLink = projectUrl + '#undangan';
 
   const projMkt = state.marketingId ? findMarketingById(state.marketingId) : null;
   const picPhoto = projMkt ? (projMkt.photoUrl || LOGO_SRC) : PIC_PHOTO_SRC;
@@ -3749,6 +3900,12 @@ function render(){
         <button class="btn primary" id="clientAcctSubmitBtn" style="width:100%;">Simpan Akun</button>
         <div class="pin-error" id="clientAcctError"></div>
       </div>
+      <div class="lp-row" style="margin-top:10px;">
+        <span class="lp-label">Link Undangan Tamu</span>
+        <input class="lp-input" id="invitationLinkBox" readonly value="${escapeAttr(invitationLink)}"/>
+        <button class="btn small" id="copyInvitationLinkBtn">📋 Salin</button>
+      </div>
+      <div class="lp-note">Link ini buat disebar ke tamu — begitu dibuka langsung tampil undangan + form konfirmasi kehadiran, tanpa login & tanpa lihat data harga/vendor sama sekali.</div>
     </div>` : ''}
 
     <div class="hero">
@@ -4286,11 +4443,50 @@ function renderFamilyGroup(groupKey, title){
   `;
 }
 
+function renderRsvpRecapCard(){
+  const invitationLink = location.href.split('?')[0].split('#')[0] + '?p=' + state.id + '#undangan';
+  if(rsvpListLoading){
+    return `<div class="mb-card"><h3>🎟️ Undangan &amp; RSVP Tamu</h3><p style="color:var(--cream-dimmer);font-size:13px;">Memuat rekap tamu...</p></div>`;
+  }
+  if(rsvpListCache === null){
+    return `
+      <div class="mb-card">
+        <h3>🎟️ Undangan &amp; RSVP Tamu</h3>
+        <p style="color:var(--cream-dimmer);font-size:13px;margin:0 0 10px;">Lihat siapa saja tamu yang sudah konfirmasi kehadiran lewat link undangan digital.</p>
+        <button class="btn small" data-action="load-rsvp-recap">🔄 Muat Rekap Tamu</button>
+      </div>`;
+  }
+  const s = rsvpSummary(rsvpListCache);
+  const rows = rsvpListCache.slice().reverse().map(g => `
+    <div style="border-bottom:1px solid var(--card-border);padding:8px 0;">
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <strong>${escapeHtml(g.name||'-')}</strong>
+        <span style="font-size:12px;font-weight:700;color:${g.confirm==='hadir'?'#3a8a4a':'#b23a3a'};">${g.confirm==='hadir' ? `✅ Hadir (${g.headcount||1} orang)` : '🙏 Tidak Hadir'}</span>
+      </div>
+      ${g.message ? `<div style="font-size:12.5px;color:var(--cream-dim);margin-top:2px;">"${escapeHtml(g.message)}"</div>` : ''}
+    </div>
+  `).join('') || `<p style="color:var(--cream-dimmer);font-size:13px;">Belum ada tamu yang konfirmasi.</p>`;
+  return `
+    <div class="mb-card">
+      <h3>🎟️ Undangan &amp; RSVP Tamu</h3>
+      <div class="lp-note" style="margin-bottom:10px;">Link tamu: <span style="font-family:monospace;">${escapeHtml(invitationLink)}</span></div>
+      <div class="stats" style="margin-bottom:12px;">
+        <div class="stat-card"><div class="top"><span class="lbl">Total Konfirmasi</span><span class="icon">🎟️</span></div><div class="big">${s.totalTamu}</div></div>
+        <div class="stat-card"><div class="top"><span class="lbl">Hadir</span><span class="icon">✅</span></div><div class="big">${s.hadirCount}</div></div>
+        <div class="stat-card"><div class="top"><span class="lbl">Total Orang</span><span class="icon">🙋</span></div><div class="big">${s.totalOrang}</div></div>
+      </div>
+      <button class="btn small ghost" data-action="load-rsvp-recap" style="margin-bottom:10px;">🔄 Muat Ulang</button>
+      <div>${rows}</div>
+    </div>`;
+}
+
 function renderDetailAcara(){
   const c = state.details.catering;
   const cd = state.details.clientData;
   return `
     <div class="section-head"><div><h2>Detail Acara</h2><p>Foto keluarga, tamu VIP, catering, make up, busana pendamping, dan request lagu — bisa diisi bareng oleh kamu & vendor.</p></div></div>
+
+    ${!isSupplier ? renderRsvpRecapCard() : ''}
 
     ${renderFamilyGroup('cpw', '👰 Foto Keluarga CPW')}
     ${renderFamilyGroup('cpp', '🤵 Foto Keluarga CPP')}
@@ -4544,6 +4740,21 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
+  document.querySelectorAll('[data-action="load-rsvp-recap"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    rsvpListLoading = true;
+    render();
+    try{
+      rsvpListCache = await loadRsvpList(state.id);
+    }catch(e){
+      console.error('gagal memuat rekap RSVP', e);
+      rsvpListCache = rsvpListCache || [];
+      showToast('Gagal memuat rekap tamu, coba lagi.', true);
+    }finally{
+      rsvpListLoading = false;
+      render();
+    }
+  }));
+
   const toggleAllReminderMsg = document.getElementById('toggleAllReminderMsg');
   if(toggleAllReminderMsg) toggleAllReminderMsg.addEventListener('click', ()=>{
     const wraps = document.querySelectorAll('.reminder-msg-wrap');
@@ -4745,6 +4956,10 @@ function attachHandlers(){
       clientAcctSubmitBtn.addEventListener('click', submitClientAcct);
       document.getElementById('clientAcctPasswordInput').addEventListener('keydown', e=>{ if(e.key==='Enter') submitClientAcct(); });
     }
+    const copyInvitationLinkBtn = document.getElementById('copyInvitationLinkBtn');
+    if(copyInvitationLinkBtn) copyInvitationLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('invitationLinkBox').value));
+    const ilb = document.getElementById('invitationLinkBox');
+    if(ilb) ilb.addEventListener('click', ()=> ilb.select());
     bindPwToggles();
 
     const hashtagInput = document.getElementById('hashtagInput');

@@ -84,6 +84,8 @@
   .gate-btn .ge{font-size:22px;}
   .gate-btn:hover{border-color:var(--pink);background:rgba(140,31,46,.10);}
   .gate-btn.vendor{background:rgba(230,200,140,.35);}
+  .gate-btn.demo{background:rgba(255,255,255,.12);color:#fff;justify-content:center;text-align:center;}
+  .gate-btn.demo:hover{background:rgba(255,255,255,.22);}
   .pin-box{margin-top:16px;display:none;}
   .pin-box.show{display:block;}
   .pin-box input{width:100%;text-align:center;letter-spacing:.5em;font-size:20px;padding:12px;border-radius:14px;margin-bottom:10px;}
@@ -100,6 +102,11 @@
   .gate-card .pw-toggle:hover{color:#fff;}
 
   /* Top bar */
+  .demo-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;background:repeating-linear-gradient(135deg,#C6A15B,#C6A15B 14px,#B8923F 14px,#B8923F 28px);border-radius:14px;padding:10px 16px;color:#3a2a10;box-shadow:0 8px 20px -10px rgba(0,0,0,.4);}
+  .demo-banner-text{font-size:13px;font-weight:600;}
+  .demo-badge{background:#3a2a10;color:#F5E8D0;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:800;letter-spacing:.03em;margin-right:6px;}
+  .demo-banner-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .demo-banner-actions .btn{white-space:nowrap;}
   .topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;background:linear-gradient(135deg,#5C1220,#7A1F2E 55%,#6b1a28);border-radius:18px;padding:14px 20px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 14px 34px -14px rgba(59,16,21,.55);position:relative;}
   .brand{display:flex;align-items:center;gap:12px;background:transparent;padding:0;border-radius:0;}
   .brand img{height:40px;width:auto;}
@@ -836,6 +843,7 @@ let viewingDashboard = false;  // showing the multi-project dashboard
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
+let isDemoMode = false;        // true kalau sedang menampilkan Preview Demo (data dummy, tidak pernah disimpan)
 
 const VENDOR_STATUS_WEIGHT = { belum:0, nego:20, dp:40, progres:60, lunas:80, final:100 };
 const VENDOR_CATS = [
@@ -1038,6 +1046,140 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     clientAuthUid: '',
     activityLog: [],
   };
+}
+
+/* ---------- MODE DEMO (untuk calon klien) ----------
+   Membuat 1 project contoh dengan data dummy (bukan project asli, tidak
+   pernah disimpan ke storage) supaya calon klien bisa lihat langsung
+   seperti apa dashboard project mereka nanti, sebelum deal — dibandingkan
+   vendor lain yang masih pakai Excel/WA doang. Dipanggil dari tombol
+   "Lihat Demo" di halaman awal, atau lewat link langsung baseURL + '#demo'. */
+function buildDemoState(){
+  const today = new Date(todayISO() + 'T00:00:00');
+  const wd = new Date(today); wd.setDate(wd.getDate() + 62);
+  const weddingDate = wd.toISOString().slice(0,10);
+  const ad = new Date(wd); ad.setDate(ad.getDate() - 1);
+  const akadDate = ad.toISOString().slice(0,10);
+
+  const demoPkg = { id:'demo-pkg', name:'Paket Gold', price:85000000, includedCats: VENDOR_CATS.map(c=>c.key), note:'Konsep rustic-elegant dengan sentuhan garden party, nuansa maroon & gold khas ArtaJava.', catItems:{} };
+  const data = defaultData('Dhiya Ayu Lestari', 'Bagas Pratama Wijaya', 'DEMO-PREVIEW', null, demoPkg);
+  data.id = 'demo-preview';
+  data.couple.hashtag = '#DhiyaBagasWedding';
+  data.couple.weddingDate = weddingDate;
+  data.couple.weddingTime = '11:00';
+  data.couple.venueName = 'Grand Ballroom, Hotel Shangri-La Surabaya';
+  data.couple.akadDate = akadDate;
+  data.couple.akadTime = '08:00';
+  data.couple.akadLocation = 'Masjid Al-Akbar Surabaya';
+
+  // Timeline: pakai 25-step default lalu tandai yang sudah lewat sebagai "selesai"
+  data.timeline = defaultTimeline(weddingDate, akadDate).map(item=>{
+    const isPast = item.date < todayISO();
+    item.status = isPast ? 'done' : 'upcoming';
+    item.clientConfirmed = isPast;
+    return item;
+  });
+  const setLoc = (title, location, mapsUrl)=>{
+    const it = data.timeline.find(t=>t.title===title);
+    if(it){ it.location = location; if(mapsUrl) it.mapsUrl = mapsUrl; }
+  };
+  setLoc('Survei Gedung & Fix Venue', 'Grand Ballroom, Hotel Shangri-La Surabaya, Jl. Mayjend Sungkono No.187, Surabaya');
+  setLoc('D-Day Akad', 'Masjid Al-Akbar Surabaya, Jl. Masjid Al Akbar Timur No.1, Surabaya');
+  setLoc('D-Day Resepsi', 'Grand Ballroom, Hotel Shangri-La Surabaya, Jl. Mayjend Sungkono No.187, Surabaya');
+  setLoc('TM All Vendor & Keluarga', 'Kantor ArtaJava Wedding Organizer, Jl. Tempel Sukorejo 1 No. 78 A Surabaya');
+
+  // Vendor: campuran status supaya kelihatan progres nyata, bukan kosong semua
+  const setVendor = (key, v)=>{ if(data.vendors[key]) Object.assign(data.vendors[key], blankVendor(), v); };
+  setVendor('MUA', { name:'Mualifa Makeup Artist', contact:'0812-3456-7801', price:6500000, status:'lunas', note:'Sudah trial make-up, hasil oke banget kata klien.' });
+  setVendor('Attire', { name:'Griya Busana Kirana', contact:'0812-3456-7802', price:9500000, status:'progres', note:'Fitting ke-2 dijadwalkan H-30.' });
+  setVendor('Dekorasi', { name:'Anggara Decoration', contact:'0812-3456-7803', price:18000000, status:'dp', note:'DP 50% sudah masuk, moodboard final menyusul.' });
+  setVendor('Katering', { name:'Sekar Catering', contact:'0812-3456-7804', price:22000000, status:'dp', note:'350 pax, menu prasmanan + 2 stall tambahan.' });
+  setVendor('Entertainment', { name:'Bening Music Ent.', contact:'0812-3456-7805', price:7000000, status:'nego', note:'Masih nego paket akustik vs full band.' });
+  setVendor('MC', { name:'Raka Pradipta', contact:'0812-3456-7806', price:3500000, status:'lunas' });
+  setVendor('WO (Wedding Organizer)', { name:'ArtaJava Wedding Organizer', contact:PIC_PHONE_DISPLAY, price:0, status:'final', note:'Tim inti — koordinasi H-1 & hari-H.' });
+  setVendor('Venue', { name:'Hotel Shangri-La Surabaya', contact:'031-2851888', price:0, status:'dp', note:'Venue Grand Ballroom, kapasitas 400 tamu.' });
+  setVendor('Dokumentasi', { name:'Cahaya Kirana Photo & Video', contact:'0812-3456-7807', price:15000000, status:'progres', note:'Sudah sesi prewedding, tunggu jadwal hari-H.' });
+  setVendor('Souvenir', { name:'Kirana Souvenir', contact:'0812-3456-7808', price:3000000, status:'belum' });
+
+  // Pembayaran: DP1 & DP25 lunas, pelunasan menyusul mendekati hari-H
+  const dp1 = data.payments.find(p=>p.label.toLowerCase().includes('dp 1'));
+  const dp25 = data.payments.find(p=>p.label.toLowerCase().includes('dp 25'));
+  const pelunasan = data.payments.find(p=>p.label.toLowerCase().includes('pelunasan'));
+  const dueSoon = new Date(today); dueSoon.setDate(dueSoon.getDate() + 45);
+  if(dp1){ dp1.status = 'paid'; dp1.dueDate = new Date(today.getTime() - 40*86400000).toISOString().slice(0,10); }
+  if(dp25){ dp25.status = 'paid'; dp25.dueDate = new Date(today.getTime() - 20*86400000).toISOString().slice(0,10); }
+  if(pelunasan){ pelunasan.status = 'unpaid'; pelunasan.dueDate = dueSoon.toISOString().slice(0,10); }
+
+  // Moodboard
+  data.moodboard.concept = 'Rustic-elegant, nuansa maroon & gold, garden party dengan banyak elemen bunga kering.';
+  data.moodboard.tags = ['Rustic Elegant', 'Garden Party', 'Maroon & Gold'];
+  data.moodboard.palette = ['#7A1F2E', '#C6A15B', '#F5E8D0'];
+  data.moodboard.notes = [
+    { id:uid('mn'), vendorKey:'Dekorasi', text:'Suka banget referensi arch bunga kering, tolong dibuat lebih dominan warna maroon.', by:'client', date:new Date(today.getTime()-15*86400000).toISOString() },
+    { id:uid('mn'), vendorKey:'Umum', text:'Noted kak, moodboard final kita share minggu depan ya 🙏', by:'vendor', date:new Date(today.getTime()-14*86400000).toISOString() },
+  ];
+
+  // Detail acara: data keluarga, catering, outfit, request lagu — semua dummy
+  data.details.clientData = {
+    cpwName:'Dhiya Ayu Lestari', cpwContact:'0813-1111-2222', cpwAddress:'Jl. Kertajaya Indah No. 10, Surabaya',
+    cpwFatherName:'Bapak Slamet Riyadi', cpwMotherName:'Ibu Sri Wahyuni', cpwBirthDate:'1998-04-12',
+    cppName:'Bagas Pratama Wijaya', cppContact:'0813-3333-4444', cppAddress:'Jl. Dharmahusada No. 25, Surabaya',
+    cppFatherName:'Bapak Wijayanto', cppMotherName:'Ibu Retno Palupi', cppBirthDate:'1997-09-03',
+  };
+  data.details.vipGuests = [
+    { id:uid('vip'), name:'Bapak Camat Gubeng', note:'Perlu kursi VIP depan' },
+    { id:uid('vip'), name:'Ibu Ketua RT 05', note:'' },
+  ];
+  data.details.catering = {
+    packageName:'Paket Prasmanan Premium', guestCount:'350', familyPicName:'Ibu Sri Wahyuni',
+    menuItems:[
+      { id:uid('mi'), name:'Nasi & Ayam Bakar Bumbu Bali', qty:'Main Course' },
+      { id:uid('mi'), name:'Sup Iga Bening', qty:'Soup' },
+      { id:uid('mi'), name:'Puding Lapis Gold', qty:'Dessert' },
+    ],
+    stalls:[ { id:uid('st'), name:'Stall Bakso Malang' }, { id:uid('st'), name:'Stall Es Krim' } ],
+  };
+  data.details.makeup = [
+    { id:uid('mu'), name:'Dhiya Ayu Lestari', status:'Pengantin Wanita' },
+    { id:uid('mu'), name:'Ibu Sri Wahyuni', status:'Ibu Pengantin Wanita' },
+  ];
+  data.details.outfits = {
+    male: [ { id:uid('of'), name:'Bapak Slamet Riyadi', size:'L', color:'Maroon Gold', status:'Ayah Pengantin' } ],
+    female: [ { id:uid('of'), name:'Ibu Retno Palupi', size:'M', color:'Maroon Gold', status:'Ibu Pengantin Pria' } ],
+  };
+  data.details.songRequests = [ { id:uid('sr'), title:'Perfect — Ed Sheeran', note:'Buat entrance pengantin' } ];
+
+  // Activity feed contoh biar dashboard tidak kosong
+  data.activityLog = [
+    { id:uid('act'), ts:new Date(today.getTime()-1*86400000).toISOString(), type:'payment', text:'DP 25% dikonfirmasi lunas.', actor:'vendor' },
+    { id:uid('act'), ts:new Date(today.getTime()-5*86400000).toISOString(), type:'vendor', text:'Vendor Dokumentasi update status: Progres pengerjaan.', actor:'vendor' },
+    { id:uid('act'), ts:new Date(today.getTime()-15*86400000).toISOString(), type:'document', text:'Klien mengirim catatan baru di Moodboard.', actor:'client' },
+  ];
+
+  data.clientUsername = 'demo';
+  data.clientPassword = 'demo';
+  data.marketingId = null;
+  data.packageId = null;
+  return data;
+}
+
+function enterDemoMode(){
+  isDemoMode = true;
+  state = normalizeState(buildDemoState());
+  currentProjectId = state.id;
+  isAdmin = false; isVendor = false; isSupplier = false; supplierVendorKey = null;
+  vendorAuthed = false; currentMarketing = null;
+  isVendorAccountSession = false; currentVendorAccountSession = null;
+  viewingDashboard = false; roleDecided = true; currentTab = 'beranda'; navDrawerOpen = false;
+  history.replaceState(null, '', location.pathname + '#demo');
+  render();
+}
+
+function exitDemoMode(){
+  isDemoMode = false;
+  state = null; currentProjectId = null; roleDecided = false;
+  history.replaceState(null, '', location.pathname);
+  showEntryGate();
 }
 
 // Mencatat satu kejadian ke linimasa aktivitas proyek (dipakai oleh Activity Feed di dashboard klien)
@@ -1807,6 +1949,7 @@ async function storageDeleteChunked(baseKey, shared){
 }
 
 async function persist(){
+  if(isDemoMode){ showToast('📌 Mode Demo — perubahan tidak disimpan'); return; }
   if(!state || !state.id) return;
   const ok = await storageSetWithRetry(projectKey(state.id), JSON.stringify(state), true);
   if(ok){
@@ -2358,6 +2501,10 @@ async function initRoleFlow(){
     // Kalau paintedFromCache dan belum roleDecided, biarkan saja — mereka masih
     // di layar PIN/password, dan `state` di baliknya sudah diam-diam ter-update
     // ke data terbaru, jadi begitu mereka submit, sudah pakai data yang benar.
+  } else if(location.hash === '#demo'){
+    // Link demo langsung (baseURL + '#demo') — bisa dibagikan ke calon klien
+    // lewat WA tanpa perlu klik apa-apa dulu di halaman awal.
+    enterDemoMode();
   } else {
     await Promise.all([
       loadMasterSettings(),
@@ -2410,6 +2557,9 @@ function showEntryGate(){
           ${clientOnlyMode ? '' : `<button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>`}
           <button class="gate-btn" id="gateClientBtn"><span class="ge">💍</span> Saya Calon Pengantin (Klien)</button>
         </div>
+        ${clientOnlyMode ? '' : `
+        <button class="gate-btn demo" id="gateDemoBtn" style="margin-top:14px;border-style:dashed;"><span class="ge">🎬</span> Lihat Contoh Dashboard (Demo)</button>
+        <p style="font-size:12.5px;color:var(--cream-dim,#c9b9a8);margin-top:8px;">Belum jadi klien? Lihat dulu contoh dashboard project asli (data contoh) sebelum deal.</p>`}
         ${hideAdmin ? '' : `
         <div class="pin-box" id="pinBox">
           <input type="password" id="pinInput" inputmode="numeric" maxlength="8" placeholder="Masukkan PIN Admin"/>
@@ -2524,6 +2674,8 @@ function showEntryGate(){
   };
   document.getElementById('clientCodeSubmit').addEventListener('click', tryClientCode);
   document.getElementById('clientCodePassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryClientCode(); });
+  const gateDemoBtn = document.getElementById('gateDemoBtn');
+  if(gateDemoBtn) gateDemoBtn.addEventListener('click', ()=> enterDemoMode());
   bindPwToggles();
 }
 
@@ -3775,6 +3927,14 @@ function render(){
         </div>`;
 
   app.innerHTML = `
+    ${isDemoMode ? `
+    <div class="demo-banner">
+      <div class="demo-banner-text"><span class="demo-badge">🎬 MODE DEMO</span> Ini contoh dashboard dengan data dummy — bukan project asli.</div>
+      <div class="demo-banner-actions">
+        <a class="btn tiny primary" href="${PIC_WA}" target="_blank" rel="noopener">💬 Tertarik? Chat Kami</a>
+        <button type="button" class="btn tiny ghost" id="exitDemoBtn">✕ Keluar Demo</button>
+      </div>
+    </div>` : ''}
     <div class="topbar">
       <div class="brand-group">
         <button type="button" class="hamburger-btn" id="navMenuBtn" aria-label="Buka menu" aria-expanded="${navDrawerOpen?'true':'false'}">
@@ -4766,8 +4926,12 @@ function attachHandlers(){
     else { me.pin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
   });
 
+  const exitDemoBtn = document.getElementById('exitDemoBtn');
+  if(exitDemoBtn) exitDemoBtn.addEventListener('click', ()=> exitDemoMode());
+
   const clientLogoutBtn = document.getElementById('clientLogoutBtn');
   if(clientLogoutBtn) clientLogoutBtn.addEventListener('click', ()=>{
+    if(isDemoMode){ exitDemoMode(); return; }
     if(isVendorAccountSession){
       // Keluar total dari akun vendor (bukan cuma balik ke pilih kategori project ini).
       isVendorAccountSession = false; currentVendorAccountSession = null;

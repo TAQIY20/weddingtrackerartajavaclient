@@ -1005,7 +1005,15 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     clientPassword: genPassword(6),
     clientUsername: '',
     clientAuthUid: '',
+    activityLog: [],
   };
+}
+
+// Mencatat satu kejadian ke linimasa aktivitas proyek (dipakai oleh Activity Feed di dashboard klien)
+function logActivity(type, text, actor){
+  if(!state || !state.activityLog) return;
+  state.activityLog.unshift({ id: uid('act'), ts: new Date().toISOString(), type: type||'system', text: text||'', actor: actor||'system' });
+  if(state.activityLog.length > 100) state.activityLog.length = 100;
 }
 
 let state = null;
@@ -1025,6 +1033,7 @@ function normalizeState(s){
   if(!s.clientPassword) s.clientPassword = genPassword(6);
   if(typeof s.clientUsername !== 'string') s.clientUsername = '';
   if(typeof s.clientAuthUid !== 'string') s.clientAuthUid = '';
+  if(!Array.isArray(s.activityLog)) s.activityLog = [];
   Object.keys(VENDOR_CATS.reduce((o,c)=>{o[c.key]=1;return o;},{})).forEach(k=>{
     if(!s.vendors) s.vendors = {};
     if(!s.vendors[k]) s.vendors[k] = blankVendor();
@@ -3829,6 +3838,31 @@ function render(){
 
 function tabBtn(key,label){ return `<button class="tab-btn ${currentTab===key?'active':''}" data-tab="${key}">${label}</button>`; }
 
+function activityIcon(type){
+  return { payment:'💳', document:'📄', timeline:'📍', vendor:'🤝', rsvp:'💌' }[type] || '✨';
+}
+
+function renderActivityFeed(){
+  const log = (state.activityLog||[]).slice(0, 8);
+  if(!log.length) return '';
+  return `
+    <div class="mb-card">
+      <h3>🔔 Update Terbaru</h3>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
+        ${log.map(item => `
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <div style="font-size:16px;line-height:1.4;">${activityIcon(item.type)}</div>
+            <div style="min-width:0;">
+              <div style="font-size:13.5px;line-height:1.5;">${escapeHtml(item.text)}</div>
+              <div style="font-size:11px;color:var(--cream-dimmer);margin-top:1px;">${fmtDateShort(item.ts)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function renderBeranda(dLeft, allVendorList){
   const nextItem = state.timeline.find(t=>t.status!=='done');
   const sortedReq = [...state.requests].sort((a,b)=> new Date(b.date)-new Date(a.date));
@@ -3852,6 +3886,7 @@ function renderBeranda(dLeft, allVendorList){
       <p style="margin:14px 0 0;text-align:right;font-family:'Fraunces',serif;font-style:italic;color:var(--cream-dimmer);">Salam hangat,<br/><b style="font-style:normal;color:inherit;">${escapeHtml(welcomeMktName)}</b></p>
     </div>
     ` : ''}
+    ${isClientView ? renderActivityFeed() : ''}
     <div class="section-head"><div><h2>Ringkasan Perjalanan</h2><p>Semua progress dari booking sampai album jadi, dalam satu pandangan.</p></div></div>
     <div class="mb-card package-card">
       <div class="package-info">
@@ -4833,6 +4868,7 @@ function attachHandlers(){
           state.documents[docType] = { name:file.name, type:file.type, url: blob.url };
           docFileCache[docType] = blob.url;
           showToast(docLabel + ' berhasil diunggah ✓');
+          logActivity('document', `Dokumen ${docLabel} sudah di-upload: ${file.name}`, 'admin');
           scheduleSave(); render();
           // Hapus file lama di Blob (kalau ada) supaya tidak menumpuk kuota storage.
           // Dilakukan di belakang layar, tidak menghalangi apa pun kalau gagal.
@@ -4959,7 +4995,11 @@ function attachHandlers(){
       });
     });
     const toggleBtn = el.querySelector('[data-action="toggle-status"]');
-    if(toggleBtn) toggleBtn.addEventListener('click', ()=>{ item.status = item.status==='done'?'upcoming':'done'; scheduleSave(); render(); });
+    if(toggleBtn) toggleBtn.addEventListener('click', ()=>{
+      item.status = item.status==='done'?'upcoming':'done';
+      if(item.status==='done') logActivity('timeline', `Agenda "${item.title||item.label||'tanpa judul'}" ditandai selesai`, 'admin');
+      scheduleSave(); render();
+    });
     const delBtn = el.querySelector('[data-action="delete-item"]');
     if(delBtn) delBtn.addEventListener('click', async ()=>{ if(await customConfirm('Hapus agenda ini?')){ state.timeline = state.timeline.filter(t=>t.id!==id); scheduleSave(); render(); } });
     el.querySelectorAll('[data-vendor-ref]').forEach(cb=>{
@@ -5104,7 +5144,11 @@ function attachHandlers(){
     const amtInp = el.querySelector('[data-field="amount"]');
     setupCurrencyInput(amtInp, ()=>p.amount, v=>{ p.amount=v; });
     const toggle = el.querySelector('[data-action="toggle-paid"]');
-    if(toggle) toggle.addEventListener('click', ()=>{ p.status = p.status==='paid'?'unpaid':'paid'; scheduleSave(); render(); });
+    if(toggle) toggle.addEventListener('click', ()=>{
+      p.status = p.status==='paid'?'unpaid':'paid';
+      if(p.status==='paid') logActivity('payment', `${p.label} — ${fmtIDR(p.amount)} sudah dikonfirmasi lunas`, 'admin');
+      scheduleSave(); render();
+    });
     const downloadInvoiceLink = el.querySelector('[data-action="download-invoice"]');
     if(downloadInvoiceLink) downloadInvoiceLink.addEventListener('click', e=>{
       e.preventDefault(); // SELALU dicegah — jangan pernah biarkan browser pakai href='#' (lihat catatan di downloadAttachmentSafely)

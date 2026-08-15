@@ -179,6 +179,27 @@
   .tab-btn.active{color:var(--ink);background:var(--gold);border-color:transparent;}
   .tab-btn:not(.active):hover{color:var(--cream);border-color:var(--pink);}
 
+  .brand-group{display:flex;align-items:center;gap:12px;}
+  .hamburger-btn{display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex-shrink:0;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;cursor:pointer;transition:.2s;}
+  .hamburger-btn:hover{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.4);}
+  .hamburger-btn svg{width:20px;height:20px;display:block;}
+  .current-tab-pill{display:flex;align-items:center;gap:7px;padding:9px 16px;border-radius:100px;border:1px solid var(--card-border);background:rgba(255,255,255,.55);backdrop-filter:blur(10px);color:var(--ink);font-weight:700;font-size:13.5px;margin-bottom:22px;width:fit-content;}
+
+  .nav-overlay{position:fixed;inset:0;background:rgba(59,16,21,.45);backdrop-filter:blur(2px);z-index:60;opacity:0;pointer-events:none;transition:opacity .25s ease;}
+  .nav-overlay.open{opacity:1;pointer-events:auto;}
+  .nav-drawer{position:fixed;top:0;left:0;bottom:0;width:280px;max-width:82vw;background:linear-gradient(180deg,#5C1220,#3B1015);z-index:61;transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;box-shadow:8px 0 30px rgba(0,0,0,.28);}
+  .nav-drawer.open{transform:translateX(0);}
+  .nav-drawer-head{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.12);flex-shrink:0;}
+  .nav-drawer-head .brand-mini{display:flex;align-items:center;gap:10px;}
+  .nav-drawer-head .brand-mini img{height:30px;width:auto;}
+  .nav-drawer-close{width:34px;height:34px;flex-shrink:0;border-radius:10px;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;line-height:1;}
+  .nav-drawer-close:hover{background:rgba(255,255,255,.18);}
+  .nav-list{display:flex;flex-direction:column;gap:4px;padding:14px;overflow-y:auto;}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;border:none;background:transparent;color:rgba(255,255,255,.78);font-family:inherit;font-weight:600;font-size:14.5px;cursor:pointer;text-align:left;transition:.15s;width:100%;}
+  .nav-item .emj{font-size:17px;flex-shrink:0;}
+  .nav-item:hover{background:rgba(255,255,255,.08);color:#fff;}
+  .nav-item.active{background:var(--gold);color:var(--ink);}
+
   section.panel{display:none;}
   section.panel.active{display:block;animation:fadeUp .35s ease;}
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -1028,6 +1049,7 @@ function removeActivity(activityId){
 let state = null;
 let currentTab = 'beranda';
 let activityFeedExpanded = false;
+let navDrawerOpen = false;
 
 function normalizeState(s){
   if(!s.id) s.id = uid('proj');
@@ -3686,7 +3708,7 @@ function showNewProjectForm(){
   });
 }
 
-function setTab(tab){ currentTab = tab; render(); }
+function setTab(tab){ currentTab = tab; navDrawerOpen = false; render(); }
 
 /* ---------- MAIN RENDER ---------- */
 function render(){
@@ -3744,7 +3766,12 @@ function render(){
 
   app.innerHTML = `
     <div class="topbar">
-      <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+      <div class="brand-group">
+        <button type="button" class="hamburger-btn" id="navMenuBtn" aria-label="Buka menu" aria-expanded="${navDrawerOpen?'true':'false'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+      </div>
       <div class="topbar-right">
         ${topPicChipHtml}
         ${isVendor ? `<button class="btn tiny ghost" id="backToDashboardBtn">📁 Semua Project</button>` : ''}
@@ -3753,6 +3780,24 @@ function render(){
         ${!isVendor ? `<button class="btn tiny ghost" id="clientLogoutBtn">Keluar</button>` : ''}
       </div>
     </div>
+
+    <div class="nav-overlay ${navDrawerOpen?'open':''}" id="navOverlay"></div>
+    <nav class="nav-drawer ${navDrawerOpen?'open':''}" id="navDrawer" aria-hidden="${navDrawerOpen?'false':'true'}">
+      <div class="nav-drawer-head">
+        <div class="brand-mini"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+        <button type="button" class="nav-drawer-close" id="navDrawerCloseBtn" aria-label="Tutup menu">✕</button>
+      </div>
+      <div class="nav-list">
+        ${navItem('beranda','✨','Beranda')}
+        ${navItem('timeline','🗓️','Timeline')}
+        ${navItem('vendor','🤝','Vendor')}
+        ${!isSupplier ? navItem('pembayaran','💳','Pembayaran') : ''}
+        ${navItem('detail','📋','Detail Acara')}
+        ${navItem('moodboard','🎨','Moodboard')}
+        ${isVendor ? navItem('notifikasi','🔔','Notifikasi') : ''}
+      </div>
+    </nav>
+
 
     ${isVendor ? `
     <div class="linkpanel">
@@ -3822,15 +3867,7 @@ function render(){
         <div class="big">${vendorProgressPct}%</div><div class="bar"><div style="width:${vendorProgressPct}%"></div></div></div>
     </div>
 
-    <div class="tabs">
-      ${tabBtn('beranda','✨ Beranda')}
-      ${tabBtn('timeline','🗓️ Timeline')}
-      ${tabBtn('vendor','🤝 Vendor')}
-      ${!isSupplier ? tabBtn('pembayaran','💳 Pembayaran') : ''}
-      ${tabBtn('detail','📋 Detail Acara')}
-      ${tabBtn('moodboard','🎨 Moodboard')}
-      ${isVendor ? tabBtn('notifikasi','🔔 Notifikasi') : ''}
-    </div>
+    <div class="current-tab-pill">${currentTabIcon(currentTab)} ${currentTabLabel(currentTab)}</div>
 
     <section class="panel ${currentTab==='beranda'?'active':''}">${renderBeranda(dLeft, allVendorList)}</section>
     <section class="panel ${currentTab==='timeline'?'active':''}">${renderTimeline()}</section>
@@ -3849,7 +3886,18 @@ function render(){
   if(window.twemoji){ twemoji.parse(app, {folder:'svg', ext:'.svg'}); }
 }
 
-function tabBtn(key,label){ return `<button class="tab-btn ${currentTab===key?'active':''}" data-tab="${key}">${label}</button>`; }
+function navItem(key,emoji,label){ return `<button type="button" class="nav-item ${currentTab===key?'active':''}" data-tab="${key}"><span class="emj">${emoji}</span><span>${label}</span></button>`; }
+const TAB_META = {
+  beranda:{emoji:'✨', label:'Beranda'},
+  timeline:{emoji:'🗓️', label:'Timeline'},
+  vendor:{emoji:'🤝', label:'Vendor'},
+  pembayaran:{emoji:'💳', label:'Pembayaran'},
+  detail:{emoji:'📋', label:'Detail Acara'},
+  moodboard:{emoji:'🎨', label:'Moodboard'},
+  notifikasi:{emoji:'🔔', label:'Notifikasi'},
+};
+function currentTabIcon(tab){ return (TAB_META[tab]||TAB_META.beranda).emoji; }
+function currentTabLabel(tab){ return (TAB_META[tab]||TAB_META.beranda).label; }
 
 function activityIcon(type){
   return { payment:'💳', document:'📄', timeline:'📍', vendor:'🤝', rsvp:'💌' }[type] || '✨';
@@ -4596,6 +4644,13 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
+  const navMenuBtn = document.getElementById('navMenuBtn');
+  if(navMenuBtn) navMenuBtn.addEventListener('click', ()=>{ navDrawerOpen = true; render(); });
+  const navDrawerCloseBtn = document.getElementById('navDrawerCloseBtn');
+  if(navDrawerCloseBtn) navDrawerCloseBtn.addEventListener('click', ()=>{ navDrawerOpen = false; render(); });
+  const navOverlay = document.getElementById('navOverlay');
+  if(navOverlay) navOverlay.addEventListener('click', ()=>{ navDrawerOpen = false; render(); });
+
   const toggleActivityFeedBtn = document.querySelector('[data-action="toggle-activity-feed"]');
   if(toggleActivityFeedBtn) toggleActivityFeedBtn.addEventListener('click', ()=>{ activityFeedExpanded = !activityFeedExpanded; render(); });
 

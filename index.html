@@ -255,6 +255,10 @@
      tiap habis render(), dipakai di semua field Timeline & Detail Acara (Tamu VIP, Foto Keluarga, Catering,
      Buffet, Stall, Make Up, Busana, Request Lagu) plus judul Pembayaran. */
   textarea.autofit{resize:none !important;overflow:hidden !important;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;font-family:inherit;line-height:1.35;min-height:0 !important;-webkit-appearance:none;appearance:none;box-shadow:none !important;background-image:none !important;}
+  /* textarea.autofit (element+class) specificity-nya lebih tinggi dari .t-title (class doang), jadi
+     font-family:inherit di atas selalu menang & judul agenda (mis. "DP 1 Juta") ikutan font sans biasa,
+     bukan Fraunces serif kayak judul Moodboard. Rule ini naikin specificity biar font Fraunces-nya kepakai. */
+  .t-title.autofit{font-family:'Fraunces',serif;}
   .t-desc{font-size:13.5px;color:var(--cream-dim);margin:2px 0 8px;border:none;background:none !important;width:100%;resize:none;font-family:inherit;line-height:1.4;padding:0;}
   .t-desc:disabled{opacity:1;-webkit-text-fill-color:var(--cream-dim);}
   .t-vendor-picker{margin-top:10px;padding-top:10px;border-top:1px dashed var(--card-border);}
@@ -4337,7 +4341,7 @@ function renderTimeline(){
         <div class="t-item ${item.status==='done'?'done':''}" data-id="${item.id}">
           <div class="t-row">
             <div class="t-left">
-              <textarea class="t-cat autofit" data-field="cat" rows="1" ${isVendor?'':'disabled'} style="background:transparent;border:none;border-bottom:1px dashed var(--card-border);padding:2px 0;margin-bottom:4px;width:100%;max-width:220px;">${escapeHtml(item.cat)}</textarea>
+              <textarea class="t-cat autofit" data-field="cat" rows="1" ${isVendor?'':'disabled'} style="background:transparent;border:none;padding:2px 0;margin-bottom:4px;width:100%;max-width:220px;">${escapeHtml(item.cat)}</textarea>
               <textarea class="t-title autofit" data-field="title" rows="1" ${isVendor?'':'disabled'}>${escapeHtml(item.title)}</textarea>
               <textarea class="t-desc" data-field="desc" rows="2" ${isVendor?'':'disabled'}>${escapeHtml(item.desc)}</textarea>
               <div class="t-meta">

@@ -1010,14 +1010,24 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
 }
 
 // Mencatat satu kejadian ke linimasa aktivitas proyek (dipakai oleh Activity Feed di dashboard klien)
+// Mengembalikan entry yang dibuat supaya id-nya bisa disimpan di item terkait (agenda/pembayaran/vendor),
+// jadi kalau item itu dibatalkan/dihapus, entry activity-nya bisa ikut dihapus otomatis lewat removeActivity().
 function logActivity(type, text, actor){
-  if(!state || !state.activityLog) return;
-  state.activityLog.unshift({ id: uid('act'), ts: new Date().toISOString(), type: type||'system', text: text||'', actor: actor||'system' });
+  if(!state || !state.activityLog) return null;
+  const entry = { id: uid('act'), ts: new Date().toISOString(), type: type||'system', text: text||'', actor: actor||'system' };
+  state.activityLog.unshift(entry);
   if(state.activityLog.length > 100) state.activityLog.length = 100;
+  return entry;
+}
+// Menghapus satu entry activity berdasarkan id (dipakai saat agenda/pembayaran/status vendor dibatalkan)
+function removeActivity(activityId){
+  if(!state || !state.activityLog || !activityId) return;
+  state.activityLog = state.activityLog.filter(a=>a.id!==activityId);
 }
 
 let state = null;
 let currentTab = 'beranda';
+let activityFeedExpanded = false;
 
 function normalizeState(s){
   if(!s.id) s.id = uid('proj');
@@ -2026,8 +2036,11 @@ function bindPwToggles(){
 
 function digitsOnly(str){ return String(str||'').replace(/[^0-9]/g,''); }
 function fmtIDR(n){ n = Number(n)||0; return 'Rp ' + n.toLocaleString('id-ID'); }
-function fmtDate(iso){ if(!iso) return '-'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
-function fmtDateShort(iso){ if(!iso) return '-'; const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}); }
+// iso bisa berupa tanggal saja ("2026-08-15") ATAU datetime lengkap dari toISOString() ("2026-08-15T10:23:45.123Z").
+// Sebelumnya kode selalu nambahin "T00:00:00" di belakang, jadi kalau iso-nya sudah datetime lengkap
+// hasilnya jadi string tanggal ganda yang gak valid (makanya muncul "Invalid Date").
+function fmtDate(iso){ if(!iso) return '-'; const d = /T/.test(iso) ? new Date(iso) : new Date(iso+'T00:00:00'); if(isNaN(d.getTime())) return '-'; return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
+function fmtDateShort(iso){ if(!iso) return '-'; const d = /T/.test(iso) ? new Date(iso) : new Date(iso+'T00:00:00'); if(isNaN(d.getTime())) return '-'; return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}); }
 function daysUntil(iso){ const now = new Date(); now.setHours(0,0,0,0); const d = new Date(iso+'T00:00:00'); return Math.round((d-now)/86400000); }
 
 /* ---------- REMINDER / NOTIFIKASI OTOMATIS (H-7 / H-1) ----------
@@ -3843,8 +3856,11 @@ function activityIcon(type){
 }
 
 function renderActivityFeed(){
-  const log = (state.activityLog||[]).slice(0, 8);
-  if(!log.length) return '';
+  const fullLog = state.activityLog||[];
+  if(!fullLog.length) return '';
+  const COLLAPSED_COUNT = 3;
+  const hasMore = fullLog.length > COLLAPSED_COUNT;
+  const log = activityFeedExpanded ? fullLog.slice(0, 20) : fullLog.slice(0, COLLAPSED_COUNT);
   return `
     <div class="mb-card">
       <h3>🔔 Update Terbaru</h3>
@@ -3859,6 +3875,7 @@ function renderActivityFeed(){
           </div>
         `).join('')}
       </div>
+      ${hasMore ? `<button type="button" class="btn small" data-action="toggle-activity-feed" style="margin-top:12px;width:100%;">${activityFeedExpanded ? '↑ Sembunyikan' : `Lihat Selengkapnya (${fullLog.length - COLLAPSED_COUNT})`}</button>` : ''}
     </div>
   `;
 }
@@ -4579,6 +4596,9 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
+  const toggleActivityFeedBtn = document.querySelector('[data-action="toggle-activity-feed"]');
+  if(toggleActivityFeedBtn) toggleActivityFeedBtn.addEventListener('click', ()=>{ activityFeedExpanded = !activityFeedExpanded; render(); });
+
   const toggleAllReminderMsg = document.getElementById('toggleAllReminderMsg');
   if(toggleAllReminderMsg) toggleAllReminderMsg.addEventListener('click', ()=>{
     const wraps = document.querySelectorAll('.reminder-msg-wrap');
@@ -4997,11 +5017,18 @@ function attachHandlers(){
     const toggleBtn = el.querySelector('[data-action="toggle-status"]');
     if(toggleBtn) toggleBtn.addEventListener('click', ()=>{
       item.status = item.status==='done'?'upcoming':'done';
-      if(item.status==='done') logActivity('timeline', `Agenda "${item.title||item.label||'tanpa judul'}" ditandai selesai`, 'admin');
+      if(item.status==='done'){
+        const entry = logActivity('timeline', `Agenda "${item.title||item.label||'tanpa judul'}" ditandai selesai`, 'admin');
+        if(entry) item.activityId = entry.id;
+      } else if(item.activityId){
+        // Dibatalkan dari "selesai" -> otomatis hilang juga dari Update Terbaru
+        removeActivity(item.activityId);
+        item.activityId = null;
+      }
       scheduleSave(); render();
     });
     const delBtn = el.querySelector('[data-action="delete-item"]');
-    if(delBtn) delBtn.addEventListener('click', async ()=>{ if(await customConfirm('Hapus agenda ini?')){ state.timeline = state.timeline.filter(t=>t.id!==id); scheduleSave(); render(); } });
+    if(delBtn) delBtn.addEventListener('click', async ()=>{ if(await customConfirm('Hapus agenda ini?')){ if(item.activityId) removeActivity(item.activityId); state.timeline = state.timeline.filter(t=>t.id!==id); scheduleSave(); render(); } });
     el.querySelectorAll('[data-vendor-ref]').forEach(cb=>{
       cb.addEventListener('change', ()=>{
         const ref = cb.dataset.vendorRef;
@@ -5056,7 +5083,19 @@ function attachHandlers(){
         return;
       }
       const evt = field.tagName==='SELECT' ? 'change' : 'input';
-      field.addEventListener(evt, e=>{ v[fkey] = e.target.value; scheduleSave(); if(fkey==='status') render(); });
+      field.addEventListener(evt, e=>{
+        v[fkey] = e.target.value;
+        if(fkey==='status'){
+          if(v.activityId){ removeActivity(v.activityId); v.activityId = null; }
+          if(v.status !== 'belum'){
+            const vendorLabel = key + (v.name ? (' — ' + v.name) : '');
+            const entry = logActivity('vendor', `Status vendor ${vendorLabel} diperbarui jadi "${statusLabel(v.status)}"`, 'admin');
+            if(entry) v.activityId = entry.id;
+          }
+        }
+        scheduleSave();
+        if(fkey==='status') render();
+      });
       if(fkey==='category'){
         // Render ulang penuh dipicu saat SELESAI mengetik (blur), bukan tiap huruf
         // diketik — sebelumnya render() dipanggil di setiap keystroke dan bikin
@@ -5074,6 +5113,7 @@ function attachHandlers(){
     if(delVendorBtn) delVendorBtn.addEventListener('click', async ()=>{
       if(isExtra){
         if(await customConfirm('Hapus vendor tambahan ini? Semua datanya akan hilang permanen.')){
+          if(v.activityId) removeActivity(v.activityId);
           state.extraVendors = state.extraVendors.filter(x=>x.id!==key);
           scheduleSave(); render();
         }
@@ -5146,7 +5186,14 @@ function attachHandlers(){
     const toggle = el.querySelector('[data-action="toggle-paid"]');
     if(toggle) toggle.addEventListener('click', ()=>{
       p.status = p.status==='paid'?'unpaid':'paid';
-      if(p.status==='paid') logActivity('payment', `${p.label} — ${fmtIDR(p.amount)} sudah dikonfirmasi lunas`, 'admin');
+      if(p.status==='paid'){
+        const entry = logActivity('payment', `${p.label} — ${fmtIDR(p.amount)} sudah dikonfirmasi lunas`, 'admin');
+        if(entry) p.activityId = entry.id;
+      } else if(p.activityId){
+        // Dibatalkan dari "lunas" -> otomatis hilang juga dari Update Terbaru
+        removeActivity(p.activityId);
+        p.activityId = null;
+      }
       scheduleSave(); render();
     });
     const downloadInvoiceLink = el.querySelector('[data-action="download-invoice"]');
@@ -5190,7 +5237,7 @@ function attachHandlers(){
       }
     });
     const delBtn = el.querySelector('[data-action="delete-payment"]');
-    if(delBtn) delBtn.addEventListener('click', async ()=>{ if(await customConfirm('Hapus item pembayaran ini?')){ state.payments = state.payments.filter(x=>x.id!==id); scheduleSave(); render(); } });
+    if(delBtn) delBtn.addEventListener('click', async ()=>{ if(await customConfirm('Hapus item pembayaran ini?')){ if(p.activityId) removeActivity(p.activityId); state.payments = state.payments.filter(x=>x.id!==id); scheduleSave(); render(); } });
     const invoiceInput = el.querySelector('[data-action="upload-invoice"]');
     if(invoiceInput) invoiceInput.addEventListener('change', async e=>{
       const file = e.target.files && e.target.files[0];

@@ -244,6 +244,10 @@
   .t-cat{display:inline-block;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);font-weight:700;margin-bottom:6px;}
   .t-title{font-family:'Fraunces',serif;font-size:18px;font-weight:600;margin:0 0 4px;background:none !important;border:none;color:var(--cream);width:100%;padding:0;}
   .t-title:disabled{opacity:1;-webkit-text-fill-color:var(--cream);}
+  /* Teks yang kepanjangan di field non-edit (disabled/readonly) ditampilkan penuh dengan cara turun ke bawah,
+     bukan malah tersembunyi/terpotong — dipakai otomatis lewat unwrapOverflowingInputs() di semua bagian
+     (Timeline, Detail Acara, dst) lewat JS setelah tiap render(). */
+  .txt-wrap-display{white-space:normal !important;overflow-wrap:break-word;word-break:break-word;overflow:visible !important;text-overflow:clip !important;display:block;width:100%;box-sizing:border-box;cursor:default;}
   .t-desc{font-size:13.5px;color:var(--cream-dim);margin:2px 0 8px;border:none;background:none !important;width:100%;resize:none;font-family:inherit;line-height:1.4;padding:0;}
   .t-desc:disabled{opacity:1;-webkit-text-fill-color:var(--cream-dim);}
   .t-vendor-picker{margin-top:10px;padding-top:10px;border-top:1px dashed var(--card-border);}
@@ -4053,7 +4057,30 @@ function render(){
     </footer>
   `;
   attachHandlers();
+  unwrapOverflowingInputs(app);
   if(window.twemoji){ twemoji.parse(app, {folder:'svg', ext:'.svg'}); }
+}
+
+/* Field non-edit (disabled/readonly) memakai <input>, dan <input> secara bawaan browser TIDAK BISA
+   membuat teks turun ke baris baru — kalau isinya kepanjangan buat layar HP, sisanya cuma disembunyikan/
+   di-scroll dan sering ke-lihat "kepotong" di tengah kalimat. Fungsi ini jalan otomatis tiap habis render()
+   di SELURUH halaman (Timeline, Detail Acara/Tamu VIP/Catering/Buffet/dst): field yang isinya kepanjangan
+   sampai overflow diganti tampilannya jadi teks biasa yang turun ke bawah, jadi tidak ada lagi yang
+   ke-sembunyiin. Field yang lagi bisa diedit (tidak disabled/readonly) tidak disentuh. */
+function unwrapOverflowingInputs(root){
+  if(!root) return;
+  const SKIP_TYPES = new Set(['date','time','checkbox','radio','number','password','hidden','range','color','file']);
+  root.querySelectorAll('input[disabled], input[readonly]').forEach(inp=>{
+    const type = (inp.getAttribute('type')||'text').toLowerCase();
+    if(SKIP_TYPES.has(type)) return;
+    if(!inp.value) return;
+    if(inp.scrollWidth <= inp.clientWidth + 1) return;
+    const div = document.createElement('div');
+    div.className = (inp.className ? inp.className + ' ' : '') + 'txt-wrap-display';
+    if(inp.hasAttribute('style')) div.setAttribute('style', inp.getAttribute('style'));
+    div.textContent = inp.value;
+    inp.replaceWith(div);
+  });
 }
 
 function navItem(key,emoji,label){ return `<button type="button" class="nav-item ${currentTab===key?'active':''}" data-tab="${key}"><span class="emj">${emoji}</span><span>${label}</span></button>`; }

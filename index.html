@@ -1051,7 +1051,7 @@ function defaultData(brideName, groomName, id, marketingId, pkg){
     clientSource: '',
     clientSourceDate: '',
     documents: { mou: null, rundown: null },
-    couple: { brideName: brideName || 'Nama Mempelai Wanita', groomName: groomName || 'Nama Mempelai Pria', hashtag:'#TheWeddingOf', weddingDate, weddingTime:'', venueName:'', akadDate: weddingDate, akadTime:'', akadLocation:'' },
+    couple: { brideName: brideName || 'Nama Mempelai Wanita', groomName: groomName || 'Nama Mempelai Pria', hashtag:'#TheWeddingOf', weddingDate, weddingTime:'', venueName:'', akadDate: weddingDate, akadTime:'', akadLocation:'', bridePhoto:'', groomPhoto:'', brideParents:'', groomParents:'', invitationQuote:'' },
     timeline: defaultTimeline(weddingDate, weddingDate),
     vendors: vendors,
     extraVendors: [],
@@ -1141,6 +1141,12 @@ function normalizeState(s){
   if(typeof s.couple.akadLocation !== 'string') s.couple.akadLocation = '';
   if(typeof s.couple.akadTime !== 'string') s.couple.akadTime = '';
   if(typeof s.couple.weddingTime !== 'string') s.couple.weddingTime = '';
+  if(typeof s.couple.invitationTemplate !== 'string') s.couple.invitationTemplate = 'elegan';
+  if(typeof s.couple.bridePhoto !== 'string') s.couple.bridePhoto = '';
+  if(typeof s.couple.groomPhoto !== 'string') s.couple.groomPhoto = '';
+  if(typeof s.couple.brideParents !== 'string') s.couple.brideParents = '';
+  if(typeof s.couple.groomParents !== 'string') s.couple.groomParents = '';
+  if(typeof s.couple.invitationQuote !== 'string') s.couple.invitationQuote = '';
   if(!s.moodboard) s.moodboard = defaultData().moodboard;
   if(!Array.isArray(s.moodboard.notes)){
     s.moodboard.notes = s.moodboard.concept ? [{id:uid('mn'), vendorKey:'Umum', text:s.moodboard.concept, by:'client', date:new Date().toISOString()}] : [];
@@ -2839,86 +2845,135 @@ function showClientPasswordGate(){
    publik yang dipakai di sini (nama, tanggal, lokasi, foto moodboard, ucapan
    tamu lain) -- TIDAK PERNAH menyentuh state.vendors, state.payments, dst.
 
-   TEMA: satu tema tetap bernuansa Adat Jawa (motif parang, ornamen
-   gunungan, aksara hias). Halaman undangan dibuka lewat layar sampul
-   "Buka Undangan" dulu (kaya undangan digital pada umumnya) -- baru
+   TEMA & ANIMASI: satu tema tetap "Kraton Klasik" (nuansa Jawa royal, animasi
+   3D) -- klien mengustomisasi lewat panel "Kustomisasi Undangan Digital" di
+   dashboard (foto mempelai, nama orang tua, kutipan). Halaman undangan dibuka
+   lewat layar sampul "Buka Undangan" dulu (kaya undangan digital pada
+   umumnya, dengan tirai & gunungan 3D yang tilt mengikuti mouse/jari) -- baru
    setelah diklik, konten utama muncul dengan animasi fade + hitung mundur
-   berjalan (live) + tiap bagian muncul pelan-pelan pas discroll
-   (scroll-reveal), plus elemen dekoratif (motif melayang & gunungan). */
-/* ---------- TEMA UNDANGAN: ADAT JAWA ----------
-   Satu tema tetap bernuansa Jawa (motif parang, ornamen gunungan,
-   palet maroon-emas-krem). Sistem multi-tema lama sudah dilepas supaya
-   semua project pakai tampilan undangan yang sama & konsisten. */
-const JAVA_INV_VARS = { '--inv-bg-a':'#3B1015', '--inv-bg-b':'#7A1F2E', '--inv-card-bg':'rgba(255,248,233,.07)', '--inv-card-border':'rgba(198,161,91,.35)', '--inv-ink':'#FFF8E9', '--inv-ink-dim':'rgba(255,248,233,.74)', '--inv-ink-dimmer':'rgba(255,248,233,.52)', '--inv-accent':'#D9B26B' };
+   berjalan (live) + tiap bagian muncul pelan-pelan pas discroll (scroll-reveal). */
+/* Satu tema tetap: "Kraton Klasik" -- nuansa Jawa royal (maroon tirai, emas,
+   siluet gunungan wayang, sulur floral) dengan animasi 3D (tilt mengikuti
+   gerakan jari/mouse + parallax kedalaman antar lapisan + foto oval tilt). */
+const INV_GUNUNGAN_SVG = `<svg viewBox="0 0 120 170" xmlns="http://www.w3.org/2000/svg">
+  <path d="M60 4 C34 30 16 56 12 92 C9 118 24 146 60 166 C96 146 111 118 108 92 C104 56 86 30 60 4 Z" fill="currentColor"/>
+  <path d="M60 22 C42 42 30 62 27 90 C25 110 36 130 60 144 C84 130 95 110 93 90 C90 62 78 42 60 22 Z" fill="none" stroke="#3B0F14" stroke-width="1.6" opacity=".45"/>
+  <path d="M60 40 C50 54 43 68 41 86 C40 98 47 112 60 122 C73 112 80 98 79 86 C77 68 70 54 60 40 Z" fill="none" stroke="#3B0F14" stroke-width="1.2" opacity=".35"/>
+  <circle cx="60" cy="60" r="4" fill="#3B0F14" opacity=".4"/>
+</svg>`;
+const INV_VINE_SVG = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4 4 C40 10 30 50 60 55 C90 60 80 20 120 30 C150 38 140 70 170 75" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/>
+  <path d="M18 14 C10 26 24 34 18 46" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".5"/>
+  <circle cx="60" cy="55" r="5" fill="currentColor" opacity=".55"/>
+  <circle cx="120" cy="30" r="4" fill="currentColor" opacity=".45"/>
+  <circle cx="170" cy="75" r="3.4" fill="currentColor" opacity=".4"/>
+  <path d="M50 46 C55 38 66 38 68 48" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".5"/>
+</svg>`;
 function ensureInvitationStyle(){
   if(document.getElementById('invTemplateStyle')) return;
   const style = document.createElement('style');
   style.id = 'invTemplateStyle';
   style.textContent = `
-    .inv-page{position:relative;min-height:100vh;overflow:hidden;background:linear-gradient(160deg,var(--inv-bg-a),var(--inv-bg-b));color:var(--inv-ink);margin:-20px calc(-50vw + 50%) -80px;width:100vw;}
-    .inv-page::before,.inv-page::after{content:'';position:absolute;left:0;right:0;height:14px;z-index:5;background:repeating-linear-gradient(45deg,var(--inv-accent) 0 3px,transparent 3px 16px);opacity:.55;}
-    .inv-page::before{top:0;} .inv-page::after{bottom:0;}
-    .inv-motif{position:absolute;top:-40px;font-size:20px;opacity:.4;animation-name:invFloatDown;animation-timing-function:linear;animation-iteration-count:infinite;pointer-events:none;z-index:1;filter:sepia(.3) saturate(1.4);}
-    @keyframes invFloatDown{0%{transform:translateY(-6vh) rotate(0deg);opacity:0;}10%{opacity:.45;}90%{opacity:.35;}100%{transform:translateY(106vh) rotate(340deg);opacity:0;}}
-    .inv-gunungan{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);width:260px;max-width:70vw;opacity:.16;z-index:1;pointer-events:none;}
-    .inv-cover{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,var(--inv-bg-a),var(--inv-bg-b));transition:opacity .6s ease,visibility .6s ease;padding:24px;text-align:center;}
+    :root{ --inv-bg-a:#2c0a0f; --inv-bg-b:#6c1b28; --inv-bg-c:#8c2434; --inv-card-bg:rgba(255,246,229,.07); --inv-card-border:rgba(212,175,106,.38); --inv-ink:#FBF1DD; --inv-ink-dim:rgba(251,241,221,.76); --inv-ink-dimmer:rgba(251,241,221,.52); --inv-accent:#D9B26A; --inv-accent-light:#F1DFAF; }
+    .inv-page{position:relative;min-height:100vh;overflow:hidden;background:radial-gradient(120% 90% at 50% -10%,var(--inv-bg-c),var(--inv-bg-b) 55%,var(--inv-bg-a) 100%);color:var(--inv-ink);margin:-20px calc(-50vw + 50%) -80px;width:100vw;perspective:1400px;}
+    .inv-page *{box-sizing:border-box;}
+    .inv-page,.inv-cover{font-family:'Fraunces',Georgia,serif;}
+    .inv-motif{position:absolute;top:-40px;color:var(--inv-accent);opacity:.5;animation-name:invFloatDown;animation-timing-function:linear;animation-iteration-count:infinite;pointer-events:none;z-index:1;font-size:14px;}
+    .inv-motif svg{width:100%;height:100%;display:block;}
+    @keyframes invFloatDown{0%{transform:translateY(-6vh) rotate(0deg);opacity:0;}10%{opacity:.55;}90%{opacity:.4;}100%{transform:translateY(106vh) rotate(300deg);opacity:0;}}
+
+    /* ---------- COVER (layar sampul, 3D tilt mengikuti mouse/jari) ---------- */
+    .inv-cover{position:fixed;inset:0;z-index:30;overflow:hidden;background:radial-gradient(120% 90% at 50% -10%,var(--inv-bg-c),var(--inv-bg-b) 55%,var(--inv-bg-a) 100%);transition:opacity .7s ease,visibility .7s ease;}
     .inv-cover-hide{opacity:0;visibility:hidden;pointer-events:none;}
-    .inv-cover-inner{max-width:380px;position:relative;z-index:2;}
-    .inv-cover-frame{border:1px solid var(--inv-card-border);border-radius:2px;padding:26px 20px;position:relative;}
-    .inv-cover-frame::before,.inv-cover-frame::after{content:'꧁ ꧂';display:block;color:var(--inv-accent);letter-spacing:.3em;font-size:13px;opacity:.85;}
-    .inv-cover-frame::before{margin-bottom:12px;} .inv-cover-frame::after{margin-top:12px;transform:scaleY(-1);}
-    .inv-cover-logo{max-width:70px;margin-bottom:12px;opacity:.9;}
-    .inv-cover-kicker{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:6px;}
-    .inv-cover-hashtag{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:10px;}
-    .inv-cover-names{font-family:'Fraunces',serif;font-size:29px;margin:0 0 10px;color:var(--inv-ink);}
-    .inv-cover-guest{font-size:13.5px;color:var(--inv-ink-dim);margin:12px 0 22px;line-height:1.7;}
-    .inv-cover-guest strong{color:var(--inv-ink);font-family:'Fraunces',serif;font-size:17px;display:block;margin-top:2px;}
-    .inv-open-btn{cursor:pointer;border:1px solid var(--inv-accent);background:transparent;color:var(--inv-accent);padding:13px 28px;border-radius:4px;font-family:inherit;font-weight:700;font-size:13.5px;letter-spacing:.06em;animation:invPulse 2.4s ease-in-out infinite;}
-    @keyframes invPulse{0%,100%{box-shadow:0 0 0 0 rgba(217,178,107,.35);}50%{box-shadow:0 0 0 10px rgba(217,178,107,0);}}
+    .inv-scene{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .15s ease-out;}
+    .inv-curtain{position:absolute;top:-6%;bottom:-8%;width:30%;background:
+        repeating-linear-gradient(90deg, rgba(0,0,0,.28) 0px, rgba(0,0,0,.28) 3px, rgba(255,255,255,.05) 3px, rgba(255,255,255,.05) 17px),
+        linear-gradient(180deg, var(--inv-bg-c), var(--inv-bg-a) 85%);
+      filter:drop-shadow(0 14px 26px rgba(0,0,0,.5));will-change:transform;transition:transform .18s ease-out;}
+    .inv-curtain-left{left:-8%;border-radius:0 0 65% 8%;transform-origin:top left;}
+    .inv-curtain-right{right:-8%;border-radius:0 0 8% 65%;transform-origin:top right;}
+    .inv-curtain::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.35),transparent 30%,transparent 70%,rgba(0,0,0,.35));}
+    .inv-cover-frame{position:absolute;inset:22px;border:1px solid rgba(217,178,106,.28);border-radius:2px;pointer-events:none;}
+    .inv-cover-vine{position:absolute;width:100px;height:100px;color:var(--inv-accent);opacity:.7;will-change:transform;transition:transform .18s ease-out;}
+    .inv-cover-vine svg{width:100%;height:100%;}
+    .inv-vine-tl{top:14px;left:14px;}
+    .inv-vine-tr{top:14px;right:14px;transform:scaleX(-1);}
+    .inv-vine-bl{bottom:14px;left:14px;transform:scaleY(-1);}
+    .inv-vine-br{bottom:14px;right:14px;transform:scale(-1,-1);}
+    .inv-gunungan-wrap{position:absolute;top:8%;left:50%;width:88px;height:124px;margin-left:-44px;color:var(--inv-accent);opacity:.92;filter:drop-shadow(0 6px 14px rgba(0,0,0,.4));will-change:transform;transition:transform .18s ease-out;}
+    .inv-gunungan-float{width:100%;height:100%;animation:invGununganFloat 6s ease-in-out infinite;transform-style:preserve-3d;}
+    .inv-gunungan-float svg{width:100%;height:100%;display:block;}
+    @keyframes invGununganFloat{0%,100%{transform:translateY(0) rotateY(-6deg);}50%{transform:translateY(-8px) rotateY(6deg);}}
+    .inv-cover-inner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;will-change:transform;transition:transform .18s ease-out;}
+    .inv-cover-card{max-width:380px;position:relative;z-index:2;padding-top:118px;}
+    .inv-cover-hashtag{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:12px;}
+    .inv-cover-names{font-size:32px;margin:0 0 6px;color:var(--inv-ink);line-height:1.2;}
+    .inv-cover-names em{opacity:.65;font-style:italic;color:var(--inv-accent-light);}
+    .inv-cover-date{font-size:12.5px;letter-spacing:.06em;color:var(--inv-accent-light);margin-bottom:18px;}
+    .inv-cover-guest{font-size:13px;color:var(--inv-ink-dim);margin:8px 0 26px;line-height:1.8;}
+    .inv-cover-guest strong{color:var(--inv-ink);font-size:17px;display:block;margin-top:3px;}
+    .inv-open-btn{cursor:pointer;border:1px solid var(--inv-accent);background:transparent;color:var(--inv-accent-light);padding:13px 30px;border-radius:100px;font-family:inherit;font-weight:600;font-size:13px;letter-spacing:.06em;animation:invPulse 2.4s ease-in-out infinite;}
+    @keyframes invPulse{0%,100%{box-shadow:0 0 0 0 rgba(217,178,106,.35);}50%{box-shadow:0 0 0 10px rgba(217,178,106,0);}}
+
+    /* ---------- MAIN CONTENT ---------- */
     .inv-main{position:relative;z-index:2;max-width:540px;margin:0 auto;padding:52px 20px 60px;opacity:0;transition:opacity .6s ease;}
     .inv-main-show{opacity:1;}
-    .inv-section{opacity:0;transform:translateY(26px);transition:opacity .8s ease,transform .8s ease;margin-bottom:26px;}
-    .inv-section.reveal-in{opacity:1;transform:translateY(0);}
-    .inv-divider{text-align:center;color:var(--inv-accent);letter-spacing:.3em;font-size:13px;margin:0 0 18px;opacity:.85;}
-    .inv-eyebrow{font-size:11px;letter-spacing:.2em;text-transform:uppercase;text-align:center;color:var(--inv-ink-dim);margin-bottom:8px;}
+    .inv-section{opacity:0;transform:translateY(30px) translateZ(-30px) scale(.96);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.3,1);margin-bottom:22px;transform-style:preserve-3d;}
+    .inv-section.reveal-in{opacity:1;transform:translateY(0) translateZ(0) scale(1);}
     .inv-hero{text-align:center;margin-bottom:8px;}
-    .inv-hero .inv-hashtag{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:10px;}
-    .inv-hero h1{font-family:'Fraunces',serif;font-size:32px;margin:0 0 6px;color:var(--inv-ink);}
-    .inv-hero .inv-sub{font-size:13.5px;color:var(--inv-ink-dim);}
-    .inv-quote{text-align:center;font-family:'Fraunces',serif;font-style:italic;font-size:15px;line-height:1.8;color:var(--inv-ink-dim);padding:0 8px;}
-    .inv-quote .src{display:block;font-style:normal;font-size:11.5px;letter-spacing:.08em;color:var(--inv-ink-dimmer);margin-top:8px;}
-    .inv-couple-grid{display:grid;grid-template-columns:1fr;gap:16px;}
-    .inv-couple-card{text-align:center;background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:4px;padding:22px 18px;position:relative;}
-    .inv-couple-photo{width:96px;height:96px;border-radius:50%;margin:0 auto 12px;border:2px solid var(--inv-accent);padding:4px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',serif;font-size:30px;background:rgba(255,255,255,.04);}
-    .inv-couple-name{font-family:'Fraunces',serif;font-size:22px;margin:0 0 6px;color:var(--inv-ink);}
-    .inv-couple-parents{font-size:12.5px;color:var(--inv-ink-dim);line-height:1.7;}
-    .inv-couple-and{text-align:center;color:var(--inv-accent);font-family:'Fraunces',serif;font-style:italic;font-size:20px;margin:2px 0;}
-    .inv-card{text-align:left;background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:4px;padding:17px 19px;backdrop-filter:blur(6px);margin-bottom:14px;}
-    .inv-card .inv-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--inv-accent);font-weight:700;margin-bottom:5px;}
-    .inv-card .inv-card-main{font-weight:700;color:var(--inv-ink);}
+    .inv-hero .inv-hashtag{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--inv-ink-dim);margin-bottom:10px;}
+    .inv-hero-orn{width:52px;height:74px;margin:0 auto 10px;color:var(--inv-accent);opacity:.9;}
+    .inv-hero-orn svg{width:100%;height:100%;}
+    .inv-hero h1{font-size:30px;margin:0 0 6px;color:var(--inv-ink);}
+    .inv-hero h1 em{font-style:italic;opacity:.65;color:var(--inv-accent-light);}
+    .inv-hero .inv-sub{font-size:13px;color:var(--inv-ink-dim);}
+    .inv-divider{display:flex;align-items:center;gap:10px;margin:22px 0;color:var(--inv-accent);opacity:.85;}
+    .inv-divider::before,.inv-divider::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--inv-card-border),transparent);}
+    .inv-divider svg{width:22px;height:22px;flex-shrink:0;}
+
+    .inv-quote{text-align:center;font-style:italic;font-size:14.5px;line-height:1.85;color:var(--inv-ink-dim);padding:8px 6px 4px;position:relative;}
+    .inv-quote::before,.inv-quote::after{content:'"';color:var(--inv-accent);font-size:26px;font-style:normal;line-height:0;opacity:.7;}
+
+    .inv-couple-grid{display:grid;grid-template-columns:1fr;gap:26px;}
+    .inv-couple-card{text-align:center;}
+    .inv-oval-wrap{width:150px;height:190px;margin:0 auto 14px;perspective:800px;}
+    .inv-oval{width:100%;height:100%;border-radius:50% 50% 48% 48% / 58% 58% 42% 42%;border:3px solid var(--inv-accent);box-shadow:0 0 0 6px rgba(217,178,106,.12), 0 18px 30px -12px rgba(0,0,0,.55);overflow:hidden;background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(0,0,0,.15));position:relative;transform-style:preserve-3d;transition:transform .12s ease-out;cursor:default;}
+    .inv-oval img{width:100%;height:100%;object-fit:cover;display:block;}
+    .inv-oval-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:40px;color:var(--inv-accent);opacity:.5;}
+    .inv-couple-name{font-size:19px;color:var(--inv-ink);margin:2px 0 4px;}
+    .inv-couple-parents{font-size:12.5px;color:var(--inv-ink-dim);line-height:1.7;max-width:280px;margin:0 auto;}
+    .inv-couple-amp{text-align:center;font-size:24px;color:var(--inv-accent);margin:2px 0;font-style:italic;}
+
+    .inv-card{text-align:left;background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:18px;padding:18px 20px;backdrop-filter:blur(6px);margin-bottom:14px;position:relative;}
+    .inv-card .inv-card-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--inv-accent-light);font-weight:700;margin-bottom:5px;}
+    .inv-card .inv-card-main{font-weight:700;color:var(--inv-ink);font-size:15px;}
     .inv-card .inv-card-sub{font-size:13px;color:var(--inv-ink-dim);margin-top:2px;}
-    .inv-card a.inv-maps{font-size:12px;color:var(--inv-accent);font-weight:700;text-decoration:none;display:inline-block;margin-top:6px;}
+    .inv-card a.inv-maps{font-size:12px;color:var(--inv-accent-light);font-weight:700;text-decoration:none;display:inline-block;margin-top:8px;}
     .inv-countdown{display:flex;gap:8px;justify-content:center;margin:20px 0 4px;}
-    .inv-countdown .box{background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:4px;padding:10px 4px;flex:1;max-width:70px;}
-    .inv-countdown .num{font-family:'Fraunces',serif;font-size:21px;font-weight:600;display:block;color:var(--inv-ink);}
-    .inv-countdown .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--inv-ink-dimmer);}
-    .inv-footer{text-align:center;font-size:12px;color:var(--inv-ink-dimmer);padding-top:6px;line-height:1.9;}
-    .inv-footer .inv-thanks{font-family:'Fraunces',serif;font-style:italic;font-size:16px;color:var(--inv-ink-dim);display:block;margin-bottom:6px;}
+    .inv-countdown .box{background:var(--inv-card-bg);border:1px solid var(--inv-card-border);border-radius:12px;padding:10px 4px;flex:1;max-width:70px;}
+    .inv-countdown .num{font-size:21px;font-weight:600;display:block;color:var(--inv-ink);}
+    .inv-countdown .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--inv-ink-dimmer);}
+    .inv-footer{text-align:center;font-size:12px;color:var(--inv-ink-dimmer);padding-top:16px;}
+    .inv-footer .inv-hero-orn{width:34px;height:48px;margin:0 auto 10px;opacity:.6;}
     .inv-page h3{color:var(--inv-ink);}
-    .inv-page .btn{border-color:var(--inv-accent);color:var(--inv-accent);background:rgba(255,255,255,.06);}
+    .inv-page .btn{border-color:var(--inv-accent);color:var(--inv-accent-light);background:rgba(255,255,255,.06);}
     .inv-page .btn.primary{background:var(--inv-accent);color:var(--inv-bg-a);border-color:var(--inv-accent);}
-    @media(min-width:520px){ .inv-couple-grid{grid-template-columns:1fr auto 1fr;align-items:center;} .inv-couple-and{margin-top:34px;} }
+    @media(max-width:420px){ .inv-cover-names{font-size:26px;} .inv-hero h1{font-size:25px;} }
   `;
   document.head.appendChild(style);
 }
-/* Siluet gunungan (wayang) sederhana, dipakai sebagai ornamen dekoratif */
-const INV_GUNUNGAN_SVG = `<svg class="inv-gunungan" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg" fill="var(--inv-accent)"><path d="M100 4 L118 30 L112 30 L134 62 L122 62 L150 100 L136 100 L170 140 L30 140 L64 100 L50 100 L78 62 L66 62 L88 30 L82 30 Z"/></svg>`;
 let invitationSubmitting = false;
 let invCountdownTimer = null;
 let invRevealObserver = null;
+let invPointerHandler = null;
 function clearInvitationTimers(){
   if(invCountdownTimer){ clearInterval(invCountdownTimer); invCountdownTimer = null; }
   if(invRevealObserver){ invRevealObserver.disconnect(); invRevealObserver = null; }
+  if(invPointerHandler){
+    window.removeEventListener('mousemove', invPointerHandler);
+    window.removeEventListener('touchmove', invPointerHandler);
+    invPointerHandler = null;
+  }
 }
 function startInvitationCountdown(weddingDateIso){
   const el = document.getElementById('invCountdown');
@@ -2938,7 +2993,7 @@ function startInvitationCountdown(weddingDateIso){
   invCountdownTimer = setInterval(tick, 1000);
 }
 function setupInvitationScrollReveal(){
-  const els = document.querySelectorAll('.inv-section.reveal');
+  const els = document.querySelectorAll('.inv-section');
   if(!('IntersectionObserver' in window)){ els.forEach(el=> el.classList.add('reveal-in')); return; }
   invRevealObserver = new IntersectionObserver((entries)=>{
     entries.forEach(entry=>{
@@ -2947,78 +3002,115 @@ function setupInvitationScrollReveal(){
   }, { threshold: 0.15 });
   els.forEach(el=> invRevealObserver.observe(el));
 }
+/* 3D tilt di layar sampul: tirai, gunungan, sulur & kartu nama bergerak
+   dengan kecepatan berbeda (parallax) mengikuti posisi mouse/jari, memberi
+   kesan kedalaman 3D. Fallback aman kalau tidak ada input pointer -- animasi
+   ambient (invGununganFloat) tetap jalan lewat CSS. */
+function setupInvitationCoverTilt(){
+  const curtainL = document.getElementById('invCurtainL');
+  const curtainR = document.getElementById('invCurtainR');
+  const gunungan = document.getElementById('invGunungan');
+  const inner = document.getElementById('invCoverInner');
+  const vines = document.querySelectorAll('.inv-cover-vine');
+  if(!curtainL || !curtainR || !gunungan || !inner) return;
+  function apply(dx, dy){
+    curtainL.style.transform = `translate3d(${dx*-10}px, ${dy*-6}px, 0) rotateY(${dx*4}deg)`;
+    curtainR.style.transform = `translate3d(${dx*-10}px, ${dy*-6}px, 0) rotateY(${dx*-4}deg)`;
+    gunungan.style.transform = `translate3d(${dx*16}px, ${dy*10}px, 40px) rotateX(${dy*-8}deg) rotateY(${dx*10}deg)`;
+    inner.style.transform = `translate3d(${dx*6}px, ${dy*4}px, 0)`;
+    vines.forEach((v,i)=>{ const m = (i%2===0)? 1 : -1; v.style.transform += ` translate3d(${dx*8*m}px, ${dy*8}px, 0)`; });
+  }
+  invPointerHandler = function(e){
+    const w = window.innerWidth, h = window.innerHeight;
+    let cx, cy;
+    if(e.touches && e.touches[0]){ cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+    else { cx = e.clientX; cy = e.clientY; }
+    const dx = (cx / w - 0.5) * 2;
+    const dy = (cy / h - 0.5) * 2;
+    apply(dx, dy);
+  };
+  window.addEventListener('mousemove', invPointerHandler);
+  window.addEventListener('touchmove', invPointerHandler, {passive:true});
+}
+/* Tilt 3D pada foto oval mempelai (mengikuti posisi kursor/jari di atas
+   foto), memberi efek foto "hidup" seperti kartu fisik yang dimiringkan. */
+function setupInvitationPhotoTilt(){
+  document.querySelectorAll('.inv-oval').forEach(el=>{
+    function move(clientX, clientY){
+      const r = el.getBoundingClientRect();
+      const px = (clientX - r.left) / r.width - 0.5;
+      const py = (clientY - r.top) / r.height - 0.5;
+      el.style.transform = `rotateY(${px*16}deg) rotateX(${py*-16}deg) scale(1.03)`;
+    }
+    function reset(){ el.style.transform = 'rotateY(0) rotateX(0) scale(1)'; }
+    el.addEventListener('mousemove', e=> move(e.clientX, e.clientY));
+    el.addEventListener('mouseleave', reset);
+    el.addEventListener('touchmove', e=>{ if(e.touches[0]) move(e.touches[0].clientX, e.touches[0].clientY); }, {passive:true});
+    el.addEventListener('touchend', reset);
+  });
+}
 function showInvitationPage(){
   clearInvitationTimers();
   ensureInvitationStyle();
   const app = document.getElementById('app');
   const c = state.couple;
-  const cd = (state.details && state.details.clientData) ? state.details.clientData : {};
   const guest = findGuestByRequestParam();
-  const varsCss = Object.entries(JAVA_INV_VARS).map(([k,v])=> `${k}:${v}`).join(';');
   const mapsUrl = (loc)=> loc ? ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(loc)) : '';
-  const motifCount = 8;
-  const motifs = Array.from({length: motifCount}).map((_,i)=> `<span class="inv-motif" style="left:${(i*97)%100}%;animation-delay:${(i*1.7)%9}s;animation-duration:${9+((i*37)%7)}s;">🏵️</span>`).join('');
-  const brideName = c.brideName || cd.cpwName || 'Mempelai Wanita';
-  const groomName = c.groomName || cd.cppName || 'Mempelai Pria';
-  const brideParents = [cd.cpwFatherName, cd.cpwMotherName].filter(Boolean).join(' &amp; Ibu ');
-  const groomParents = [cd.cppFatherName, cd.cppMotherName].filter(Boolean).join(' &amp; Ibu ');
-  const parentLine = (label, fname, mname)=>{
-    if(!fname && !mname) return '';
-    const bapak = fname ? `Bapak ${escapeHtml(fname)}` : '';
-    const ibu = mname ? `Ibu ${escapeHtml(mname)}` : '';
-    return `<div class="inv-couple-parents">${label}<br>${[bapak, ibu].filter(Boolean).join(' &amp; ')}</div>`;
-  };
+  const motifs = Array.from({length: 10}).map((_,i)=> `<span class="inv-motif" style="left:${(i*97)%100}%;width:${10+(i%3)*3}px;height:${10+(i%3)*3}px;animation-delay:${(i*1.7)%9}s;animation-duration:${10+((i*37)%7)}s;">${INV_GUNUNGAN_SVG}</span>`).join('');
+  const dateShort = c.weddingDate ? new Date(c.weddingDate+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '';
+  const bridePhotoHtml = c.bridePhoto ? `<img src="${escapeAttr(c.bridePhoto)}" alt="${escapeAttr(c.brideName)}"/>` : `<div class="inv-oval-empty">🤍</div>`;
+  const groomPhotoHtml = c.groomPhoto ? `<img src="${escapeAttr(c.groomPhoto)}" alt="${escapeAttr(c.groomName)}"/>` : `<div class="inv-oval-empty">🤍</div>`;
   app.innerHTML = `
-    <div class="inv-page" style="${varsCss}">
+    <div class="inv-page">
       ${motifs}
-      ${INV_GUNUNGAN_SVG}
       <div class="inv-cover" id="invCover">
-        <div class="inv-cover-inner">
-          <div class="inv-cover-frame">
-            <img src="${LOGO_SRC}" class="inv-cover-logo" alt="ArtaJava"/>
-            <div class="inv-cover-kicker">Wedding Invitation</div>
-            <div class="inv-cover-hashtag">${escapeHtml(c.hashtag||'')}</div>
-            <h1 class="inv-cover-names">${escapeHtml(brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(groomName)}</h1>
-            <div class="inv-cover-guest">${guest ? `Kepada Yth. Bapak/Ibu/Saudara/i<strong>${escapeHtml(guest.name)}</strong>` : 'Anda diundang ke hari bahagia kami'}</div>
-            <button class="inv-open-btn" id="invOpenBtn">💌 Buka Undangan</button>
+        <div class="inv-scene" id="invScene">
+          <div class="inv-curtain inv-curtain-left" id="invCurtainL"></div>
+          <div class="inv-curtain inv-curtain-right" id="invCurtainR"></div>
+          <div class="inv-cover-vine inv-vine-tl">${INV_VINE_SVG}</div>
+          <div class="inv-cover-vine inv-vine-tr">${INV_VINE_SVG}</div>
+          <div class="inv-cover-vine inv-vine-bl">${INV_VINE_SVG}</div>
+          <div class="inv-cover-vine inv-vine-br">${INV_VINE_SVG}</div>
+          <div class="inv-cover-frame"></div>
+          <div class="inv-cover-inner" id="invCoverInner">
+            <div class="inv-cover-card">
+              <div class="inv-gunungan-wrap" id="invGunungan"><div class="inv-gunungan-float">${INV_GUNUNGAN_SVG}</div></div>
+              <div class="inv-cover-hashtag">${escapeHtml(c.hashtag||'The Wedding Of')}</div>
+              <h1 class="inv-cover-names">${escapeHtml(c.brideName)} <em>&amp;</em> ${escapeHtml(c.groomName)}</h1>
+              <div class="inv-cover-date">${escapeHtml(dateShort)}</div>
+              <div class="inv-cover-guest">${guest ? `Kepada Yth. Bapak/Ibu/Saudara/i<strong>${escapeHtml(guest.name)}</strong>` : 'Anda diundang ke hari bahagia kami'}</div>
+              <button class="inv-open-btn" id="invOpenBtn">💌 Buka Undangan</button>
+            </div>
           </div>
         </div>
       </div>
       <div class="inv-main" id="invMain">
-
         <div class="inv-section inv-hero">
-          <div class="inv-hashtag">${escapeHtml(c.hashtag||'')}</div>
-          <h1>${escapeHtml(brideName)} <em style="opacity:.7;">&amp;</em> ${escapeHtml(groomName)}</h1>
+          <div class="inv-hero-orn">${INV_GUNUNGAN_SVG}</div>
+          <div class="inv-hashtag">${escapeHtml(c.hashtag||'The Wedding Of')}</div>
+          <h1>${escapeHtml(c.brideName)} <em>&amp;</em> ${escapeHtml(c.groomName)}</h1>
           <div class="inv-sub">${guest ? `Kepada Yth. Bapak/Ibu/Saudara/i ${escapeHtml(guest.name)}` : 'Merupakan suatu kehormatan bagi kami'}</div>
           <div class="inv-countdown" id="invCountdown"></div>
         </div>
-
-        <div class="inv-section reveal">
-          <div class="inv-divider">꧁ ꧂</div>
-          <div class="inv-quote">"Dan di antara tanda-tanda kekuasaan-Nya ialah Dia menciptakan untukmu pasangan dari jenismu sendiri, supaya kamu merasa tenteram kepadanya, dan dijadikan-Nya di antaramu rasa kasih dan sayang."
-            <span class="src">QS. Ar-Rum : 21</span>
-          </div>
-        </div>
-
-        <div class="inv-section reveal">
-          <div class="inv-eyebrow">Mempelai</div>
+        ${c.invitationQuote ? `<div class="inv-section"><div class="inv-quote">${escapeHtml(c.invitationQuote)}</div></div>` : ''}
+        <div class="inv-section">
+          <div class="inv-divider">${INV_GUNUNGAN_SVG}</div>
           <div class="inv-couple-grid">
             <div class="inv-couple-card">
-              <div class="inv-couple-photo">${escapeHtml((groomName||'?').charAt(0))}</div>
-              <h3 class="inv-couple-name">${escapeHtml(groomName)}</h3>
-              ${parentLine('Putra dari', cd.cppFatherName, cd.cppMotherName)}
+              <div class="inv-oval-wrap"><div class="inv-oval">${bridePhotoHtml}</div></div>
+              <div class="inv-couple-name">${escapeHtml(c.brideName)}</div>
+              ${c.brideParents ? `<div class="inv-couple-parents">${escapeHtml(c.brideParents)}</div>` : ''}
             </div>
-            <div class="inv-couple-and">&amp;</div>
+            <div class="inv-couple-amp">&amp;</div>
             <div class="inv-couple-card">
-              <div class="inv-couple-photo">${escapeHtml((brideName||'?').charAt(0))}</div>
-              <h3 class="inv-couple-name">${escapeHtml(brideName)}</h3>
-              ${parentLine('Putri dari', cd.cpwFatherName, cd.cpwMotherName)}
+              <div class="inv-oval-wrap"><div class="inv-oval">${groomPhotoHtml}</div></div>
+              <div class="inv-couple-name">${escapeHtml(c.groomName)}</div>
+              ${c.groomParents ? `<div class="inv-couple-parents">${escapeHtml(c.groomParents)}</div>` : ''}
             </div>
           </div>
         </div>
-
-        <div class="inv-section reveal">
-          <div class="inv-eyebrow">Waktu &amp; Tempat Acara</div>
+        <div class="inv-section">
+          <div class="inv-divider">${INV_GUNUNGAN_SVG}</div>
           <div class="inv-card">
             <div class="inv-card-label">Akad / Pemberkatan</div>
             <div class="inv-card-main">${escapeHtml(fmtDate(c.akadDate))}${c.akadTime ? ' · ' + escapeHtml(c.akadTime.replace(':','.')) + ' WIB' : ''}</div>
@@ -3032,27 +3124,20 @@ function showInvitationPage(){
             ${c.venueName ? `<a href="${mapsUrl(c.venueName)}" target="_blank" rel="noopener" class="inv-maps">📍 Buka di Google Maps</a>` : ''}
           </div>
         </div>
-
-        <div class="inv-section reveal">
-          <div class="inv-divider">꧁ ꧂</div>
-          <div class="inv-quote" style="font-size:13.5px;">Merupakan suatu kehormatan dan kebahagiaan bagi kami apabila Bapak/Ibu/Saudara/i berkenan hadir memberikan doa restu kepada kedua mempelai.</div>
-        </div>
-
-        <div class="inv-section reveal">
-          <div class="inv-eyebrow">Konfirmasi Kehadiran</div>
+        <div class="inv-section">
           <div class="inv-card" id="invRsvpArea"></div>
         </div>
-
         <div class="inv-footer">
-          <em class="inv-thanks">Rahayu, rahayu, rahayu</em>
-          Dengan penuh sukacita, kami menantikan kehadiran Bapak/Ibu/Saudara/i 🤍<br>
-          <span style="opacity:.7;">${escapeHtml(brideName)} &amp; ${escapeHtml(groomName)}</span>
+          <div class="inv-hero-orn">${INV_GUNUNGAN_SVG}</div>
+          Dengan penuh sukacita, kami menantikan kehadiran Bapak/Ibu/Saudara/i 🤍
         </div>
       </div>
     </div>
   `;
   const coverEl = document.getElementById('invCover');
   const mainEl = document.getElementById('invMain');
+  setupInvitationCoverTilt();
+  setupInvitationPhotoTilt();
   document.getElementById('invOpenBtn').addEventListener('click', ()=>{
     coverEl.classList.add('inv-cover-hide');
     mainEl.classList.add('inv-main-show');
@@ -4680,14 +4765,44 @@ function renderFamilyGroup(groupKey, title){
   `;
 }
 
+function invPhotoPickerHtml(kind, label, photoUrl){
+  return `
+    <div>
+      <label style="font-size:12px;color:var(--cream-dimmer);display:block;margin-bottom:5px;">${escapeHtml(label)}</label>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:50px;height:64px;border-radius:50% 50% 46% 46% / 58% 58% 42% 42%;border:2px solid var(--gold,#c6a15b);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.15);">
+          ${photoUrl ? `<img src="${escapeAttr(photoUrl)}" style="width:100%;height:100%;object-fit:cover;"/>` : `<span style="opacity:.5;">🤍</span>`}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <label class="btn small ghost" style="cursor:pointer;">📷 ${photoUrl ? 'Ganti' : 'Unggah'} Foto<input type="file" accept="image/*" data-action="upload-couple-photo" data-kind="${escapeAttr(kind)}" style="display:none;"/></label>
+          ${photoUrl ? `<button type="button" class="btn small ghost" data-action="remove-couple-photo" data-kind="${escapeAttr(kind)}">✕ Hapus</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
 function renderInvitationTemplateCard(){
+  const c = state.couple;
   return `
     <div class="mb-card">
-      <h3>🎨 Tema Undangan Digital</h3>
-      <p style="color:var(--cream-dimmer);font-size:13px;margin:0 0 10px;">Undangan digital tamu pakai satu tema tetap bernuansa <strong>Adat Jawa</strong> — motif parang, ornamen gunungan, dan palet maroon–emas–krem. Isi data mempelai &amp; orang tua di tab "Detail Klien" supaya otomatis tampil di halaman undangan.</p>
-      <div style="display:flex;align-items:center;gap:10px;background:rgba(198,161,91,.12);border:1px solid var(--card-border);border-radius:12px;padding:10px 12px;">
-        <span style="width:16px;height:16px;border-radius:50%;display:inline-block;background:linear-gradient(135deg,#3B1015,#D9B26B);"></span>
-        <span style="font-weight:700;font-size:13px;">Adat Jawa — Motif Parang &amp; Gunungan</span>
+      <h3>🎨 Kustomisasi Undangan Digital</h3>
+      <p style="color:var(--cream-dimmer);font-size:13px;margin:0 0 14px;">Tampilan undangan digital bertema Kraton Klasik (nuansa Jawa, animasi 3D). Lengkapi foto &amp; data mempelai di bawah supaya undangan tamu makin personal — berlaku langsung buat semua link tamu.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
+        ${invPhotoPickerHtml('bride', 'Foto Mempelai Wanita', c.bridePhoto)}
+        ${invPhotoPickerHtml('groom', 'Foto Mempelai Pria', c.groomPhoto)}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <label style="font-size:12px;color:var(--cream-dimmer);display:block;margin-bottom:5px;">Orang Tua Mempelai Wanita</label>
+          <input type="text" id="brideParentsInput" placeholder="Putri dari Bapak ... &amp; Ibu ..." value="${escapeAttr(c.brideParents)}" style="width:100%;border-radius:10px;padding:9px 10px;box-sizing:border-box;"/>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--cream-dimmer);display:block;margin-bottom:5px;">Orang Tua Mempelai Pria</label>
+          <input type="text" id="groomParentsInput" placeholder="Putra dari Bapak ... &amp; Ibu ..." value="${escapeAttr(c.groomParents)}" style="width:100%;border-radius:10px;padding:9px 10px;box-sizing:border-box;"/>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--cream-dimmer);display:block;margin-bottom:5px;">Kutipan / Ucapan Pembuka (opsional)</label>
+        <textarea id="invQuoteInput" rows="2" placeholder="Kutipan singkat yang ingin ditampilkan di undangan, mis. doa atau harapan pernikahan." style="width:100%;border-radius:10px;padding:9px 10px;box-sizing:border-box;resize:vertical;">${escapeHtml(c.invitationQuote)}</textarea>
       </div>
     </div>`;
 }
@@ -5044,6 +5159,33 @@ function liveFormatNumberInput(el){
 }
 
 function attachHandlers(){
+  document.querySelectorAll('[data-action="upload-couple-photo"]').forEach(input=> input.addEventListener('change', async ()=>{
+    const file = input.files && input.files[0];
+    if(!file) return;
+    const kind = input.dataset.kind; // 'bride' | 'groom'
+    try{
+      const dataUrl = await compressImageFile(file, { maxChars: 60000, maxDim: 640 });
+      if(kind === 'bride') state.couple.bridePhoto = dataUrl; else state.couple.groomPhoto = dataUrl;
+      scheduleSave(); render();
+      showToast('Foto tersimpan ✓');
+    }catch(e){
+      console.error('upload foto mempelai gagal', e);
+      showToast('Gagal mengunggah foto, coba lagi.', true);
+    }
+  }));
+  document.querySelectorAll('[data-action="remove-couple-photo"]').forEach(btn=> btn.addEventListener('click', ()=>{
+    const kind = btn.dataset.kind;
+    if(kind === 'bride') state.couple.bridePhoto = ''; else state.couple.groomPhoto = '';
+    scheduleSave(); render();
+    showToast('Foto dihapus ✓');
+  }));
+  const brideParentsInput = document.getElementById('brideParentsInput');
+  if(brideParentsInput) brideParentsInput.addEventListener('input', e=>{ state.couple.brideParents = e.target.value; scheduleSave(); });
+  const groomParentsInput = document.getElementById('groomParentsInput');
+  if(groomParentsInput) groomParentsInput.addEventListener('input', e=>{ state.couple.groomParents = e.target.value; scheduleSave(); });
+  const invQuoteInput = document.getElementById('invQuoteInput');
+  if(invQuoteInput) invQuoteInput.addEventListener('input', e=>{ state.couple.invitationQuote = e.target.value; scheduleSave(); });
+
   const guestNameInput = document.getElementById('guestNameInput');
   const addGuestBtn = document.querySelector('[data-action="add-guest"]');
   function addGuestByName(name){

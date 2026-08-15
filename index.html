@@ -244,10 +244,12 @@
   .t-cat{display:inline-block;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);font-weight:700;margin-bottom:6px;}
   .t-title{font-family:'Fraunces',serif;font-size:18px;font-weight:600;margin:0 0 4px;background:none !important;border:none;color:var(--cream);width:100%;padding:0;}
   .t-title:disabled{opacity:1;-webkit-text-fill-color:var(--cream);}
-  /* Teks yang kepanjangan di field non-edit (disabled/readonly) ditampilkan penuh dengan cara turun ke bawah,
-     bukan malah tersembunyi/terpotong — dipakai otomatis lewat unwrapOverflowingInputs() di semua bagian
-     (Timeline, Detail Acara, dst) lewat JS setelah tiap render(). */
-  .txt-wrap-display{white-space:normal !important;overflow-wrap:break-word;word-break:break-word;overflow:visible !important;text-overflow:clip !important;display:block;width:100%;box-sizing:border-box;cursor:default;}
+  /* Field teks yang isinya bisa panjang (judul agenda, nama tamu, dll) dipakai sebagai <textarea> 1 baris
+     yang otomatis nambah tinggi & TURUN KE BAWAH kalau isinya kepanjangan buat layar HP — bukan disembunyikan
+     atau di-scroll kayak <input> biasa. Tinggi diatur otomatis oleh autoGrowTextarea()/initAutoGrowTextareas()
+     tiap habis render(), dipakai di semua field Timeline & Detail Acara (Tamu VIP, Foto Keluarga, Catering,
+     Buffet, Stall, Make Up, Busana, Request Lagu) plus judul Pembayaran. */
+  textarea.autofit{resize:none;overflow:hidden;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;font-family:inherit;line-height:1.35;min-height:1.4em;}
   .t-desc{font-size:13.5px;color:var(--cream-dim);margin:2px 0 8px;border:none;background:none !important;width:100%;resize:none;font-family:inherit;line-height:1.4;padding:0;}
   .t-desc:disabled{opacity:1;-webkit-text-fill-color:var(--cream-dim);}
   .t-vendor-picker{margin-top:10px;padding-top:10px;border-top:1px dashed var(--card-border);}
@@ -4057,29 +4059,23 @@ function render(){
     </footer>
   `;
   attachHandlers();
-  unwrapOverflowingInputs(app);
+  initAutoGrowTextareas(app);
   if(window.twemoji){ twemoji.parse(app, {folder:'svg', ext:'.svg'}); }
 }
 
-/* Field non-edit (disabled/readonly) memakai <input>, dan <input> secara bawaan browser TIDAK BISA
-   membuat teks turun ke baris baru — kalau isinya kepanjangan buat layar HP, sisanya cuma disembunyikan/
-   di-scroll dan sering ke-lihat "kepotong" di tengah kalimat. Fungsi ini jalan otomatis tiap habis render()
-   di SELURUH halaman (Timeline, Detail Acara/Tamu VIP/Catering/Buffet/dst): field yang isinya kepanjangan
-   sampai overflow diganti tampilannya jadi teks biasa yang turun ke bawah, jadi tidak ada lagi yang
-   ke-sembunyiin. Field yang lagi bisa diedit (tidak disabled/readonly) tidak disentuh. */
-function unwrapOverflowingInputs(root){
+/* Field teks yang isinya bisa panjang (judul agenda, nama tamu VIP, catering, dll) sekarang dipakai sebagai
+   <textarea class="autofit" rows="1"> supaya teksnya turun ke baris baru & tetap kelihatan utuh di layar HP,
+   bukan disembunyikan/di-scroll seperti <input> biasa. Dua fungsi ini yang bikin tinggi textarea-nya otomatis
+   pas sama isinya (dipanggil ulang tiap habis render() di SELURUH halaman: Timeline, Detail Acara, Pembayaran). */
+function autoGrowTextarea(el){
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+function initAutoGrowTextareas(root){
   if(!root) return;
-  const SKIP_TYPES = new Set(['date','time','checkbox','radio','number','password','hidden','range','color','file']);
-  root.querySelectorAll('input[disabled], input[readonly]').forEach(inp=>{
-    const type = (inp.getAttribute('type')||'text').toLowerCase();
-    if(SKIP_TYPES.has(type)) return;
-    if(!inp.value) return;
-    if(inp.scrollWidth <= inp.clientWidth + 1) return;
-    const div = document.createElement('div');
-    div.className = (inp.className ? inp.className + ' ' : '') + 'txt-wrap-display';
-    if(inp.hasAttribute('style')) div.setAttribute('style', inp.getAttribute('style'));
-    div.textContent = inp.value;
-    inp.replaceWith(div);
+  root.querySelectorAll('textarea.autofit').forEach(t=>{
+    autoGrowTextarea(t);
+    t.addEventListener('input', ()=> autoGrowTextarea(t));
   });
 }
 
@@ -4319,8 +4315,8 @@ function renderTimeline(){
         <div class="t-item ${item.status==='done'?'done':''}" data-id="${item.id}">
           <div class="t-row">
             <div class="t-left">
-              <input class="t-cat" data-field="cat" value="${escapeAttr(item.cat)}" ${isVendor?'':'disabled'} style="background:transparent;border:none;border-bottom:1px dashed var(--card-border);padding:2px 0;margin-bottom:4px;width:auto;max-width:160px;"/>
-              <input class="t-title" data-field="title" value="${escapeAttr(item.title)}" ${isVendor?'':'disabled'} />
+              <textarea class="t-cat autofit" data-field="cat" rows="1" ${isVendor?'':'disabled'} style="background:transparent;border:none;border-bottom:1px dashed var(--card-border);padding:2px 0;margin-bottom:4px;width:100%;max-width:220px;">${escapeHtml(item.cat)}</textarea>
+              <textarea class="t-title autofit" data-field="title" rows="1" ${isVendor?'':'disabled'}>${escapeHtml(item.title)}</textarea>
               <textarea class="t-desc" data-field="desc" rows="2" ${isVendor?'':'disabled'}>${escapeHtml(item.desc)}</textarea>
               <div class="t-meta">
                 <div class="t-date">📅 <input type="date" data-field="date" value="${item.date}" ${isVendor?'':'disabled'} /></div>
@@ -4546,7 +4542,7 @@ function renderPayments(){
       ${state.payments.map(p=>`
         <div class="p-row" data-payid="${p.id}">
           <div class="p-main">
-            <input class="p-title" data-field="label" value="${escapeAttr(p.label)}" ${isVendor?'':'disabled'}/>
+            <textarea class="p-title autofit" data-field="label" rows="1" ${isVendor?'':'disabled'}>${escapeHtml(p.label)}</textarea>
             <div class="p-due">🗓️ Jatuh tempo: <input type="date" data-field="dueDate" value="${p.dueDate}" ${isVendor?'':'disabled'}/></div>
             <div class="p-invoice">
               ${p.invoice ? `
@@ -4602,9 +4598,9 @@ function renderDetailAcara(){
 
     <div class="mb-card">
       <h3>🍽️ Catering</h3>
-      <div class="v-field"><label>Nama Paket Catering</label><input id="cateringPackageInput" value="${escapeAttr(c.packageName)}" placeholder="Misal: Paket Prasmanan Deluxe" ${isSupplier?'disabled':''}/></div>
+      <div class="v-field"><label>Nama Paket Catering</label><textarea id="cateringPackageInput" rows="1" class="autofit" placeholder="Misal: Paket Prasmanan Deluxe" ${isSupplier?'disabled':''}>${escapeHtml(c.packageName)}</textarea></div>
       <div class="v-field"><label>Jumlah Undangan</label><input id="cateringGuestCountInput" type="number" min="0" value="${escapeAttr(c.guestCount)}" placeholder="Misal: 500" ${isSupplier?'disabled':''}/></div>
-      <div class="v-field"><label>Nama PIC Keluarga</label><input id="cateringFamilyPicInput" value="${escapeAttr(c.familyPicName)}" placeholder="Nama PIC dari pihak keluarga untuk koordinasi catering" ${isSupplier?'disabled':''}/></div>
+      <div class="v-field"><label>Nama PIC Keluarga</label><textarea id="cateringFamilyPicInput" rows="1" class="autofit" placeholder="Nama PIC dari pihak keluarga untuk koordinasi catering" ${isSupplier?'disabled':''}>${escapeHtml(c.familyPicName)}</textarea></div>
       <h4 style="margin:16px 0 8px;">🍲 Olahan Buffet</h4>
       ${renderListSection('details.catering.menuItems', [
         {key:'name', placeholder:'Olahan Menu (misal: Sate Ayam)', flex:2},
@@ -4799,7 +4795,7 @@ function renderListSection(path, cols, opts){
       ${arr.length ? arr.map(it=>`
         <div class="mini-item" data-id="${it.id}" data-listpath="${path}">
           <div class="mi-body" style="display:flex;gap:8px;flex-wrap:wrap;">
-            ${cols.map(c=>`<input data-field="${c.key}" value="${escapeAttr(it[c.key]||'')}" placeholder="${escapeAttr(c.placeholder)}" style="flex:${c.flex||1};min-width:110px;" ${editable?'':'disabled'}/>`).join('')}
+            ${cols.map(c=>`<textarea data-field="${c.key}" rows="1" class="autofit" placeholder="${escapeAttr(c.placeholder)}" style="flex:${c.flex||1};min-width:110px;" ${editable?'':'disabled'}>${escapeHtml(it[c.key]||'')}</textarea>`).join('')}
           </div>
           ${editable ? `<button class="mi-del" data-action="delete-listitem">✕</button>` : ''}
         </div>

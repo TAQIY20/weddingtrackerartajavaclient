@@ -1208,7 +1208,7 @@ function exitDemoMode(){
     // sama sekali dan semua field jadi kelihatan tidak bisa diedit.
     state = demoPrevState; currentProjectId = demoPrevProjectId;
     demoPrevState = null; demoPrevProjectId = null;
-    isAdmin = true; roleDecided = true; viewingDashboard = true;
+    isAdmin = true; isVendor = true; roleDecided = true; viewingDashboard = true;
     renderProjectDashboard();
     return;
   }

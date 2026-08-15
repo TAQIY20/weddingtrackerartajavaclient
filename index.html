@@ -330,7 +330,7 @@
   .pay-item input.currency{width:100%;background:transparent;border:none;border-bottom:1px dashed var(--card-border);color:var(--cream);font-family:'Fraunces',serif;font-size:20px;font-weight:600;padding:2px 0;}
   .pay-list .p-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:12px 16px;margin-bottom:10px;flex-wrap:wrap;}
   .p-row .p-main{flex:1;min-width:170px;}
-  .p-row .p-title{font-weight:700;font-size:14.5px;background:transparent;border:none;width:100%;padding:0;font-family:inherit;}
+  .p-row .p-title{font-weight:700;font-size:14.5px;background:transparent;border:none;width:100%;padding:0;font-family:'Fraunces',serif;}
   .p-row .p-title:disabled{opacity:1;-webkit-text-fill-color:var(--cream);}
   .p-row .p-due{font-size:12px;color:var(--cream-dim);display:flex;align-items:center;gap:6px;margin-top:4px;}
   .p-row .p-due input{font-size:12px;background:rgba(122,31,46,.05);border:1px solid var(--card-border);border-radius:8px;padding:3px 6px;}
@@ -855,6 +855,7 @@ let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
 let isDemoMode = false;        // true kalau sedang menampilkan Preview Demo (data dummy, tidak pernah disimpan)
+let demoEnteredFromAdminDashboard = false; // true kalau demo dibuka dari tombol di dashboard admin, supaya "Keluar Demo" balik ke situ lagi
 
 const VENDOR_STATUS_WEIGHT = { belum:0, nego:20, dp:40, progres:60, lunas:80, final:100 };
 const VENDOR_CATS = [
@@ -1190,7 +1191,13 @@ function exitDemoMode(){
   isDemoMode = false;
   state = null; currentProjectId = null; roleDecided = false;
   history.replaceState(null, '', location.pathname);
-  showEntryGate();
+  if(demoEnteredFromAdminDashboard){
+    demoEnteredFromAdminDashboard = false;
+    isAdmin = true; vendorAuthed = true; currentMarketing = null; viewingDashboard = true;
+    showProjectDashboard();
+  } else {
+    showEntryGate();
+  }
 }
 
 // Mencatat satu kejadian ke linimasa aktivitas proyek (dipakai oleh Activity Feed di dashboard klien)
@@ -2568,9 +2575,6 @@ function showEntryGate(){
           ${clientOnlyMode ? '' : `<button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>`}
           <button class="gate-btn" id="gateClientBtn"><span class="ge">💍</span> Saya Calon Pengantin (Klien)</button>
         </div>
-        ${clientOnlyMode ? '' : `
-        <button class="gate-btn demo" id="gateDemoBtn" style="margin-top:14px;border-style:dashed;"><span class="ge">🎬</span> Lihat Contoh Dashboard (Demo)</button>
-        <p style="font-size:12.5px;color:var(--cream-dim,#c9b9a8);margin-top:8px;">Belum jadi klien? Lihat dulu contoh dashboard project asli (data contoh) sebelum deal.</p>`}
         ${hideAdmin ? '' : `
         <div class="pin-box" id="pinBox">
           <input type="password" id="pinInput" inputmode="numeric" maxlength="8" placeholder="Masukkan PIN Admin"/>
@@ -2685,8 +2689,6 @@ function showEntryGate(){
   };
   document.getElementById('clientCodeSubmit').addEventListener('click', tryClientCode);
   document.getElementById('clientCodePassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryClientCode(); });
-  const gateDemoBtn = document.getElementById('gateDemoBtn');
-  if(gateDemoBtn) gateDemoBtn.addEventListener('click', ()=> enterDemoMode());
   bindPwToggles();
 }
 
@@ -3135,6 +3137,7 @@ function renderProjectDashboard(){
       <div class="topbar-right">
         ${roleChipHtml()}
         ${isAdmin ? `<button class="btn tiny ghost" id="changeMasterPin">🔑 Ganti PIN Admin</button>` : ''}
+        ${isAdmin ? `<button class="btn tiny ghost" id="gateDemoBtnAdmin">🎬 Lihat Contoh Dashboard (Demo)</button>` : ''}
         ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
         <button class="btn tiny ghost" id="logoutRoleBtn">Keluar</button>
       </div>
@@ -3212,6 +3215,8 @@ function renderProjectDashboard(){
     showEntryGate();
   });
   if(isAdmin){
+    const gateDemoBtnAdmin = document.getElementById('gateDemoBtnAdmin');
+    if(gateDemoBtnAdmin) gateDemoBtnAdmin.addEventListener('click', ()=>{ demoEnteredFromAdminDashboard = true; enterDemoMode(); });
     document.getElementById('changeMasterPin').addEventListener('click', async ()=>{
       if(masterSettingsLoadFailed){
         await customAlert('PIN admin saat ini gagal dimuat dari server (koneksi lambat/gagal), jadi nilai yang tampil di bawah mungkin bukan PIN yang sebenarnya. Refresh halaman dulu, pastikan berhasil masuk, baru ganti PIN.');
@@ -3942,7 +3947,6 @@ function render(){
     <div class="demo-banner">
       <div class="demo-banner-text"><span class="demo-badge">🎬 MODE DEMO</span> Ini contoh dashboard dengan data dummy — bukan project asli.</div>
       <div class="demo-banner-actions">
-        <a class="btn tiny primary" href="${PIC_WA}" target="_blank" rel="noopener">💬 Tertarik? Chat Kami</a>
         <button type="button" class="btn tiny ghost" id="exitDemoBtn">✕ Keluar Demo</button>
       </div>
     </div>` : ''}
@@ -4082,6 +4086,30 @@ function initAutoGrowTextareas(root){
     autoGrowTextarea(t);
     t.addEventListener('input', ()=> autoGrowTextarea(t));
   });
+  root.querySelectorAll('textarea.t-cat').forEach(t=>{
+    autoFitCatWidth(t);
+    t.addEventListener('input', ()=> autoFitCatWidth(t));
+  });
+}
+/* Bikin lebar kolom kategori agenda (mis. "Admin", "Koordinasi") pas mengikuti panjang
+   katanya sendiri (dihitung pakai canvas, termasuk huruf kapital & letter-spacing dari CSS
+   uppercase), jadi garis bawahnya nggak lebih panjang dari teksnya sendiri. */
+let _catMeasureCanvas = null;
+function measureTextWidth(text, font){
+  if(!_catMeasureCanvas) _catMeasureCanvas = document.createElement('canvas');
+  const ctx = _catMeasureCanvas.getContext('2d');
+  ctx.font = font;
+  return ctx.measureText(text || '').width;
+}
+function autoFitCatWidth(el){
+  const cs = getComputedStyle(el);
+  const font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const raw = el.value || el.placeholder || '';
+  const displayText = raw.toUpperCase(); // CSS text-transform:uppercase
+  const textWidth = measureTextWidth(displayText, font);
+  const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
+  const extraSpacing = letterSpacingPx * Math.max(displayText.length - 1, 0);
+  el.style.width = Math.max(24, Math.ceil(textWidth + extraSpacing) + 6) + 'px';
 }
 
 function navItem(key,emoji,label){ return `<button type="button" class="nav-item ${currentTab===key?'active':''}" data-tab="${key}"><span class="emj">${emoji}</span><span>${label}</span></button>`; }
@@ -4320,7 +4348,7 @@ function renderTimeline(){
         <div class="t-item ${item.status==='done'?'done':''}" data-id="${item.id}">
           <div class="t-row">
             <div class="t-left">
-              <textarea class="t-cat autofit" data-field="cat" rows="1" ${isVendor?'':'disabled'} style="background:transparent;border:none;border-bottom:1px dashed var(--card-border);padding:2px 0;margin-bottom:4px;width:100%;max-width:220px;">${escapeHtml(item.cat)}</textarea>
+              <textarea class="t-cat autofit" data-field="cat" rows="1" ${isVendor?'':'disabled'} style="background:transparent;border:none;border-bottom:1px solid var(--card-border);padding:2px 0 3px;margin-bottom:6px;width:24px;min-width:24px;max-width:220px;">${escapeHtml(item.cat)}</textarea>
               <textarea class="t-title autofit" data-field="title" rows="1" ${isVendor?'':'disabled'}>${escapeHtml(item.title)}</textarea>
               <textarea class="t-desc" data-field="desc" rows="2" ${isVendor?'':'disabled'}>${escapeHtml(item.desc)}</textarea>
               <div class="t-meta">

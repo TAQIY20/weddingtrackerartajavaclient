@@ -1718,6 +1718,11 @@ const LEAD_STAGES = [
   { key:'deal',        label:'Deal' },
   { key:'batal',       label:'Batal/Hilang' },
 ];
+// Pilihan sumber leads — dropdown saja (bukan free text lagi) biar datanya rapi &
+// bisa dipakai buat nentuin apakah leads ini asalnya dari pameran (buat reminder
+// follow up hari ke-2/3/terakhir pameran).
+const LEAD_SOURCE_OPTIONS = ['Pameran Tunjungan Plaza','Pameran Royal Plaza','Kantor','IG','Referensi','Lainnya'];
+function isPameranSource(source){ return /^Pameran /i.test(String(source||'')); }
 let leadsListLoadFailed = false; // true kalau pengambilan daftar leads dari storage gagal sesi ini
 async function loadLeadsList(){
   leadsListLoadFailed = false;
@@ -1734,6 +1739,11 @@ async function loadLeadsList(){
     if(!l.stage) l.stage = 'masuk';
     if(!l.notes) l.notes = '';
     if(!l.source) l.source = '';
+    // Tanggal leads masuk/ketemu — dipakai buat hitung jadwal reminder follow up.
+    // Leads lama (sebelum fitur ini ada) belum punya leadDate, jadi fallback ke
+    // tanggal dia dibuat.
+    if(!l.leadDate) l.leadDate = (l.createdAt||'').slice(0,10);
+    if(!l.pameranEndDate) l.pameranEndDate = '';
   });
 }
 async function saveLeadsList(){
@@ -1761,11 +1771,14 @@ function leadCardHtml(l){
       <div class="lead-card-name">${escapeHtml(l.name)}</div>
       ${l.phone ? `<div class="lead-card-row">📞 ${escapeHtml(l.phone)}</div>` : ''}
       ${l.budget ? `<div class="lead-card-row">💰 ${escapeHtml(l.budget)}</div>` : ''}
-      ${l.targetDate ? `<div class="lead-card-row">📅 ${fmtDateShort(l.targetDate)}</div>` : ''}
+      ${l.targetDate ? `<div class="lead-card-row">📅 Acara: ${fmtDateShort(l.targetDate)}</div>` : ''}
       ${l.source ? `<div class="lead-card-row">🔎 ${escapeHtml(l.source)}</div>` : ''}
+      ${l.leadDate ? `<div class="lead-card-row">🗓️ Masuk: ${fmtDateShort(l.leadDate)}</div>` : ''}
+      ${l.pameranEndDate ? `<div class="lead-card-row">🎪 Pameran s/d: ${fmtDateShort(l.pameranEndDate)}</div>` : ''}
       ${l.notes ? `<div class="lead-card-notes">${escapeHtml(l.notes)}</div>` : ''}
       <div class="lead-card-row" style="opacity:.75;">👤 ${escapeHtml(leadPicName(l.picId))}</div>
       ${(l.stage==='batal' && l.lostReason) ? `<div class="lead-card-notes">❌ ${escapeHtml(l.lostReason)}</div>` : ''}
+      <button class="btn tiny" data-action="lead-reminder" data-id="${l.id}" style="width:100%;margin-top:8px;">🔔 Reminder Follow Up</button>
       ${canEdit ? `
       <div class="row-actions" style="margin-top:10px;flex-wrap:wrap;">
         <select class="btn tiny" data-action="lead-move" data-id="${l.id}" style="flex:1;min-width:110px;">
@@ -1803,6 +1816,9 @@ function showLeadForm(editId){
   const editing = editId ? findLeadById(editId) : null;
   const app = document.getElementById('app');
   const showPicSelect = isAdmin && marketingList.length>0;
+  const knownSource = editing && LEAD_SOURCE_OPTIONS.includes(editing.source) ? editing.source : (editing && editing.source ? 'Lainnya' : '');
+  const sourceOtherVal = (editing && editing.source && !LEAD_SOURCE_OPTIONS.includes(editing.source)) ? editing.source : '';
+  const defaultLeadDate = editing ? (editing.leadDate || (editing.createdAt||'').slice(0,10)) : new Date().toISOString().slice(0,10);
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
@@ -1812,7 +1828,22 @@ function showLeadForm(editId){
         <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
           <input id="leadName" placeholder="Nama Calon Pasangan / Kontak" value="${editing?escapeHtml(editing.name):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <input id="leadPhone" placeholder="Nomor WhatsApp" value="${editing?escapeHtml(editing.phone||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
-          <input id="leadSource" placeholder="Sumber (IG, Referral, Pameran, dll)" value="${editing?escapeHtml(editing.source||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <div>
+            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Sumber Leads</label>
+            <select id="leadSource" style="padding:12px 14px;border-radius:12px;width:100%;">
+              <option value="">— Pilih Sumber —</option>
+              ${LEAD_SOURCE_OPTIONS.map(opt=>`<option value="${escapeAttr(opt)}" ${knownSource===opt?'selected':''}>${escapeHtml(opt)}</option>`).join('')}
+            </select>
+          </div>
+          <input id="leadSourceOther" placeholder="Tulis sumber lainnya..." value="${escapeHtml(sourceOtherVal)}" style="padding:12px 14px;border-radius:12px;width:100%;display:none;"/>
+          <div>
+            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Leads Masuk / Ketemu</label>
+            <input id="leadDate" type="date" value="${escapeAttr(defaultLeadDate)}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          </div>
+          <div id="leadPameranEndWrap" style="display:none;">
+            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Terakhir Pameran (buat reminder hari terakhir)</label>
+            <input id="leadPameranEndDate" type="date" value="${editing?escapeAttr(editing.pameranEndDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          </div>
           <input id="leadBudget" placeholder="Estimasi Budget (mis. 80 Juta)" value="${editing?escapeHtml(editing.budget||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <div>
             <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Estimasi Tanggal Acara</label>
@@ -1832,12 +1863,26 @@ function showLeadForm(editId){
       </div>
     </div>
   `;
+  const sourceSel = document.getElementById('leadSource');
+  const sourceOtherInput = document.getElementById('leadSourceOther');
+  const pameranEndWrap = document.getElementById('leadPameranEndWrap');
+  function syncSourceUI(){
+    const val = sourceSel.value;
+    sourceOtherInput.style.display = val === 'Lainnya' ? 'block' : 'none';
+    pameranEndWrap.style.display = isPameranSource(val) ? 'block' : 'none';
+  }
+  sourceSel.addEventListener('change', syncSourceUI);
+  syncSourceUI();
   document.getElementById('cancelLeadForm').addEventListener('click', ()=> renderProjectDashboard());
   document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
     const name = document.getElementById('leadName').value.trim();
     if(!name){ await customAlert('Nama calon klien wajib diisi.'); return; }
     const phone = document.getElementById('leadPhone').value.trim();
-    const source = document.getElementById('leadSource').value.trim();
+    const sourceSelVal = document.getElementById('leadSource').value;
+    const sourceOtherVal2 = document.getElementById('leadSourceOther').value.trim();
+    const source = sourceSelVal === 'Lainnya' ? (sourceOtherVal2 || 'Lainnya') : sourceSelVal;
+    const leadDate = document.getElementById('leadDate').value;
+    const pameranEndDate = isPameranSource(source) ? document.getElementById('leadPameranEndDate').value : '';
     const budget = document.getElementById('leadBudget').value.trim();
     const targetDate = document.getElementById('leadTargetDate').value;
     const picSel = document.getElementById('leadPic');
@@ -1854,9 +1899,9 @@ function showLeadForm(editId){
     }
     const stillEditing = editing ? findLeadById(editing.id) : null;
     if(stillEditing){
-      Object.assign(stillEditing, { name, phone, source, budget, targetDate, picId, notes });
+      Object.assign(stillEditing, { name, phone, source, leadDate, pameranEndDate, budget, targetDate, picId, notes });
     } else {
-      leadsList.push({ id: uid('lead'), name, phone, source, budget, targetDate, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
+      leadsList.push({ id: uid('lead'), name, phone, source, leadDate, pameranEndDate, budget, targetDate, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
     }
     const ok = await saveLeadsList();
     hideLoadingOverlay();
@@ -1896,6 +1941,136 @@ async function handleLeadDelete(id){
   hideLoadingOverlay();
   if(!ok){ await customAlert('Gagal menghapus dari storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
   renderProjectDashboard();
+}
+
+/* ---------- REMINDER FOLLOW UP LEADS ----------
+   Jadwal follow up otomatis dihitung dari "Tanggal Leads Masuk":
+   - Kalau sumbernya Pameran (mis. "Pameran Tunjungan Plaza"), ditambah jadwal
+     follow up selama pameran masih berlangsung: hari ke-2, hari ke-3, dan hari
+     terakhir pameran (kalau tanggal terakhirnya diisi).
+   - Semua leads (apapun sumbernya) dapat jadwal follow up rutin: H+1, H+3, H+7,
+     lalu tiap bulan dari H+1 Bulan sampai H+6 Bulan.
+   Sama seperti reminder project: teks disiapkan siap kirim, TIDAK terkirim
+   otomatis di background — admin/marketing yang klik kirim manual. */
+function addDaysIso(iso, days){
+  if(!iso) return null;
+  const d = new Date(iso+'T00:00:00');
+  if(isNaN(d.getTime())) return null;
+  d.setDate(d.getDate()+days);
+  return d.toISOString().slice(0,10);
+}
+function addMonthsIso(iso, months){
+  if(!iso) return null;
+  const d = new Date(iso+'T00:00:00');
+  if(isNaN(d.getTime())) return null;
+  d.setMonth(d.getMonth()+months);
+  return d.toISOString().slice(0,10);
+}
+function buildLeadPameranMessage(lead, dayLabel){
+  return `Assalamu'alaikum / Selamat siang Bapak/Ibu ${lead.name},\n\nTerima kasih sudah mampir ke booth *ArtaJava Wedding Organizer* di ${lead.source}. Pameran masih berlangsung (${dayLabel}) — kalau Bapak/Ibu masih mau lihat-lihat paket, konsultasi konsep, atau tanya promo khusus pameran, kami masih standby di booth 😊\n\nKami tunggu kunjungannya kembali ya!\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+}
+function buildLeadNurtureMessage(lead, offsetLabel){
+  const targetLine = lead.targetDate ? `\n📅 Estimasi tanggal acara: ${fmtDate(lead.targetDate)}` : '';
+  return `Assalamu'alaikum / Selamat pagi Bapak/Ibu ${lead.name},\n\nKami dari tim *ArtaJava Wedding Organizer* ingin follow up kembali (${offsetLabel}) terkait rencana pernikahan Bapak/Ibu.${targetLine}\n\nApabila masih berkenan, kami dengan senang hati bantu jelaskan paket, konsep, dan jadwal survey venue lebih lanjut. Kami tunggu kabar baiknya ya, Bapak/Ibu 🙏\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+}
+function buildLeadReminderItems(lead){
+  const base = lead.leadDate || (lead.createdAt||'').slice(0,10);
+  const items = [];
+  if(isPameranSource(lead.source)){
+    items.push({ title:'🎪 Follow Up Hari ke-2 Pameran', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead,'hari ke-2') });
+    items.push({ title:'🎪 Follow Up Hari ke-3 Pameran', date: addDaysIso(base,2), message: buildLeadPameranMessage(lead,'hari ke-3') });
+    if(lead.pameranEndDate){
+      items.push({ title:'🎪 Follow Up Hari Terakhir Pameran', date: lead.pameranEndDate, message: buildLeadPameranMessage(lead,'hari terakhir') });
+    }
+  }
+  [
+    ['H+1', addDaysIso(base,1)],
+    ['H+3', addDaysIso(base,3)],
+    ['H+7', addDaysIso(base,7)],
+    ['H+1 Bulan', addMonthsIso(base,1)],
+    ['H+2 Bulan', addMonthsIso(base,2)],
+    ['H+3 Bulan', addMonthsIso(base,3)],
+    ['H+4 Bulan', addMonthsIso(base,4)],
+    ['H+5 Bulan', addMonthsIso(base,5)],
+    ['H+6 Bulan', addMonthsIso(base,6)],
+  ].forEach(([label,date])=>{
+    items.push({ title:'🔔 Follow Up ' + label, date, message: buildLeadNurtureMessage(lead, label) });
+  });
+  items.forEach(it=>{
+    const daysLeft = it.date ? daysUntil(it.date) : 0;
+    it.status = reminderStatus(daysLeft);
+    it.contact = lead.phone;
+    it.recipientLabel = lead.name;
+  });
+  return items.filter(it=>it.date).sort((a,b)=> a.date.localeCompare(b.date));
+}
+function leadReminderCardHtml(item, idx){
+  const isEmail = isEmailContact(item.contact);
+  const hasContact = !!(item.contact && item.contact.trim());
+  let actionHtml = '';
+  if(!hasContact){
+    actionHtml = `<div class="reminder-warn">⚠️ Nomor WA leads ini belum diisi</div>`;
+  } else if(isEmail){
+    const link = contactMailtoLink(item.contact, item.title, item.message);
+    actionHtml = `<a class="btn small primary" href="${escapeAttr(link)}">✉️ Kirim Email</a>`;
+  } else {
+    const link = contactWaLink(item.contact, item.message);
+    actionHtml = link ? `<a class="btn small primary" href="${escapeAttr(link)}" target="_blank" rel="noopener">📲 Kirim WA</a>` : `<div class="reminder-warn">⚠️ Format nomor tidak valid</div>`;
+  }
+  return `
+    <div class="mb-card reminder-card tone-${item.status.tone}">
+      <div class="reminder-head">
+        <span class="reminder-badge tone-${item.status.tone}">${item.status.badge}</span>
+        <div class="reminder-title">${escapeHtml(item.title)} · ${fmtDateShort(item.date)}</div>
+      </div>
+      <div class="reminder-msg-wrap" style="display:none;">
+        <pre class="reminder-msg">${escapeHtml(item.message)}</pre>
+      </div>
+      <div class="reminder-actions">
+        <button class="btn small ghost" data-action="toggle-lead-reminder-msg" data-idx="${idx}">👁️ Lihat Pesan</button>
+        ${actionHtml}
+        <button class="btn small ghost" data-action="copy-lead-reminder-msg" data-idx="${idx}">📋 Salin Pesan</button>
+      </div>
+    </div>
+  `;
+}
+function showLeadReminders(id){
+  const lead = findLeadById(id);
+  if(!lead) return;
+  const app = document.getElementById('app');
+  const items = buildLeadReminderItems(lead);
+  window.__leadReminderItems = items;
+  const baseDateFmt = fmtDate(lead.leadDate || (lead.createdAt||'').slice(0,10));
+  app.innerHTML = `
+    <div class="gate-wrap">
+      <div class="gate-card" style="max-width:560px;text-align:left;">
+        <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
+        <h2 style="text-align:center;">🔔 Reminder Follow Up</h2>
+        <p style="text-align:center;">${escapeHtml(lead.name)} — jadwal follow up dihitung dari tanggal leads masuk (${baseDateFmt})${isPameranSource(lead.source) ? ', termasuk jadwal selama pameran berlangsung' : ''}. Teks siap kirim, tinggal 1-klik WA.</p>
+        <div style="max-height:60vh;overflow-y:auto;margin:12px 0;">
+          ${items.length ? items.map((it,idx)=> leadReminderCardHtml(it, idx)).join('') : `<div class="reminder-empty">Belum ada jadwal reminder — isi Tanggal Leads Masuk dulu di form edit.</div>`}
+        </div>
+        <button class="btn ghost" id="backFromLeadReminders" style="width:100%;">← Kembali</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('backFromLeadReminders').addEventListener('click', ()=> renderProjectDashboard());
+  document.querySelectorAll('[data-action="toggle-lead-reminder-msg"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const card = btn.closest('.reminder-card');
+      const wrap = card ? card.querySelector('.reminder-msg-wrap') : null;
+      if(!wrap) return;
+      const showing = wrap.style.display !== 'none';
+      wrap.style.display = showing ? 'none' : 'block';
+      btn.textContent = showing ? '👁️ Lihat Pesan' : '🙈 Sembunyikan Pesan';
+    });
+  });
+  document.querySelectorAll('[data-action="copy-lead-reminder-msg"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const it = (window.__leadReminderItems||[])[Number(btn.dataset.idx)];
+      if(it) copyText(it.message);
+    });
+  });
 }
 
 /* ---------- PROJECTS INDEX ---------- */
@@ -3457,6 +3632,7 @@ function renderProjectDashboard(){
   document.querySelectorAll('[data-action="lead-edit"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadForm(btn.dataset.id)));
   document.querySelectorAll('[data-action="lead-delete"]').forEach(btn=> btn.addEventListener('click', ()=> handleLeadDelete(btn.dataset.id)));
   document.querySelectorAll('[data-action="lead-convert"]').forEach(btn=> btn.addEventListener('click', ()=> showNewProjectForm(btn.dataset.id)));
+  document.querySelectorAll('[data-action="lead-reminder"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadReminders(btn.dataset.id)));
   const gateDemoBtn = document.getElementById('gateDemoBtn');
   if(gateDemoBtn) gateDemoBtn.addEventListener('click', ()=>{ demoEnteredFromAdmin = true; enterDemoMode(); });
   const copyMarketingLinkBtn = document.getElementById('copyMarketingLink');

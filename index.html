@@ -4360,14 +4360,20 @@ function computeMilestoneStages(sorted){
   // Kelompokkan item timeline per kategori (cat), urut berdasar kemunculan pertama.
   const catOrder = [];
   sorted.forEach(it=>{ if(!catOrder.includes(it.cat)) catOrder.push(it.cat); });
-  let foundCurrent = false;
-  return catOrder.map(cat=>{
+  const total = sorted.length;
+  const doneCount = sorted.filter(it=>it.status==='done').length;
+  // Posisi tahap ditentukan dari PROPORSI agenda selesai (bukan wajib satu kategori 100% kelar dulu).
+  // Ini penting karena satu kategori (mis. "Admin") bisa berisi item yang jaraknya jauh secara waktu
+  // (DP di awal, Pelunasan di akhir) — kalau nunggu semua item kategori kelar dulu, progres bisa
+  // nyangkut lama padahal agenda lain di kategori berikutnya sudah banyak yang selesai.
+  const percent = total ? doneCount/total : 0;
+  const currentIdx = (total>0 && doneCount===total) ? catOrder.length : Math.min(Math.floor(percent*catOrder.length), catOrder.length-1);
+  return catOrder.map((cat,i)=>{
     const items = sorted.filter(it=>it.cat===cat);
-    const allDone = items.every(it=>it.status==='done');
     let st;
-    if(allDone){ st = 'done'; }
-    else if(!foundCurrent){ st = 'current'; foundCurrent = true; }
-    else { st = 'upcoming'; }
+    if(i<currentIdx) st = 'done';
+    else if(i===currentIdx) st = 'current';
+    else st = 'upcoming';
     return { label: cat, date: items[items.length-1].date, state: st };
   });
 }
@@ -4376,12 +4382,15 @@ function renderMilestoneStepper(sorted){
   if(!sorted.length) return '';
   const stages = computeMilestoneStages(sorted);
   const current = stages.find(s=>s.state==='current');
-  const doneCount = stages.filter(s=>s.state==='done').length;
+  const doneCount = sorted.filter(it=>it.status==='done').length;
+  const total = sorted.length;
+  const stageIdx = stages.findIndex(s=>s.state==='current');
+  const displayStage = stageIdx===-1 ? stages.length : stageIdx+1;
   return `
     <div class="ms-card">
       <div class="ms-head">
         <h3>🗺️ Peta Progres Persiapan</h3>
-        <span class="ms-pill">Tahap ${Math.min(doneCount+1, stages.length)} dari ${stages.length}</span>
+        <span class="ms-pill">Tahap ${displayStage} dari ${stages.length} · ${doneCount}/${total} agenda selesai</span>
       </div>
       <div class="ms-stepper">
         ${stages.map((s,i)=>`

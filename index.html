@@ -2061,9 +2061,16 @@ function buildLeadNurtureMessage(lead, stageKey){
 }
 function buildLeadReminderItems(lead){
   const base = lead.leadDate || (lead.createdAt||'').slice(0,10);
+  const isPameran = isPameranSource(lead.source);
+  const pameranEndValid = isPameran && lead.pameranEndDate && lead.pameranEndDate > base;
+  // Kalau leads-nya dari pameran dan tanggal terakhir pamerannya udah keisi,
+  // reminder H+1/H+3/H+7/bulanan (nurture) dihitung mulai dari SETELAH pameran
+  // selesai — bukan dari tanggal leads masuk — soalnya selama pameran masih
+  // berlangsung udah ada jadwal follow up hariannya sendiri (loop di bawah).
+  const nurtureBase = pameranEndValid ? lead.pameranEndDate : base;
   const items = [];
-  if(isPameranSource(lead.source)){
-    if(lead.pameranEndDate && lead.pameranEndDate > base){
+  if(isPameran){
+    if(pameranEndValid){
       // Loop dinamis dari H+1 sampai tanggal terakhir pameran — otomatis
       // menyesuaikan berapa pun jumlah hari pamerannya (3 hari, 4 hari, dst).
       let cursor = addDaysIso(base, 1);
@@ -2091,7 +2098,7 @@ function buildLeadReminderItems(lead){
     ['m1','H+1 Bulan'], ['m2','H+2 Bulan'], ['m3','H+3 Bulan'],
     ['m4','H+4 Bulan'], ['m5','H+5 Bulan'], ['m6','H+6 Bulan'],
   ].forEach(([key,label])=>{
-    const date = key.startsWith('h') ? addDaysIso(base, Number(key.slice(1))) : addMonthsIso(base, Number(key.slice(1)));
+    const date = key.startsWith('h') ? addDaysIso(nurtureBase, Number(key.slice(1))) : addMonthsIso(nurtureBase, Number(key.slice(1)));
     items.push({ title:'🔔 Follow Up ' + label, date, message: buildLeadNurtureMessage(lead, key) });
   });
   items.forEach(it=>{
@@ -2144,12 +2151,18 @@ function showLeadReminders(id){
   const items = buildLeadReminderItems(lead);
   window.__leadReminderItems = items;
   const baseDateFmt = fmtDate(lead.leadDate || (lead.createdAt||'').slice(0,10));
+  const pameranEndValidForCaption = isPameranSource(lead.source) && lead.pameranEndDate && lead.pameranEndDate > (lead.leadDate || (lead.createdAt||'').slice(0,10));
+  const captionExtra = isPameranSource(lead.source)
+    ? (pameranEndValidForCaption
+        ? `, termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya) — reminder H+1/H+3/H+7/bulanan dihitung mulai setelah pameran selesai (${fmtDate(lead.pameranEndDate)})`
+        : ', termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya)')
+    : '';
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card" style="max-width:560px;text-align:left;">
         <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
         <h2 style="text-align:center;">🔔 Reminder Follow Up</h2>
-        <p style="text-align:center;">${escapeHtml(lead.name)} — jadwal follow up dihitung dari tanggal leads masuk (${baseDateFmt})${isPameranSource(lead.source) ? ', termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya)' : ''}. Teks siap kirim, tinggal 1-klik WA.</p>
+        <p style="text-align:center;">${escapeHtml(lead.name)} — jadwal follow up dihitung dari tanggal leads masuk (${baseDateFmt})${captionExtra}. Teks siap kirim, tinggal 1-klik WA.</p>
         <div style="max-height:60vh;overflow-y:auto;margin:12px 0;">
           ${items.length ? items.map((it,idx)=> leadReminderCardHtml(it, idx)).join('') : `<div class="reminder-empty">Belum ada jadwal reminder — isi Tanggal Leads Masuk dulu di form edit.</div>`}
         </div>

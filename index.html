@@ -259,6 +259,18 @@
   .ms-date{font-size:9px;color:var(--cream-dimmer);margin-top:2px;}
   .ms-note{margin-top:18px;background:rgba(122,31,46,0.05);border:1px solid var(--card-border);border-radius:14px;padding:12px 14px;font-size:12.5px;display:flex;gap:9px;align-items:flex-start;}
   .ms-note b{color:var(--pink);}
+
+  .leads-board{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 14px;scrollbar-width:thin;}
+  .leads-board::-webkit-scrollbar{height:6px;}
+  .leads-board::-webkit-scrollbar-thumb{background:var(--card-border);border-radius:10px;}
+  .leads-col{flex:0 0 240px;background:rgba(122,31,46,0.03);border:1px solid var(--card-border);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:10px;max-height:520px;}
+  .leads-col-head{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:700;color:var(--gold-deep);text-transform:uppercase;letter-spacing:.04em;padding:0 2px;}
+  .leads-col-count{background:rgba(122,31,46,0.08);border-radius:100px;padding:1px 9px;font-size:11px;color:var(--pink);}
+  .leads-col-body{display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:2px;}
+  .lead-card{background:var(--field-bg);border:1px solid var(--card-border);border-radius:14px;padding:12px 13px;box-shadow:var(--shadow-card);}
+  .lead-card-name{font-family:'Fraunces',serif;font-weight:700;font-size:14.5px;margin-bottom:4px;}
+  .lead-card-row{font-size:12px;color:var(--cream-dim);margin-bottom:2px;}
+  .lead-card-notes{font-size:11.5px;color:var(--cream-dimmer);margin-top:6px;padding-top:6px;border-top:1px dashed var(--card-border);font-style:italic;}
   @media (max-width:640px){
     .ms-stepper{flex-direction:column;align-items:flex-start;gap:0;overflow-x:visible;padding:0;}
     .ms-step{flex:0 0 auto;display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;padding:0 0 18px;}
@@ -746,6 +758,7 @@ function lockMarketingModeIfNeeded(){
 }
 
 const PACKAGE_LIST_KEY = 'wedding_package_list_' + APP_VERSION;
+const LEADS_LIST_KEY = 'wedding_leads_list_' + APP_VERSION;
 const CUSTOM_VENDOR_CATS_KEY = 'wedding_custom_vendor_cats_' + APP_VERSION;
 function projectKey(id){ return 'wedding_project_' + APP_VERSION + '_' + id; }
 
@@ -890,6 +903,7 @@ let viewingDashboard = false;  // showing the multi-project dashboard
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
+let leadsList = [];            // CRM calon klien: [{id,name,phone,source,budget,targetDate,notes,stage,picId,lostReason,createdAt,convertedProjectId}]
 let isDemoMode = false;        // true kalau sedang menampilkan Preview Demo (data dummy, tidak pernah disimpan)
 let demoEnteredFromAdmin = false; // true kalau demo dibuka dari dalam dashboard admin, supaya waktu keluar balik ke situ lagi
 let demoPrevState = null;      // simpan project asli (state) sebelum masuk demo, supaya bisa dikembalikan saat keluar
@@ -1694,6 +1708,194 @@ async function savePackageList(){
 }
 function findPackageById(id){
   return packageList.find(pk => pk.id === id) || null;
+}
+
+/* ---------- LEADS / CRM PIPELINE (calon klien sebelum jadi project, admin+marketing) ---------- */
+const LEAD_STAGES = [
+  { key:'masuk',       label:'Kontak Masuk' },
+  { key:'presentasi',  label:'Presentasi' },
+  { key:'negosiasi',   label:'Negosiasi' },
+  { key:'deal',        label:'Deal' },
+  { key:'batal',       label:'Batal/Hilang' },
+];
+let leadsListLoadFailed = false; // true kalau pengambilan daftar leads dari storage gagal sesi ini
+async function loadLeadsList(){
+  leadsListLoadFailed = false;
+  try{
+    const res = await storageGetWithRetry(LEADS_LIST_KEY, true);
+    leadsList = (res && res.value) ? JSON.parse(res.value) : [];
+  }catch(e){
+    // Sama seperti daftar marketing/paket: jangan kosongkan leadsList yang sudah
+    // ada di memori hanya karena pengambilan ulang gagal.
+    leadsListLoadFailed = true;
+  }
+  if(!Array.isArray(leadsList)) leadsList = [];
+  leadsList.forEach(l=>{
+    if(!l.stage) l.stage = 'masuk';
+    if(!l.notes) l.notes = '';
+    if(!l.source) l.source = '';
+  });
+}
+async function saveLeadsList(){
+  return await storageSetWithRetry(LEADS_LIST_KEY, JSON.stringify(leadsList), true);
+}
+function findLeadById(id){
+  return leadsList.find(l => l.id === id) || null;
+}
+function myVisibleLeads(){
+  const sorted = [...leadsList].sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  if(isAdmin) return sorted;
+  if(currentMarketing) return sorted.filter(l => l.picId === currentMarketing.id || !l.picId);
+  return sorted;
+}
+function leadStageLabel(key){ const s = LEAD_STAGES.find(s=>s.key===key); return s ? s.label : key; }
+function leadPicName(picId){
+  if(!picId) return 'Belum ditugaskan';
+  const m = findMarketingById(picId);
+  return m ? m.name : 'Belum ditugaskan';
+}
+function leadCardHtml(l){
+  const canEdit = isAdmin || (currentMarketing && l.picId === currentMarketing.id) || (currentMarketing && !l.picId);
+  return `
+    <div class="lead-card" data-id="${l.id}">
+      <div class="lead-card-name">${escapeHtml(l.name)}</div>
+      ${l.phone ? `<div class="lead-card-row">📞 ${escapeHtml(l.phone)}</div>` : ''}
+      ${l.budget ? `<div class="lead-card-row">💰 ${escapeHtml(l.budget)}</div>` : ''}
+      ${l.targetDate ? `<div class="lead-card-row">📅 ${fmtDateShort(l.targetDate)}</div>` : ''}
+      ${l.source ? `<div class="lead-card-row">🔎 ${escapeHtml(l.source)}</div>` : ''}
+      ${l.notes ? `<div class="lead-card-notes">${escapeHtml(l.notes)}</div>` : ''}
+      <div class="lead-card-row" style="opacity:.75;">👤 ${escapeHtml(leadPicName(l.picId))}</div>
+      ${(l.stage==='batal' && l.lostReason) ? `<div class="lead-card-notes">❌ ${escapeHtml(l.lostReason)}</div>` : ''}
+      ${canEdit ? `
+      <div class="row-actions" style="margin-top:10px;flex-wrap:wrap;">
+        <select class="btn tiny" data-action="lead-move" data-id="${l.id}" style="flex:1;min-width:110px;">
+          ${LEAD_STAGES.map(s=>`<option value="${s.key}" ${s.key===l.stage?'selected':''}>${s.label}</option>`).join('')}
+        </select>
+        <button class="btn tiny" data-action="lead-edit" data-id="${l.id}">✏️</button>
+        <button class="btn tiny danger" data-action="lead-delete" data-id="${l.id}">🗑️</button>
+      </div>
+      ${l.stage==='deal' && !l.convertedProjectId ? `<button class="btn small primary" data-action="lead-convert" data-id="${l.id}" style="width:100%;margin-top:8px;">🎉 Jadikan Project</button>` : ''}
+      ${l.convertedProjectId ? `<div class="chip done" style="margin-top:8px;">✓ Sudah jadi project</div>` : ''}
+      ` : ''}
+    </div>
+  `;
+}
+function renderLeadsBoard(){
+  const myLeads = myVisibleLeads();
+  return `
+    <div class="extra-vendor-head"><h2>Leads (Calon Klien)</h2><button class="btn primary small" id="newLeadBtn">+ Leads Baru</button></div>
+    <div class="leads-board">
+      ${LEAD_STAGES.map(s=>{
+        const items = myLeads.filter(l=>l.stage===s.key);
+        return `
+          <div class="leads-col">
+            <div class="leads-col-head"><span>${escapeHtml(s.label)}</span><span class="leads-col-count">${items.length}</span></div>
+            <div class="leads-col-body">
+              ${items.length ? items.map(leadCardHtml).join('') : `<div class="empty-mini" style="font-size:12px;padding:14px 10px;">Belum ada.</div>`}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+function showLeadForm(editId){
+  const editing = editId ? findLeadById(editId) : null;
+  const app = document.getElementById('app');
+  const showPicSelect = isAdmin && marketingList.length>0;
+  app.innerHTML = `
+    <div class="gate-wrap">
+      <div class="gate-card">
+        <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
+        <h2>${editing ? 'Edit Leads' : 'Leads Baru'}</h2>
+        <p>Catat calon klien yang masih tanya-tanya, biar tidak ada follow up yang kelewat.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
+          <input id="leadName" placeholder="Nama Calon Pasangan / Kontak" value="${editing?escapeHtml(editing.name):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="leadPhone" placeholder="Nomor WhatsApp" value="${editing?escapeHtml(editing.phone||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="leadSource" placeholder="Sumber (IG, Referral, Pameran, dll)" value="${editing?escapeHtml(editing.source||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="leadBudget" placeholder="Estimasi Budget (mis. 80 Juta)" value="${editing?escapeHtml(editing.budget||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <div>
+            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Estimasi Tanggal Acara</label>
+            <input id="leadTargetDate" type="date" value="${editing?escapeAttr(editing.targetDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          </div>
+          ${showPicSelect ? `
+          <select id="leadPic" style="padding:12px 14px;border-radius:12px;width:100%;">
+            <option value="">— Belum ditugaskan —</option>
+            ${marketingList.map(m=>`<option value="${m.id}" ${editing&&editing.picId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
+          </select>` : ''}
+          <textarea id="leadNotes" placeholder="Catatan (mis. sudah dikirim katalog, janji telpon Jumat)" rows="3" style="padding:12px 14px;border-radius:12px;width:100%;font-family:inherit;">${editing?escapeHtml(editing.notes||''):''}</textarea>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn ghost" id="cancelLeadForm" style="flex:1;">Batal</button>
+          <button class="btn primary" id="saveLeadBtn" style="flex:1;">Simpan</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('cancelLeadForm').addEventListener('click', ()=> renderProjectDashboard());
+  document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
+    const name = document.getElementById('leadName').value.trim();
+    if(!name){ await customAlert('Nama calon klien wajib diisi.'); return; }
+    const phone = document.getElementById('leadPhone').value.trim();
+    const source = document.getElementById('leadSource').value.trim();
+    const budget = document.getElementById('leadBudget').value.trim();
+    const targetDate = document.getElementById('leadTargetDate').value;
+    const picSel = document.getElementById('leadPic');
+    const picId = picSel ? (picSel.value || null) : (currentMarketing ? currentMarketing.id : null);
+    const notes = document.getElementById('leadNotes').value.trim();
+    const btn = document.getElementById('saveLeadBtn');
+    btn.disabled = true;
+    showLoadingOverlay('Menyimpan leads...');
+    await loadLeadsList();
+    if(leadsListLoadFailed){
+      hideLoadingOverlay(); btn.disabled = false;
+      await customAlert('Gagal mengambil daftar leads terbaru dari server (koneksi lambat/gagal). Coba lagi setelah koneksi stabil.');
+      return;
+    }
+    const stillEditing = editing ? findLeadById(editing.id) : null;
+    if(stillEditing){
+      Object.assign(stillEditing, { name, phone, source, budget, targetDate, picId, notes });
+    } else {
+      leadsList.push({ id: uid('lead'), name, phone, source, budget, targetDate, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
+    }
+    const ok = await saveLeadsList();
+    hideLoadingOverlay();
+    if(!ok){
+      btn.disabled = false;
+      await customAlert('Gagal menyimpan ke storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui'));
+      return;
+    }
+    showToast('Leads tersimpan ✓');
+    renderProjectDashboard();
+  });
+}
+async function handleLeadMoveStage(id, newStage){
+  const lead = findLeadById(id);
+  if(!lead) return;
+  let lostReason = lead.lostReason || '';
+  if(newStage === 'batal'){
+    const reason = await customPrompt('Alasan batal/hilang (opsional):', lead.lostReason || '');
+    if(reason !== null && reason !== undefined) lostReason = String(reason).trim();
+  }
+  lead.stage = newStage;
+  lead.lostReason = newStage==='batal' ? lostReason : '';
+  showLoadingOverlay('Menyimpan...');
+  const ok = await saveLeadsList();
+  hideLoadingOverlay();
+  if(!ok){ await customAlert('Gagal menyimpan perubahan tahap.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
+  renderProjectDashboard();
+}
+async function handleLeadDelete(id){
+  const lead = findLeadById(id);
+  if(!lead) return;
+  const yes = await customConfirm(`Hapus leads "${lead.name}"? Tindakan ini tidak bisa dibatalkan.`);
+  if(!yes) return;
+  leadsList = leadsList.filter(l=>l.id!==id);
+  showLoadingOverlay('Menghapus...');
+  const ok = await saveLeadsList();
+  hideLoadingOverlay();
+  if(!ok){ await customAlert('Gagal menghapus dari storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
+  renderProjectDashboard();
 }
 
 /* ---------- PROJECTS INDEX ---------- */
@@ -2580,7 +2782,8 @@ async function initRoleFlow(){
       loadPackageList(),
       loadProjectsIndex(),
       loadVendorAccounts(),
-      loadVendorSchedule()
+      loadVendorSchedule(),
+      loadLeadsList()
     ]);
     hydrateMarketingPhotosInBackground();
     hydrateVendorPhotosInBackground();
@@ -3227,6 +3430,7 @@ function renderProjectDashboard(){
     <div id="projectList" class="vendor-grid">
       ${myList.length ? myList.map(projectCardHtml).join('') : `<div class="empty-mini">Belum ada project. Klik "+ Project Baru" buat mulai.</div>`}
     </div>
+    ${renderLeadsBoard()}
     ${isAdmin ? `
     <div class="extra-vendor-head"><h2>Paket Vendor</h2><button class="btn primary small" id="newPackageBtn">+ Tambah Paket</button></div>
     <div id="packageListBox" class="vendor-grid">
@@ -3247,6 +3451,12 @@ function renderProjectDashboard(){
     ` : ''}
   `;
   document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
+  const newLeadBtn = document.getElementById('newLeadBtn');
+  if(newLeadBtn) newLeadBtn.addEventListener('click', ()=> showLeadForm());
+  document.querySelectorAll('[data-action="lead-move"]').forEach(sel=> sel.addEventListener('change', ()=> handleLeadMoveStage(sel.dataset.id, sel.value)));
+  document.querySelectorAll('[data-action="lead-edit"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadForm(btn.dataset.id)));
+  document.querySelectorAll('[data-action="lead-delete"]').forEach(btn=> btn.addEventListener('click', ()=> handleLeadDelete(btn.dataset.id)));
+  document.querySelectorAll('[data-action="lead-convert"]').forEach(btn=> btn.addEventListener('click', ()=> showNewProjectForm(btn.dataset.id)));
   const gateDemoBtn = document.getElementById('gateDemoBtn');
   if(gateDemoBtn) gateDemoBtn.addEventListener('click', ()=>{ demoEnteredFromAdmin = true; enterDemoMode(); });
   const copyMarketingLinkBtn = document.getElementById('copyMarketingLink');
@@ -3806,10 +4016,11 @@ function showPackageForm(editId, draft){
   });
 }
 
-function showNewProjectForm(){
+function showNewProjectForm(leadId){
   const app = document.getElementById('app');
   const showMarketingSelect = isAdmin && marketingList.length>0;
   const hasPackages = packageList.length>0;
+  const fromLead = leadId ? findLeadById(leadId) : null;
 
   // Belum ada paket sama sekali -> project baru wajib pakai paket, jadi tampilkan pesan dulu
   if(!hasPackages){
@@ -3837,9 +4048,9 @@ function showNewProjectForm(){
       <div class="gate-card">
         <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
         <h2>Project Baru</h2>
-        <p>Masukkan nama pasangan dan pilih Paket Vendor buat bikin wedding project baru.</p>
+        <p>${fromLead ? `Data diisi otomatis dari leads <b>${escapeHtml(fromLead.name)}</b> — lengkapi nama mempelai &amp; pilih Paket Vendor.` : 'Masukkan nama pasangan dan pilih Paket Vendor buat bikin wedding project baru.'}</p>
         <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
-          <input id="newBride" placeholder="Nama Mempelai Wanita" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="newBride" placeholder="Nama Mempelai Wanita" value="${fromLead?escapeHtml(fromLead.name):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <input id="newGroom" placeholder="Nama Mempelai Pria" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <select id="newPackageSelect" required style="padding:12px 14px;border-radius:12px;width:100%;">
             <option value="" disabled selected>— Pilih Paket Vendor (wajib) —</option>
@@ -3848,7 +4059,7 @@ function showNewProjectForm(){
           ${showMarketingSelect ? `
           <select id="newMarketingSelect" style="padding:12px 14px;border-radius:12px;width:100%;">
             <option value="">— Belum ditugaskan ke marketing —</option>
-            ${marketingList.map(m=>`<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('')}
+            ${marketingList.map(m=>`<option value="${m.id}" ${fromLead&&fromLead.picId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
           </select>` : ''}
           ${isAdmin ? `
           <div style="border-top:1px dashed var(--card-border);margin-top:4px;padding-top:10px;">
@@ -3899,6 +4110,12 @@ function showNewProjectForm(){
       // layar pilih peran admin/marketing/klien/vendor) — peran yang sudah login
       // (admin atau marketing) dipakai apa adanya untuk langsung masuk ke project baru.
       const project = await createProject(bride, groom, marketingId, packageId);
+      if(fromLead){
+        try{
+          const stillLead = findLeadById(fromLead.id);
+          if(stillLead){ stillLead.stage = 'deal'; stillLead.convertedProjectId = project.id; await saveLeadsList(); }
+        }catch(leadErr){ console.error('gagal update leads setelah convert', leadErr); }
+      }
       if(clientUsernameInput){
         try{
           await createClientAccount(clientUsername, clientPassword, project.id);

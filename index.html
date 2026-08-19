@@ -901,6 +901,7 @@ let vendorAccounts = [];       // database vendor: [{id,name,category,phone,user
 let vendorSchedule = [];       // jadwal lintas project: [{vendorAccountId,projectId,catKey,catLabel,brideName,groomName,weddingDate}]
 let viewingDashboard = false;  // showing the multi-project dashboard
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
+let leadsPicFilter = '';       // filter board Leads (Calon Klien) by nama marketing (PIC) — hanya dipakai admin
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
 let leadsList = [];            // CRM calon klien: [{id,name,phone,source,budget,targetDate,notes,stage,picId,lostReason,createdAt,convertedProjectId}]
@@ -1764,8 +1765,7 @@ function myVisibleLeads(){
   if(isAdmin) return sorted;
   if(currentMarketing) return sorted.filter(l => l.picId === currentMarketing.id || !l.picId);
   return sorted;
-}
-function leadStageLabel(key){ const s = LEAD_STAGES.find(s=>s.key===key); return s ? s.label : key; }
+}function leadStageLabel(key){ const s = LEAD_STAGES.find(s=>s.key===key); return s ? s.label : key; }
 function leadPicName(picId){
   if(!picId) return 'Belum ditugaskan';
   const m = findMarketingById(picId);
@@ -1801,9 +1801,27 @@ function leadCardHtml(l){
   `;
 }
 function renderLeadsBoard(){
-  const myLeads = myVisibleLeads();
+  let myLeads = myVisibleLeads();
+  // Filter per marketing cuma relevan buat admin — marketing sendiri udah otomatis
+  // cuma lihat leads miliknya lewat myVisibleLeads().
+  const showPicFilter = isAdmin && marketingList.length>0;
+  if(showPicFilter && leadsPicFilter){
+    myLeads = leadsPicFilter === '__unassigned__'
+      ? myLeads.filter(l=>!l.picId)
+      : myLeads.filter(l=>l.picId===leadsPicFilter);
+  }
   return `
     <div class="extra-vendor-head"><h2>Leads (Calon Klien)</h2><button class="btn primary small" id="newLeadBtn">+ Leads Baru</button></div>
+    ${showPicFilter ? `
+    <div class="lp-row" style="margin-bottom:12px;">
+      <span class="lp-label">Filter Marketing</span>
+      <select class="btn small" id="leadsPicFilterSelect" style="flex:1;min-width:180px;">
+        <option value="">Semua Marketing</option>
+        ${marketingList.map(m=>`<option value="${m.id}" ${leadsPicFilter===m.id?'selected':''}>${escapeHtml(m.name)} (${leadsList.filter(l=>l.picId===m.id).length})</option>`).join('')}
+        <option value="__unassigned__" ${leadsPicFilter==='__unassigned__'?'selected':''}>Belum ditugaskan (${leadsList.filter(l=>!l.picId).length})</option>
+      </select>
+    </div>
+    ` : ''}
     <div class="leads-board">
       ${LEAD_STAGES.map(s=>{
         const items = myLeads.filter(l=>l.stage===s.key);
@@ -3762,6 +3780,8 @@ function renderProjectDashboard(){
   document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
   const newLeadBtn = document.getElementById('newLeadBtn');
   if(newLeadBtn) newLeadBtn.addEventListener('click', ()=> showLeadForm());
+  const leadsPicFilterSelect = document.getElementById('leadsPicFilterSelect');
+  if(leadsPicFilterSelect) leadsPicFilterSelect.addEventListener('change', ()=>{ leadsPicFilter = leadsPicFilterSelect.value; renderProjectDashboard(); });
   document.querySelectorAll('[data-action="lead-move"]').forEach(sel=> sel.addEventListener('change', ()=> handleLeadMoveStage(sel.dataset.id, sel.value)));
   document.querySelectorAll('[data-action="lead-edit"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadForm(btn.dataset.id)));
   document.querySelectorAll('[data-action="lead-delete"]').forEach(btn=> btn.addEventListener('click', ()=> handleLeadDelete(btn.dataset.id)));

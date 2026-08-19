@@ -2029,34 +2029,47 @@ function leadTargetDateLabel(lead){
   if(prec === 'year' && lead.targetYear) return 'sekitar tahun ' + lead.targetYear;
   return '';
 }
+// Nama marketing (PIC) yang ditugaskan ke leads ini dipakai sebagai tanda tangan
+// pesan follow up, biar klien tau langsung berhadapan dengan siapa. Kalau leads
+// belum ditugaskan ke marketing manapun, jatuh ke tanda tangan tim secara umum.
+function leadSignatureLine(lead){
+  const m = lead.picId ? findMarketingById(lead.picId) : null;
+  const person = (m && m.name) ? m.name : null;
+  return person
+    ? `Hormat kami,\n${person}\nArtaJava Wedding Organizer`
+    : `Hormat kami,\nTim ArtaJava Wedding Organizer`;
+}
 function buildLeadPameranMessage(lead, dayNum, isLast){
   const name = lead.name;
   const src = lead.source;
+  const sig = leadSignatureLine(lead);
   if(isLast){
-    return `Halo Bapak/Ibu ${name} 👋\n\nHari ini hari terakhir *${src}*. Kalau masih ada yang mau ditanyain soal paket atau mau manfaatin promo spesial pameran sebelum booth kami tutup, kami masih standby sampai acara selesai.\n\nSiapa tau rejeki bisa langsung deal hari ini 😊\n\n— Tim ArtaJava Wedding Organizer`;
+    return `Yth. Bapak/Ibu ${name},\n\nMemasuki hari terakhir *${src}*, kami ingin menyampaikan bahwa booth ArtaJava Wedding Organizer masih terbuka untuk konsultasi hingga acara berakhir. Apabila Bapak/Ibu berkenan menindaklanjuti penawaran maupun promo khusus pameran, kami dengan senang hati akan membantu.\n\nKami menantikan kesempatan untuk berdiskusi lebih lanjut.\n\n${sig}`;
   }
   const variants = [
-    `Halo Bapak/Ibu ${name},\n\nTerima kasih sudah mampir ke booth *ArtaJava* di ${src} kemarin! Pameran masih berlangsung beberapa hari lagi — kalau masih ada yang mau ditanyain soal paket atau konsep, kami masih di booth kok.\n\nSampai ketemu lagi ya 😊\n\n— Tim ArtaJava Wedding Organizer`,
-    `Hai Bapak/Ibu ${name} 👋\n\nGimana, sudah ada gambaran soal paket setelah ngobrol kemarin di ${src}? Kalau masih pengen diskusi lebih lanjut atau lihat contoh dekorasi, promo pameran masih berlaku selama acara berlangsung.\n\nKami tunggu kabarnya!\n\n— Tim ArtaJava Wedding Organizer`,
-    `Halo Bapak/Ibu ${name},\n\nMasih semangat cari-cari referensi buat acara pernikahannya? Booth *ArtaJava* di ${src} masih buka, jadi kalau mau lanjut ngobrol soal budget atau tanggal, boleh banget mampir lagi.\n\nDitunggu ya 🙏\n\n— Tim ArtaJava Wedding Organizer`,
+    `Yth. Bapak/Ibu ${name},\n\nTerima kasih telah berkunjung ke booth ArtaJava Wedding Organizer di ${src}. Pameran masih berlangsung selama beberapa hari ke depan, dan kami dengan senang hati akan menyambut Bapak/Ibu kembali apabila ingin melanjutkan diskusi mengenai paket maupun konsep pernikahan.\n\n${sig}`,
+    `Yth. Bapak/Ibu ${name},\n\nKami berharap perbincangan sebelumnya di ${src} dapat memberikan gambaran awal mengenai layanan kami. Apabila Bapak/Ibu berkenan mendiskusikan lebih lanjut mengenai paket, konsep, maupun anggaran, promo khusus pameran masih berlaku selama acara berlangsung.\n\nKami tunggu kabar baik dari Bapak/Ibu.\n\n${sig}`,
+    `Yth. Bapak/Ibu ${name},\n\nBooth ArtaJava Wedding Organizer di ${src} masih beroperasi hingga beberapa hari mendatang. Apabila Bapak/Ibu masih dalam tahap mempertimbangkan referensi maupun vendor, kami dengan senang hati menyediakan waktu untuk berdiskusi lebih lanjut mengenai rencana pernikahan Bapak/Ibu.\n\n${sig}`,
   ];
   return variants[(dayNum - 2) % variants.length];
 }
 function buildLeadNurtureMessage(lead, stageKey){
   const name = lead.name;
   const dateLabel = leadTargetDateLabel(lead);
-  const dateLine = dateLabel ? `\n📅 Rencana acara: ${dateLabel}` : `\n📅 Rencana acara: belum ada tanggal pasti — santai aja, kita bisa mulai dari ngobrolin konsep & budget dulu.`;
+  const dateLine = dateLabel ? `\n📅 Rencana Acara: ${dateLabel}` : `\n📅 Rencana Acara: belum ditentukan — tidak menjadi kendala, kami dapat memulai dari diskusi konsep dan anggaran terlebih dahulu.`;
+  const sig = leadSignatureLine(lead);
   switch(stageKey){
-    case 'h1': return `Halo Bapak/Ibu ${name} 👋\n\nTerima kasih sudah menghubungi *ArtaJava Wedding Organizer* kemarin. Semoga info yang kami kasih membantu ya! Kalau masih ada yang mengganjal soal paket atau harga, jangan sungkan tanya lagi.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'h3': return `Halo Bapak/Ibu ${name},\n\nGimana, sudah sempat didiskusikan bareng pasangan soal rencana pernikahannya? Kalau mau bandingin paket atau lihat portofolio lagi, kami siap bantu kapan aja.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'h7': return `Halo Bapak/Ibu ${name} 🙏\n\nGak kerasa udah seminggu sejak kontak pertama kita. Kalau masih mempertimbangkan beberapa vendor, boleh banget kita jadwalkan sesi konsultasi biar lebih jelas soal konsep & budgetnya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'm1': return `Halo Bapak/Ibu ${name},\n\nSudah sebulan nih sejak kita ngobrol pertama kali. Kebetulan ada promo & paket baru bulan ini yang mungkin cocok — kalau berkenan, kami kirimkan detailnya ya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'm2': return `Halo Bapak/Ibu ${name} 😊\n\nSekadar cek-cek aja, apakah rencana pernikahannya masih berjalan? Kalau sudah nemu vendor lain gapapa banget, tapi kalau masih terbuka opsi, kami senang bisa lanjut diskusi lagi.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'm3': return `Halo Bapak/Ibu ${name},\n\nKami baru saja handle beberapa acara dengan konsep yang mungkin Bapak/Ibu suka — boleh kami share portofolio & testimoni klien terbaru buat jadi inspirasi?${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'm4': return `Halo Bapak/Ibu ${name} 🙏\n\nSekadar info, slot tanggal favorit biasanya cepat penuh — kalau sudah mulai condong ke tanggal tertentu, lebih baik booking dari sekarang biar nggak keduluan.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'm5': return `Halo Bapak/Ibu ${name},\n\nAda promo DP ringan yang lagi jalan bulan ini, mungkin bisa bantu meringankan awal persiapannya. Kalau tertarik, kami infokan detailnya ya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    case 'm6': return `Halo Bapak/Ibu ${name} 🙏\n\nUdah 6 bulan sejak kontak pertama kita. Kalau rencananya masih jalan, kami tetap senang hati bantu kapan pun Bapak/Ibu siap lanjut. Kalau memang sudah lanjut ke vendor lain, boleh kabari juga ya biar kami nggak follow up terus 😊${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
-    default: return `Halo Bapak/Ibu ${name}, kami dari *ArtaJava Wedding Organizer* ingin follow up rencana pernikahannya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'h0': return `Yth. Bapak/Ibu ${name},\n\nPerkenalkan, kami dari ArtaJava Wedding Organizer. Terima kasih atas kepercayaan Bapak/Ibu untuk menghubungi kami terkait rencana pernikahan yang akan diselenggarakan. Kami dengan senang hati akan mendampingi Bapak/Ibu sepanjang proses persiapan, mulai dari pemilihan konsep, penyusunan anggaran, hingga pelaksanaan hari bahagia tersebut.\n\nApabila terdapat pertanyaan mengenai paket layanan kami, jangan ragu untuk menghubungi kami kembali.${dateLine}\n\n${sig}`;
+    case 'h1': return `Yth. Bapak/Ibu ${name},\n\nTerima kasih atas komunikasi yang telah terjalin dengan ArtaJava Wedding Organizer. Kami berharap informasi yang telah kami sampaikan dapat menjadi bahan pertimbangan yang bermanfaat. Apabila masih terdapat hal yang perlu didiskusikan lebih lanjut mengenai paket maupun harga, kami siap membantu.${dateLine}\n\n${sig}`;
+    case 'h3': return `Yth. Bapak/Ibu ${name},\n\nKami ingin menanyakan kabar mengenai rencana pernikahan Bapak/Ibu — apakah sudah sempat didiskusikan bersama pasangan. Apabila Bapak/Ibu berkenan membandingkan paket atau meninjau kembali portofolio kami, kami siap membantu kapan pun dibutuhkan.${dateLine}\n\n${sig}`;
+    case 'h7': return `Yth. Bapak/Ibu ${name},\n\nTidak terasa telah satu minggu sejak komunikasi pertama kita. Apabila Bapak/Ibu masih dalam proses mempertimbangkan beberapa vendor, kami dengan senang hati menawarkan sesi konsultasi agar dapat membahas konsep dan anggaran secara lebih mendalam.${dateLine}\n\n${sig}`;
+    case 'm1': return `Yth. Bapak/Ibu ${name},\n\nTelah satu bulan sejak komunikasi pertama kita. Kami ingin menginformasikan bahwa terdapat promo dan paket terbaru bulan ini yang mungkin sesuai dengan kebutuhan Bapak/Ibu. Apabila berkenan, kami akan segera mengirimkan detail lengkapnya.${dateLine}\n\n${sig}`;
+    case 'm2': return `Yth. Bapak/Ibu ${name},\n\nKami ingin menanyakan kembali perkembangan rencana pernikahan Bapak/Ibu. Apabila telah menentukan pilihan pada vendor lain, kami tetap mengucapkan terima kasih atas waktunya. Namun apabila masih terbuka kemungkinan untuk melanjutkan diskusi, kami dengan senang hati akan membantu.${dateLine}\n\n${sig}`;
+    case 'm3': return `Yth. Bapak/Ibu ${name},\n\nKami baru saja menyelesaikan beberapa acara dengan konsep yang mungkin sesuai dengan preferensi Bapak/Ibu. Apabila berkenan, kami dapat membagikan portofolio serta testimoni klien terbaru sebagai bahan inspirasi.${dateLine}\n\n${sig}`;
+    case 'm4': return `Yth. Bapak/Ibu ${name},\n\nSebagai informasi, tanggal-tanggal favorit umumnya cepat terisi. Apabila Bapak/Ibu telah mulai mengarah pada tanggal tertentu, kami menyarankan untuk melakukan pemesanan lebih awal agar tidak berbenturan dengan jadwal lain.${dateLine}\n\n${sig}`;
+    case 'm5': return `Yth. Bapak/Ibu ${name},\n\nSaat ini tersedia promo uang muka (DP) ringan yang dapat membantu meringankan persiapan awal Bapak/Ibu. Apabila tertarik, kami akan segera menginformasikan detail lengkapnya.${dateLine}\n\n${sig}`;
+    case 'm6': return `Yth. Bapak/Ibu ${name},\n\nTelah enam bulan sejak komunikasi pertama kita. Kami tetap dengan senang hati membantu apabila rencana pernikahan Bapak/Ibu masih berjalan. Apabila telah melanjutkan kerja sama dengan vendor lain, mohon kabarkan kepada kami agar tidak lagi mengirimkan pesan lanjutan.${dateLine}\n\n${sig}`;
+    default: return `Yth. Bapak/Ibu ${name},\n\nKami dari ArtaJava Wedding Organizer bermaksud menindaklanjuti rencana pernikahan Bapak/Ibu.${dateLine}\n\n${sig}`;
   }
 }
 function buildLeadReminderItems(lead){
@@ -2093,6 +2106,10 @@ function buildLeadReminderItems(lead){
       items.push({ title:'🎪 Follow Up Selama Pameran (isi Tanggal Terakhir Pameran di form edit biar jadwalnya lengkap)', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead, 2, false) });
     }
   }
+  // Pesan perkenalan dikirim di tanggal leads pertama kali disimpan (base),
+  // terpisah dari nurtureBase — perkenalan tetap di hari kontak masuk walau
+  // leads-nya dari pameran dan H+1/H+3/dst baru mulai setelah pameran selesai.
+  items.push({ title:'👋 Follow Up Perkenalan', date: base, message: buildLeadNurtureMessage(lead, 'h0') });
   [
     ['h1','H+1'], ['h3','H+3'], ['h7','H+7'],
     ['m1','H+1 Bulan'], ['m2','H+2 Bulan'], ['m3','H+3 Bulan'],

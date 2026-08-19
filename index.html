@@ -1991,19 +1991,32 @@ async function handleLeadDelete(id){
    otomatis di background — admin/marketing yang klik kirim manual. Kalimat
    tiap tahap SENGAJA dibuat beda-beda (bukan 1 kalimat template yang cuma
    ganti label harinya) biar kesannya personal, nggak kayak bot. */
+// PENTING: jangan pakai d.toISOString().slice(0,10) di sini. new Date(iso+'T00:00:00')
+// dibaca sebagai tengah malam WAKTU LOKAL, sedangkan toISOString() ngonversi ke UTC.
+// Untuk zona waktu WIB/WITA/WIT (UTC+7/8/9), itu bikin tanggal mundur 1 hari dari
+// hasil setDate() — dan karena mundurnya persis 1 hari, addDaysIso(x,1) yang
+// dipanggil berulang (kayak di loop reminder pameran) jadi "nyangkut" di tanggal
+// yang sama terus-menerus alih-alih maju sehari tiap panggilan. Makanya dipakai
+// getFullYear/getMonth/getDate (nilai lokal) buat nyusun ulang stringnya, bukan lewat UTC.
+function isoFromLocalDate(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function addDaysIso(iso, days){
   if(!iso) return null;
   const d = new Date(iso+'T00:00:00');
   if(isNaN(d.getTime())) return null;
   d.setDate(d.getDate()+days);
-  return d.toISOString().slice(0,10);
+  return isoFromLocalDate(d);
 }
 function addMonthsIso(iso, months){
   if(!iso) return null;
   const d = new Date(iso+'T00:00:00');
   if(isNaN(d.getTime())) return null;
   d.setMonth(d.getMonth()+months);
-  return d.toISOString().slice(0,10);
+  return isoFromLocalDate(d);
 }
 // Estimasi tanggal acara sering belum pasti — kadang klien baru tau tahunnya
 // aja, atau bulan+tahun aja. Fungsi ini nampilin kalimat yang sesuai presisi

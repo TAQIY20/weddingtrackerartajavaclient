@@ -242,28 +242,32 @@
   .ms-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
   .ms-head h3{font-size:15px;margin:0;font-weight:700;font-family:'Fraunces',serif;}
   .ms-head .ms-pill{font-size:11.5px;background:rgba(122,31,46,0.08);border:1px solid var(--card-border);color:var(--pink);padding:3px 11px;border-radius:100px;font-weight:600;white-space:nowrap;}
-  .ms-stepper{display:flex;align-items:flex-start;position:relative;}
-  .ms-step{flex:1;text-align:center;position:relative;padding:0 4px;min-width:0;}
+  .ms-stepper{display:flex;align-items:flex-start;position:relative;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;gap:0;scrollbar-width:thin;}
+  .ms-stepper::-webkit-scrollbar{height:6px;}
+  .ms-stepper::-webkit-scrollbar-thumb{background:var(--card-border);border-radius:10px;}
+  .ms-step{flex:0 0 92px;text-align:center;position:relative;padding:0 6px;}
   .ms-step .ms-line{position:absolute;top:14px;left:-50%;width:100%;height:2px;background:var(--card-border);z-index:0;}
   .ms-step:first-child .ms-line{display:none;}
   .ms-step.done .ms-line{background:var(--gold);}
-  .ms-dot{width:28px;height:28px;border-radius:50%;background:var(--field-bg);border:2px solid var(--card-border);display:flex;align-items:center;justify-content:center;margin:0 auto 8px;position:relative;z-index:1;font-size:12px;color:var(--cream-dimmer);font-weight:700;}
+  .ms-dot{width:28px;height:28px;border-radius:50%;background:var(--field-bg);border:2px solid var(--card-border);display:flex;align-items:center;justify-content:center;margin:0 auto 8px;position:relative;z-index:1;font-size:11px;color:var(--cream-dimmer);font-weight:700;flex-shrink:0;}
   .ms-step.done .ms-dot{background:var(--gold);border-color:var(--gold);color:#FFF8E9;}
   .ms-step.current .ms-dot{background:var(--field-bg);border-color:var(--pink);color:var(--pink);box-shadow:0 0 0 5px rgba(122,31,46,0.10);}
-  .ms-label{font-size:11px;font-weight:600;line-height:1.25;color:var(--cream-dimmer);}
+  .ms-cat-mini{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--gold-deep);font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ms-label{font-size:10.5px;font-weight:600;line-height:1.25;color:var(--cream-dimmer);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92px;margin:0 auto;}
   .ms-step.done .ms-label{color:var(--gold-deep);}
   .ms-step.current .ms-label{color:var(--pink);}
-  .ms-date{font-size:9.5px;color:var(--cream-dimmer);margin-top:2px;}
+  .ms-date{font-size:9px;color:var(--cream-dimmer);margin-top:2px;}
   .ms-note{margin-top:18px;background:rgba(122,31,46,0.05);border:1px solid var(--card-border);border-radius:14px;padding:12px 14px;font-size:12.5px;display:flex;gap:9px;align-items:flex-start;}
   .ms-note b{color:var(--pink);}
   @media (max-width:640px){
-    .ms-stepper{flex-direction:column;align-items:flex-start;gap:0;}
-    .ms-step{display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;padding:0 0 20px;}
+    .ms-stepper{flex-direction:column;align-items:flex-start;gap:0;overflow-x:visible;padding:0;}
+    .ms-step{flex:0 0 auto;display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;padding:0 0 18px;}
     .ms-step:last-child{padding-bottom:0;}
     .ms-dot{margin:0;flex-shrink:0;}
     .ms-step .ms-line{display:none;}
     .ms-step:not(:last-child):after{content:"";position:absolute;left:13px;top:28px;bottom:0;width:2px;background:var(--card-border);}
     .ms-step.done:not(:last-child):after{background:var(--gold);}
+    .ms-label{white-space:normal;overflow:visible;text-overflow:clip;max-width:none;}
   }
 
   .timeline{position:relative;padding-left:26px;}
@@ -4357,24 +4361,15 @@ function statusColor(s){
 function statusLabel(s){ return {belum:'Belum Booking', nego:'Survey', dp:'Sudah DP', progres:'On Progres', lunas:'Lunas', final:'Final'}[s] || s; }
 
 function computeMilestoneStages(sorted){
-  // Kelompokkan item timeline per kategori (cat), urut berdasar kemunculan pertama.
-  const catOrder = [];
-  sorted.forEach(it=>{ if(!catOrder.includes(it.cat)) catOrder.push(it.cat); });
-  const total = sorted.length;
-  const doneCount = sorted.filter(it=>it.status==='done').length;
-  // Posisi tahap ditentukan dari PROPORSI agenda selesai (bukan wajib satu kategori 100% kelar dulu).
-  // Ini penting karena satu kategori (mis. "Admin") bisa berisi item yang jaraknya jauh secara waktu
-  // (DP di awal, Pelunasan di akhir) — kalau nunggu semua item kategori kelar dulu, progres bisa
-  // nyangkut lama padahal agenda lain di kategori berikutnya sudah banyak yang selesai.
-  const percent = total ? doneCount/total : 0;
-  const currentIdx = (total>0 && doneCount===total) ? catOrder.length : Math.min(Math.floor(percent*catOrder.length), catOrder.length-1);
-  return catOrder.map((cat,i)=>{
-    const items = sorted.filter(it=>it.cat===cat);
+  // Setiap AGENDA (bukan kategori) jadi satu titik di peta progres — supaya selalu 1:1 sinkron
+  // dengan angka "Agenda Selesai" (X/Y). Item pertama yang belum selesai jadi penanda "kamu di sini".
+  let foundCurrent = false;
+  return sorted.map(it=>{
     let st;
-    if(i<currentIdx) st = 'done';
-    else if(i===currentIdx) st = 'current';
-    else st = 'upcoming';
-    return { label: cat, date: items[items.length-1].date, state: st };
+    if(it.status==='done'){ st = 'done'; }
+    else if(!foundCurrent){ st = 'current'; foundCurrent = true; }
+    else { st = 'upcoming'; }
+    return { label: it.title, cat: it.cat, date: it.date, state: st };
   });
 }
 
@@ -4394,10 +4389,11 @@ function renderMilestoneStepper(sorted){
       </div>
       <div class="ms-stepper">
         ${stages.map((s,i)=>`
-          <div class="ms-step ${s.state}">
+          <div class="ms-step ${s.state}" title="${escapeAttr(s.label)}">
             <div class="ms-line"></div>
             <div class="ms-dot">${s.state==='done' ? '✓' : (i+1)}</div>
-            <div>
+            <div class="ms-step-text">
+              <div class="ms-cat-mini">${escapeHtml(s.cat)}</div>
               <div class="ms-label">${escapeHtml(s.label)}</div>
               <div class="ms-date">${fmtDateShort(s.date)}</div>
             </div>

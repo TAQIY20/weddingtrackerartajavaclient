@@ -1744,6 +1744,13 @@ async function loadLeadsList(){
     // tanggal dia dibuat.
     if(!l.leadDate) l.leadDate = (l.createdAt||'').slice(0,10);
     if(!l.pameranEndDate) l.pameranEndDate = '';
+    // Estimasi tanggal acara: dukung 3 level presisi (tanggal pasti / bulan+tahun /
+    // tahun saja) karena banyak leads yang belum tau tanggal persisnya pas awal
+    // kontak. Leads lama yang sudah punya targetDate (tanggal pasti) otomatis
+    // dianggap presisi 'exact'.
+    if(l.targetDatePrecision === undefined) l.targetDatePrecision = l.targetDate ? 'exact' : '';
+    if(l.targetYear === undefined) l.targetYear = '';
+    if(l.targetMonth === undefined) l.targetMonth = '';
   });
 }
 async function saveLeadsList(){
@@ -1771,7 +1778,7 @@ function leadCardHtml(l){
       <div class="lead-card-name">${escapeHtml(l.name)}</div>
       ${l.phone ? `<div class="lead-card-row">📞 ${escapeHtml(l.phone)}</div>` : ''}
       ${l.budget ? `<div class="lead-card-row">💰 ${escapeHtml(l.budget)}</div>` : ''}
-      ${l.targetDate ? `<div class="lead-card-row">📅 Acara: ${fmtDateShort(l.targetDate)}</div>` : ''}
+      ${leadTargetDateLabel(l) ? `<div class="lead-card-row">📅 Acara: ${escapeHtml(leadTargetDateLabel(l))}</div>` : ''}
       ${l.source ? `<div class="lead-card-row">🔎 ${escapeHtml(l.source)}</div>` : ''}
       ${l.leadDate ? `<div class="lead-card-row">🗓️ Masuk: ${fmtDateShort(l.leadDate)}</div>` : ''}
       ${l.pameranEndDate ? `<div class="lead-card-row">🎪 Pameran s/d: ${fmtDateShort(l.pameranEndDate)}</div>` : ''}
@@ -1847,7 +1854,15 @@ function showLeadForm(editId){
           <input id="leadBudget" placeholder="Estimasi Budget (mis. 80 Juta)" value="${editing?escapeHtml(editing.budget||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <div>
             <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Estimasi Tanggal Acara</label>
-            <input id="leadTargetDate" type="date" value="${editing?escapeAttr(editing.targetDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+            <select id="leadDatePrecision" style="padding:12px 14px;border-radius:12px;width:100%;margin-bottom:8px;">
+              <option value="" ${(!editing || !editing.targetDatePrecision)?'selected':''}>Belum tau sama sekali</option>
+              <option value="exact" ${editing&&editing.targetDatePrecision==='exact'?'selected':''}>Sudah ada tanggal pasti</option>
+              <option value="month" ${editing&&editing.targetDatePrecision==='month'?'selected':''}>Baru tau bulan &amp; tahun</option>
+              <option value="year" ${editing&&editing.targetDatePrecision==='year'?'selected':''}>Baru tau tahun saja</option>
+            </select>
+            <input id="leadTargetDate" type="date" value="${editing?escapeAttr(editing.targetDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;display:none;"/>
+            <input id="leadTargetMonth" type="month" value="${editing&&editing.targetYear&&editing.targetMonth?escapeAttr(editing.targetYear+'-'+editing.targetMonth):''}" style="padding:12px 14px;border-radius:12px;width:100%;display:none;"/>
+            <input id="leadTargetYear" type="number" inputmode="numeric" min="2020" max="2099" placeholder="mis. 2027" value="${editing&&editing.targetDatePrecision==='year'?escapeAttr(editing.targetYear||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;display:none;"/>
           </div>
           ${showPicSelect ? `
           <select id="leadPic" style="padding:12px 14px;border-radius:12px;width:100%;">
@@ -1873,6 +1888,18 @@ function showLeadForm(editId){
   }
   sourceSel.addEventListener('change', syncSourceUI);
   syncSourceUI();
+  const precisionSel = document.getElementById('leadDatePrecision');
+  const dateExactInput = document.getElementById('leadTargetDate');
+  const dateMonthInput = document.getElementById('leadTargetMonth');
+  const dateYearInput = document.getElementById('leadTargetYear');
+  function syncDatePrecisionUI(){
+    const p = precisionSel.value;
+    dateExactInput.style.display = p === 'exact' ? 'block' : 'none';
+    dateMonthInput.style.display = p === 'month' ? 'block' : 'none';
+    dateYearInput.style.display = p === 'year' ? 'block' : 'none';
+  }
+  precisionSel.addEventListener('change', syncDatePrecisionUI);
+  syncDatePrecisionUI();
   document.getElementById('cancelLeadForm').addEventListener('click', ()=> renderProjectDashboard());
   document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
     const name = document.getElementById('leadName').value.trim();
@@ -1884,7 +1911,16 @@ function showLeadForm(editId){
     const leadDate = document.getElementById('leadDate').value;
     const pameranEndDate = isPameranSource(source) ? document.getElementById('leadPameranEndDate').value : '';
     const budget = document.getElementById('leadBudget').value.trim();
-    const targetDate = document.getElementById('leadTargetDate').value;
+    const targetDatePrecision = document.getElementById('leadDatePrecision').value;
+    let targetDate = '', targetYear = '', targetMonth = '';
+    if(targetDatePrecision === 'exact'){
+      targetDate = document.getElementById('leadTargetDate').value;
+    } else if(targetDatePrecision === 'month'){
+      const mv = document.getElementById('leadTargetMonth').value; // "YYYY-MM"
+      if(mv){ const [y,m] = mv.split('-'); targetYear = y; targetMonth = m; }
+    } else if(targetDatePrecision === 'year'){
+      targetYear = document.getElementById('leadTargetYear').value.trim();
+    }
     const picSel = document.getElementById('leadPic');
     const picId = picSel ? (picSel.value || null) : (currentMarketing ? currentMarketing.id : null);
     const notes = document.getElementById('leadNotes').value.trim();
@@ -1899,9 +1935,9 @@ function showLeadForm(editId){
     }
     const stillEditing = editing ? findLeadById(editing.id) : null;
     if(stillEditing){
-      Object.assign(stillEditing, { name, phone, source, leadDate, pameranEndDate, budget, targetDate, picId, notes });
+      Object.assign(stillEditing, { name, phone, source, leadDate, pameranEndDate, budget, targetDate, targetDatePrecision, targetYear, targetMonth, picId, notes });
     } else {
-      leadsList.push({ id: uid('lead'), name, phone, source, leadDate, pameranEndDate, budget, targetDate, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
+      leadsList.push({ id: uid('lead'), name, phone, source, leadDate, pameranEndDate, budget, targetDate, targetDatePrecision, targetYear, targetMonth, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
     }
     const ok = await saveLeadsList();
     hideLoadingOverlay();
@@ -1945,13 +1981,16 @@ async function handleLeadDelete(id){
 
 /* ---------- REMINDER FOLLOW UP LEADS ----------
    Jadwal follow up otomatis dihitung dari "Tanggal Leads Masuk":
-   - Kalau sumbernya Pameran (mis. "Pameran Tunjungan Plaza"), ditambah jadwal
-     follow up selama pameran masih berlangsung: hari ke-2, hari ke-3, dan hari
-     terakhir pameran (kalau tanggal terakhirnya diisi).
+   - Kalau sumbernya Pameran, jadwal follow up selama pameran berlangsung
+     dihitung DINAMIS dari selisih Tanggal Leads Masuk ke Tanggal Terakhir
+     Pameran — jadi otomatis menyesuaikan kalau pamerannya cuma 3 hari,
+     4 hari, atau lebih (bukan hardcode hari ke-2/ke-3 doang).
    - Semua leads (apapun sumbernya) dapat jadwal follow up rutin: H+1, H+3, H+7,
      lalu tiap bulan dari H+1 Bulan sampai H+6 Bulan.
    Sama seperti reminder project: teks disiapkan siap kirim, TIDAK terkirim
-   otomatis di background — admin/marketing yang klik kirim manual. */
+   otomatis di background — admin/marketing yang klik kirim manual. Kalimat
+   tiap tahap SENGAJA dibuat beda-beda (bukan 1 kalimat template yang cuma
+   ganti label harinya) biar kesannya personal, nggak kayak bot. */
 function addDaysIso(iso, days){
   if(!iso) return null;
   const d = new Date(iso+'T00:00:00');
@@ -1966,35 +2005,81 @@ function addMonthsIso(iso, months){
   d.setMonth(d.getMonth()+months);
   return d.toISOString().slice(0,10);
 }
-function buildLeadPameranMessage(lead, dayLabel){
-  return `Assalamu'alaikum / Selamat siang Bapak/Ibu ${lead.name},\n\nTerima kasih sudah mampir ke booth *ArtaJava Wedding Organizer* di ${lead.source}. Pameran masih berlangsung (${dayLabel}) — kalau Bapak/Ibu masih mau lihat-lihat paket, konsultasi konsep, atau tanya promo khusus pameran, kami masih standby di booth 😊\n\nKami tunggu kunjungannya kembali ya!\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+// Estimasi tanggal acara sering belum pasti — kadang klien baru tau tahunnya
+// aja, atau bulan+tahun aja. Fungsi ini nampilin kalimat yang sesuai presisi
+// datanya, dipakai di kartu leads & di teks reminder.
+const MONTH_NAMES_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function leadTargetDateLabel(lead){
+  const prec = lead.targetDatePrecision || (lead.targetDate ? 'exact' : '');
+  if(prec === 'exact' && lead.targetDate) return fmtDate(lead.targetDate);
+  if(prec === 'month' && lead.targetYear && lead.targetMonth) return 'sekitar ' + (MONTH_NAMES_ID[Number(lead.targetMonth)-1]||'') + ' ' + lead.targetYear;
+  if(prec === 'year' && lead.targetYear) return 'sekitar tahun ' + lead.targetYear;
+  return '';
 }
-function buildLeadNurtureMessage(lead, offsetLabel){
-  const targetLine = lead.targetDate ? `\n📅 Estimasi tanggal acara: ${fmtDate(lead.targetDate)}` : '';
-  return `Assalamu'alaikum / Selamat pagi Bapak/Ibu ${lead.name},\n\nKami dari tim *ArtaJava Wedding Organizer* ingin follow up kembali (${offsetLabel}) terkait rencana pernikahan Bapak/Ibu.${targetLine}\n\nApabila masih berkenan, kami dengan senang hati bantu jelaskan paket, konsep, dan jadwal survey venue lebih lanjut. Kami tunggu kabar baiknya ya, Bapak/Ibu 🙏\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+function buildLeadPameranMessage(lead, dayNum, isLast){
+  const name = lead.name;
+  const src = lead.source;
+  if(isLast){
+    return `Halo Bapak/Ibu ${name} 👋\n\nHari ini hari terakhir *${src}*. Kalau masih ada yang mau ditanyain soal paket atau mau manfaatin promo spesial pameran sebelum booth kami tutup, kami masih standby sampai acara selesai.\n\nSiapa tau rejeki bisa langsung deal hari ini 😊\n\n— Tim ArtaJava Wedding Organizer`;
+  }
+  const variants = [
+    `Halo Bapak/Ibu ${name},\n\nTerima kasih sudah mampir ke booth *ArtaJava* di ${src} kemarin! Pameran masih berlangsung beberapa hari lagi — kalau masih ada yang mau ditanyain soal paket atau konsep, kami masih di booth kok.\n\nSampai ketemu lagi ya 😊\n\n— Tim ArtaJava Wedding Organizer`,
+    `Hai Bapak/Ibu ${name} 👋\n\nGimana, sudah ada gambaran soal paket setelah ngobrol kemarin di ${src}? Kalau masih pengen diskusi lebih lanjut atau lihat contoh dekorasi, promo pameran masih berlaku selama acara berlangsung.\n\nKami tunggu kabarnya!\n\n— Tim ArtaJava Wedding Organizer`,
+    `Halo Bapak/Ibu ${name},\n\nMasih semangat cari-cari referensi buat acara pernikahannya? Booth *ArtaJava* di ${src} masih buka, jadi kalau mau lanjut ngobrol soal budget atau tanggal, boleh banget mampir lagi.\n\nDitunggu ya 🙏\n\n— Tim ArtaJava Wedding Organizer`,
+  ];
+  return variants[(dayNum - 2) % variants.length];
+}
+function buildLeadNurtureMessage(lead, stageKey){
+  const name = lead.name;
+  const dateLabel = leadTargetDateLabel(lead);
+  const dateLine = dateLabel ? `\n📅 Rencana acara: ${dateLabel}` : `\n📅 Rencana acara: belum ada tanggal pasti — santai aja, kita bisa mulai dari ngobrolin konsep & budget dulu.`;
+  switch(stageKey){
+    case 'h1': return `Halo Bapak/Ibu ${name} 👋\n\nTerima kasih sudah menghubungi *ArtaJava Wedding Organizer* kemarin. Semoga info yang kami kasih membantu ya! Kalau masih ada yang mengganjal soal paket atau harga, jangan sungkan tanya lagi.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'h3': return `Halo Bapak/Ibu ${name},\n\nGimana, sudah sempat didiskusikan bareng pasangan soal rencana pernikahannya? Kalau mau bandingin paket atau lihat portofolio lagi, kami siap bantu kapan aja.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'h7': return `Halo Bapak/Ibu ${name} 🙏\n\nGak kerasa udah seminggu sejak kontak pertama kita. Kalau masih mempertimbangkan beberapa vendor, boleh banget kita jadwalkan sesi konsultasi biar lebih jelas soal konsep & budgetnya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'm1': return `Halo Bapak/Ibu ${name},\n\nSudah sebulan nih sejak kita ngobrol pertama kali. Kebetulan ada promo & paket baru bulan ini yang mungkin cocok — kalau berkenan, kami kirimkan detailnya ya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'm2': return `Halo Bapak/Ibu ${name} 😊\n\nSekadar cek-cek aja, apakah rencana pernikahannya masih berjalan? Kalau sudah nemu vendor lain gapapa banget, tapi kalau masih terbuka opsi, kami senang bisa lanjut diskusi lagi.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'm3': return `Halo Bapak/Ibu ${name},\n\nKami baru saja handle beberapa acara dengan konsep yang mungkin Bapak/Ibu suka — boleh kami share portofolio & testimoni klien terbaru buat jadi inspirasi?${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'm4': return `Halo Bapak/Ibu ${name} 🙏\n\nSekadar info, slot tanggal favorit biasanya cepat penuh — kalau sudah mulai condong ke tanggal tertentu, lebih baik booking dari sekarang biar nggak keduluan.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'm5': return `Halo Bapak/Ibu ${name},\n\nAda promo DP ringan yang lagi jalan bulan ini, mungkin bisa bantu meringankan awal persiapannya. Kalau tertarik, kami infokan detailnya ya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    case 'm6': return `Halo Bapak/Ibu ${name} 🙏\n\nUdah 6 bulan sejak kontak pertama kita. Kalau rencananya masih jalan, kami tetap senang hati bantu kapan pun Bapak/Ibu siap lanjut. Kalau memang sudah lanjut ke vendor lain, boleh kabari juga ya biar kami nggak follow up terus 😊${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+    default: return `Halo Bapak/Ibu ${name}, kami dari *ArtaJava Wedding Organizer* ingin follow up rencana pernikahannya.${dateLine}\n\n— Tim ArtaJava Wedding Organizer`;
+  }
 }
 function buildLeadReminderItems(lead){
   const base = lead.leadDate || (lead.createdAt||'').slice(0,10);
   const items = [];
   if(isPameranSource(lead.source)){
-    items.push({ title:'🎪 Follow Up Hari ke-2 Pameran', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead,'hari ke-2') });
-    items.push({ title:'🎪 Follow Up Hari ke-3 Pameran', date: addDaysIso(base,2), message: buildLeadPameranMessage(lead,'hari ke-3') });
-    if(lead.pameranEndDate){
-      items.push({ title:'🎪 Follow Up Hari Terakhir Pameran', date: lead.pameranEndDate, message: buildLeadPameranMessage(lead,'hari terakhir') });
+    if(lead.pameranEndDate && lead.pameranEndDate > base){
+      // Loop dinamis dari H+1 sampai tanggal terakhir pameran — otomatis
+      // menyesuaikan berapa pun jumlah hari pamerannya (3 hari, 4 hari, dst).
+      let cursor = addDaysIso(base, 1);
+      let dayNum = 2;
+      let guard = 0;
+      while(cursor && cursor <= lead.pameranEndDate && guard < 14){
+        const isLast = cursor === lead.pameranEndDate;
+        items.push({
+          title: isLast ? '🎪 Follow Up Hari Terakhir Pameran' : `🎪 Follow Up Hari ke-${dayNum} Pameran`,
+          date: cursor,
+          message: buildLeadPameranMessage(lead, dayNum, isLast),
+        });
+        dayNum++;
+        cursor = addDaysIso(cursor, 1);
+        guard++;
+      }
+    } else {
+      // Tanggal terakhir pameran belum diisi — tetap kasih 1 reminder default
+      // biar admin keingetan buat lengkapi tanggalnya di form edit.
+      items.push({ title:'🎪 Follow Up Selama Pameran (isi Tanggal Terakhir Pameran di form edit biar jadwalnya lengkap)', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead, 2, false) });
     }
   }
   [
-    ['H+1', addDaysIso(base,1)],
-    ['H+3', addDaysIso(base,3)],
-    ['H+7', addDaysIso(base,7)],
-    ['H+1 Bulan', addMonthsIso(base,1)],
-    ['H+2 Bulan', addMonthsIso(base,2)],
-    ['H+3 Bulan', addMonthsIso(base,3)],
-    ['H+4 Bulan', addMonthsIso(base,4)],
-    ['H+5 Bulan', addMonthsIso(base,5)],
-    ['H+6 Bulan', addMonthsIso(base,6)],
-  ].forEach(([label,date])=>{
-    items.push({ title:'🔔 Follow Up ' + label, date, message: buildLeadNurtureMessage(lead, label) });
+    ['h1','H+1'], ['h3','H+3'], ['h7','H+7'],
+    ['m1','H+1 Bulan'], ['m2','H+2 Bulan'], ['m3','H+3 Bulan'],
+    ['m4','H+4 Bulan'], ['m5','H+5 Bulan'], ['m6','H+6 Bulan'],
+  ].forEach(([key,label])=>{
+    const date = key.startsWith('h') ? addDaysIso(base, Number(key.slice(1))) : addMonthsIso(base, Number(key.slice(1)));
+    items.push({ title:'🔔 Follow Up ' + label, date, message: buildLeadNurtureMessage(lead, key) });
   });
   items.forEach(it=>{
     const daysLeft = it.date ? daysUntil(it.date) : 0;
@@ -2004,32 +2089,37 @@ function buildLeadReminderItems(lead){
   });
   return items.filter(it=>it.date).sort((a,b)=> a.date.localeCompare(b.date));
 }
+// Kartu reminder di sini SENGAJA dikasih background solid sendiri (bukan
+// pakai .mb-card yang transparan) karena layar ini ditampilkan di atas
+// .gate-card yang backgroundnya gelap (foto+overlay maroon) — kalau pakai
+// warna teks gelap punya var(--cream-dim) tanpa card solid, tulisannya jadi
+// nyaris tak kelihatan (nempel warna gelap di atas background gelap).
 function leadReminderCardHtml(item, idx){
   const isEmail = isEmailContact(item.contact);
   const hasContact = !!(item.contact && item.contact.trim());
   let actionHtml = '';
   if(!hasContact){
-    actionHtml = `<div class="reminder-warn">⚠️ Nomor WA leads ini belum diisi</div>`;
+    actionHtml = `<div class="reminder-warn" style="color:#B5451A;">⚠️ Nomor WA leads ini belum diisi</div>`;
   } else if(isEmail){
     const link = contactMailtoLink(item.contact, item.title, item.message);
     actionHtml = `<a class="btn small primary" href="${escapeAttr(link)}">✉️ Kirim Email</a>`;
   } else {
     const link = contactWaLink(item.contact, item.message);
-    actionHtml = link ? `<a class="btn small primary" href="${escapeAttr(link)}" target="_blank" rel="noopener">📲 Kirim WA</a>` : `<div class="reminder-warn">⚠️ Format nomor tidak valid</div>`;
+    actionHtml = link ? `<a class="btn small primary" href="${escapeAttr(link)}" target="_blank" rel="noopener">📲 Kirim WA</a>` : `<div class="reminder-warn" style="color:#B5451A;">⚠️ Format nomor tidak valid</div>`;
   }
   return `
-    <div class="mb-card reminder-card tone-${item.status.tone}">
+    <div class="reminder-card tone-${item.status.tone}" style="background:#FFF8E9;border:1px solid rgba(122,31,46,.22);border-radius:20px;padding:16px 18px;margin-bottom:12px;">
       <div class="reminder-head">
         <span class="reminder-badge tone-${item.status.tone}">${item.status.badge}</span>
-        <div class="reminder-title">${escapeHtml(item.title)} · ${fmtDateShort(item.date)}</div>
+        <div class="reminder-title" style="color:#3B1015;">${escapeHtml(item.title)} · ${fmtDateShort(item.date)}</div>
       </div>
       <div class="reminder-msg-wrap" style="display:none;">
-        <pre class="reminder-msg">${escapeHtml(item.message)}</pre>
+        <pre class="reminder-msg" style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.6;color:#3B1015;background:rgba(122,31,46,.06);border-radius:12px;padding:12px 14px;margin:0 0 10px;">${escapeHtml(item.message)}</pre>
       </div>
       <div class="reminder-actions">
-        <button class="btn small ghost" data-action="toggle-lead-reminder-msg" data-idx="${idx}">👁️ Lihat Pesan</button>
+        <button class="btn small ghost" data-action="toggle-lead-reminder-msg" data-idx="${idx}" style="color:#3B1015;border-color:rgba(122,31,46,.35);">👁️ Lihat Pesan</button>
         ${actionHtml}
-        <button class="btn small ghost" data-action="copy-lead-reminder-msg" data-idx="${idx}">📋 Salin Pesan</button>
+        <button class="btn small ghost" data-action="copy-lead-reminder-msg" data-idx="${idx}" style="color:#3B1015;border-color:rgba(122,31,46,.35);">📋 Salin Pesan</button>
       </div>
     </div>
   `;
@@ -2046,7 +2136,7 @@ function showLeadReminders(id){
       <div class="gate-card" style="max-width:560px;text-align:left;">
         <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
         <h2 style="text-align:center;">🔔 Reminder Follow Up</h2>
-        <p style="text-align:center;">${escapeHtml(lead.name)} — jadwal follow up dihitung dari tanggal leads masuk (${baseDateFmt})${isPameranSource(lead.source) ? ', termasuk jadwal selama pameran berlangsung' : ''}. Teks siap kirim, tinggal 1-klik WA.</p>
+        <p style="text-align:center;">${escapeHtml(lead.name)} — jadwal follow up dihitung dari tanggal leads masuk (${baseDateFmt})${isPameranSource(lead.source) ? ', termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya)' : ''}. Teks siap kirim, tinggal 1-klik WA.</p>
         <div style="max-height:60vh;overflow-y:auto;margin:12px 0;">
           ${items.length ? items.map((it,idx)=> leadReminderCardHtml(it, idx)).join('') : `<div class="reminder-empty">Belum ada jadwal reminder — isi Tanggal Leads Masuk dulu di form edit.</div>`}
         </div>
@@ -2070,6 +2160,7 @@ function showLeadReminders(id){
       const it = (window.__leadReminderItems||[])[Number(btn.dataset.idx)];
       if(it) copyText(it.message);
     });
+
   });
 }
 

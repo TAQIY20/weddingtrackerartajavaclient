@@ -1752,6 +1752,9 @@ async function loadLeadsList(){
     if(l.targetDatePrecision === undefined) l.targetDatePrecision = l.targetDate ? 'exact' : '';
     if(l.targetYear === undefined) l.targetYear = '';
     if(l.targetMonth === undefined) l.targetMonth = '';
+    // Status "sudah dikirim" per jadwal reminder, keyed by kode reminder
+    // (h0, h1, h3, h7, m1..m6, p2, p3, ... p_default).
+    if(!l.sentReminders) l.sentReminders = {};
   });
 }
 async function saveLeadsList(){
@@ -2110,6 +2113,7 @@ function buildLeadReminderItems(lead){
       while(cursor && cursor <= lead.pameranEndDate && guard < 14){
         const isLast = cursor === lead.pameranEndDate;
         items.push({
+          key: `p${dayNum}`,
           title: isLast ? '🎪 Follow Up Hari Terakhir Pameran' : `🎪 Follow Up Hari ke-${dayNum} Pameran`,
           date: cursor,
           message: buildLeadPameranMessage(lead, dayNum, isLast),
@@ -2121,26 +2125,27 @@ function buildLeadReminderItems(lead){
     } else {
       // Tanggal terakhir pameran belum diisi — tetap kasih 1 reminder default
       // biar admin keingetan buat lengkapi tanggalnya di form edit.
-      items.push({ title:'🎪 Follow Up Selama Pameran (isi Tanggal Terakhir Pameran di form edit biar jadwalnya lengkap)', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead, 2, false) });
+      items.push({ key:'p_default', title:'🎪 Follow Up Selama Pameran (isi Tanggal Terakhir Pameran di form edit biar jadwalnya lengkap)', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead, 2, false) });
     }
   }
   // Pesan perkenalan dikirim di tanggal leads pertama kali disimpan (base),
   // terpisah dari nurtureBase — perkenalan tetap di hari kontak masuk walau
   // leads-nya dari pameran dan H+1/H+3/dst baru mulai setelah pameran selesai.
-  items.push({ title:'👋 Follow Up Perkenalan', date: base, message: buildLeadNurtureMessage(lead, 'h0') });
+  items.push({ key:'h0', title:'👋 Follow Up Perkenalan', date: base, message: buildLeadNurtureMessage(lead, 'h0') });
   [
     ['h1','H+1'], ['h3','H+3'], ['h7','H+7'],
     ['m1','H+1 Bulan'], ['m2','H+2 Bulan'], ['m3','H+3 Bulan'],
     ['m4','H+4 Bulan'], ['m5','H+5 Bulan'], ['m6','H+6 Bulan'],
   ].forEach(([key,label])=>{
     const date = key.startsWith('h') ? addDaysIso(nurtureBase, Number(key.slice(1))) : addMonthsIso(nurtureBase, Number(key.slice(1)));
-    items.push({ title:'🔔 Follow Up ' + label, date, message: buildLeadNurtureMessage(lead, key) });
+    items.push({ key, title:'🔔 Follow Up ' + label, date, message: buildLeadNurtureMessage(lead, key) });
   });
   items.forEach(it=>{
     const daysLeft = it.date ? daysUntil(it.date) : 0;
     it.status = reminderStatus(daysLeft);
     it.contact = lead.phone;
     it.recipientLabel = lead.name;
+    it.sent = !!(lead.sentReminders && lead.sentReminders[it.key]);
   });
   return items.filter(it=>it.date).sort((a,b)=> a.date.localeCompare(b.date));
 }
@@ -2163,10 +2168,11 @@ function leadReminderCardHtml(item, idx){
     actionHtml = link ? `<a class="btn small primary" href="${escapeAttr(link)}" target="_blank" rel="noopener">📲 Kirim WA</a>` : `<div class="reminder-warn" style="color:#B5451A;">⚠️ Format nomor tidak valid</div>`;
   }
   return `
-    <div class="reminder-card tone-${item.status.tone}" style="background:#FFF8E9;border:1px solid rgba(122,31,46,.22);border-radius:20px;padding:16px 18px;margin-bottom:12px;">
+    <div class="reminder-card tone-${item.status.tone}" data-idx="${idx}" style="background:#FFF8E9;border:1px solid rgba(122,31,46,.22);border-radius:20px;padding:16px 18px;margin-bottom:12px;${item.sent ? 'opacity:.6;' : ''}">
       <div class="reminder-head">
         <span class="reminder-badge tone-${item.status.tone}">${item.status.badge}</span>
-        <div class="reminder-title" style="color:#3B1015;">${escapeHtml(item.title)} · ${fmtDateShort(item.date)}</div>
+        ${item.sent ? `<span class="reminder-badge" style="background:rgba(46,125,50,.15);color:#2E7D32;">✅ Sudah Dikirim</span>` : ''}
+        <div class="reminder-title" style="color:#3B1015;${item.sent ? 'text-decoration:line-through;' : ''}">${escapeHtml(item.title)} · ${fmtDateShort(item.date)}</div>
       </div>
       <div class="reminder-msg-wrap" style="display:none;">
         <pre class="reminder-msg" style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.6;color:#3B1015;background:rgba(122,31,46,.06);border-radius:12px;padding:12px 14px;margin:0 0 10px;">${escapeHtml(item.message)}</pre>
@@ -2175,6 +2181,7 @@ function leadReminderCardHtml(item, idx){
         <button class="btn small ghost" data-action="toggle-lead-reminder-msg" data-idx="${idx}" style="color:#3B1015;border-color:rgba(122,31,46,.35);">👁️ Lihat Pesan</button>
         ${actionHtml}
         <button class="btn small ghost" data-action="copy-lead-reminder-msg" data-idx="${idx}" style="color:#3B1015;border-color:rgba(122,31,46,.35);">📋 Salin Pesan</button>
+        <button class="btn small ${item.sent ? '' : 'ghost'}" data-action="toggle-lead-reminder-sent" data-idx="${idx}" style="${item.sent ? 'background:#2E7D32;color:#fff;border-color:#2E7D32;' : 'color:#3B1015;border-color:rgba(122,31,46,.35);'}">${item.sent ? '✅ Sudah Dikirim' : '☑️ Tandai Sudah Dikirim'}</button>
       </div>
     </div>
   `;
@@ -2185,6 +2192,7 @@ function showLeadReminders(id){
   const app = document.getElementById('app');
   const items = buildLeadReminderItems(lead);
   window.__leadReminderItems = items;
+  window.__leadReminderLeadId = id;
   const baseDateFmt = fmtDate(lead.leadDate || (lead.createdAt||'').slice(0,10));
   const pameranEndValidForCaption = isPameranSource(lead.source) && lead.pameranEndDate && lead.pameranEndDate > (lead.leadDate || (lead.createdAt||'').slice(0,10));
   const captionExtra = isPameranSource(lead.source)
@@ -2223,6 +2231,54 @@ function showLeadReminders(id){
     });
 
   });
+  document.querySelectorAll('[data-action="toggle-lead-reminder-sent"]').forEach(btn=>{
+    btn.addEventListener('click', ()=> handleToggleLeadReminderSent(Number(btn.dataset.idx)));
+  });
+}
+// Tandai/batal-tandai satu jadwal reminder sebagai "sudah dikirim" — disimpan
+// per leads (bukan per sesi), keyed by item.key (mis. 'h0','h1','p2') biar
+// nempel walau urutan/isi list reminder berubah. Update DOM langsung di
+// tempat (bukan render ulang seluruh layar) biar posisi scroll & pesan yang
+// lagi kebuka nggak ke-reset.
+async function handleToggleLeadReminderSent(idx){
+  const items = window.__leadReminderItems || [];
+  const item = items[idx];
+  const lead = findLeadById(window.__leadReminderLeadId);
+  if(!item || !lead) return;
+  const nextSent = !item.sent;
+  item.sent = nextSent;
+  if(!lead.sentReminders) lead.sentReminders = {};
+  if(nextSent) lead.sentReminders[item.key] = new Date().toISOString();
+  else delete lead.sentReminders[item.key];
+  const card = document.querySelector(`.reminder-card[data-idx="${idx}"]`);
+  if(card){
+    card.style.opacity = nextSent ? '.6' : '';
+    const titleEl = card.querySelector('.reminder-title');
+    if(titleEl) titleEl.style.textDecoration = nextSent ? 'line-through' : '';
+    const head = card.querySelector('.reminder-head');
+    let sentBadge = head ? head.querySelector('.reminder-badge[data-sent-badge]') : null;
+    if(head && nextSent && !sentBadge){
+      sentBadge = document.createElement('span');
+      sentBadge.className = 'reminder-badge';
+      sentBadge.setAttribute('data-sent-badge','1');
+      sentBadge.style.background = 'rgba(46,125,50,.15)';
+      sentBadge.style.color = '#2E7D32';
+      sentBadge.textContent = '✅ Sudah Dikirim';
+      head.insertBefore(sentBadge, head.querySelector('.reminder-title'));
+    } else if(sentBadge && !nextSent){
+      sentBadge.remove();
+    }
+    const btn = card.querySelector('[data-action="toggle-lead-reminder-sent"]');
+    if(btn){
+      btn.textContent = nextSent ? '✅ Sudah Dikirim' : '☑️ Tandai Sudah Dikirim';
+      btn.classList.toggle('ghost', !nextSent);
+      btn.style.background = nextSent ? '#2E7D32' : '';
+      btn.style.color = nextSent ? '#fff' : '#3B1015';
+      btn.style.borderColor = nextSent ? '#2E7D32' : 'rgba(122,31,46,.35)';
+    }
+  }
+  const ok = await saveLeadsList();
+  if(!ok){ await customAlert('Gagal menyimpan status "sudah dikirim".\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
 }
 
 /* ---------- PROJECTS INDEX ---------- */

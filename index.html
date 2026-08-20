@@ -301,9 +301,19 @@
   .ms-more-btn{display:block;width:100%;box-sizing:border-box;background:rgba(122,31,46,0.05);border:1px dashed var(--card-border);color:var(--pink);font-size:12.5px;font-weight:700;padding:10px 14px;border-radius:12px;cursor:pointer;margin:0 0 10px;font-family:inherit;text-align:center;white-space:normal;line-height:1.35;writing-mode:horizontal-tb;text-orientation:mixed;transform:none;}
   .ms-more-btn:last-child{margin-bottom:0;}
   .ms-more-btn:hover{background:rgba(122,31,46,0.09);}
+  .ms-hidden{display:none !important;}
   .ms-stepper-windowed, .ms-stepper-full{flex-direction:column;align-items:stretch;gap:0;overflow-x:visible;padding:0;}
   @media (min-width:641px){
     .ms-stepper-windowed, .ms-stepper-full{flex-direction:row;align-items:stretch;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;}
+    /* Di layar lebar tombolnya balik ke samping (kiri/kanan baris), bukan di bawah lagi.
+       BEDANYA sama versi lama: lebar box-nya sekarang ikut isi teks (nowrap, tidak dipaksa
+       muat di kotak 92px yang sempit) — itu penyebab teksnya dulu ke-render vertikal/kebalik
+       di sebagian browser Windows. Kalau row-nya kepanjangan, baris peta tinggal di-scroll
+       (sudah overflow-x:auto), bukan teks yang dipaksa wrap sekecil-kecilnya. */
+    .ms-group-windowed, .ms-group-full{display:flex;flex-direction:row;align-items:stretch;gap:10px;}
+    .ms-group-windowed .ms-stepper, .ms-group-full .ms-stepper{flex:1 1 auto;min-width:0;}
+    .ms-more-btn{display:flex;align-items:center;justify-content:center;width:auto;flex:0 0 auto;white-space:nowrap;margin:0;padding:0 18px;order:0;}
+    .ms-more-btn.ms-more-after{order:2;}
   }
 
   .timeline{position:relative;padding-left:26px;}
@@ -5533,6 +5543,12 @@ function renderMilestoneStepper(sorted){
   const hiddenBefore = winStart;
   const hiddenAfter = stages.length - winEnd;
   const needsToggle = hiddenBefore > 0 || hiddenAfter > 0;
+  // Di layar lebar node disusun ke SAMPING (row) jadi panahnya ke kiri/kanan; di HP node
+  // ditumpuk ke BAWAH (column) jadi panahnya ke atas/bawah — samain sama breakpoint CSS
+  // .ms-stepper (max-width:640px berarti masih mode tumpuk/column).
+  const isRow = (typeof window !== 'undefined' && window.innerWidth) >= 641;
+  const arrowBefore = isRow ? '←' : '↑';
+  const arrowAfter = isRow ? '→' : '↓';
 
   const stepHtml = (s,i)=>`
     <div class="ms-step ${s.state}" title="${escapeAttr(s.label)}">
@@ -5557,13 +5573,13 @@ function renderMilestoneStepper(sorted){
       </div>
       ${needsToggle ? `
         <div class="ms-group-windowed">
-          ${hiddenBefore>0 ? `<button type="button" class="ms-more-btn ms-more-before" data-ms-expand="1">↑ ${hiddenBefore} tahap sebelumnya</button>` : ''}
+          ${hiddenBefore>0 ? `<button type="button" class="ms-more-btn ms-more-before" data-ms-expand="1">${arrowBefore} ${hiddenBefore} tahap sebelumnya</button>` : ''}
           <div class="ms-stepper ms-stepper-windowed">${windowedList}</div>
-          ${hiddenAfter>0 ? `<button type="button" class="ms-more-btn ms-more-after" data-ms-expand="1">↓ ${hiddenAfter} tahap berikutnya</button>` : ''}
+          ${hiddenAfter>0 ? `<button type="button" class="ms-more-btn ms-more-after" data-ms-expand="1">${arrowAfter} ${hiddenAfter} tahap berikutnya</button>` : ''}
         </div>
-        <div class="ms-group-full" style="display:none;">
+        <div class="ms-group-full ms-hidden">
           <div class="ms-stepper ms-stepper-full">${fullList}</div>
-          <button type="button" class="ms-more-btn" data-ms-collapse="1">↑ Ringkas tampilan</button>
+          <button type="button" class="ms-more-btn" data-ms-collapse="1">${isRow ? '←' : '↑'} Ringkas tampilan</button>
         </div>
       ` : `
         <div class="ms-stepper">${fullList}</div>
@@ -6350,16 +6366,16 @@ function attachHandlers(){
       if(!card) return;
       const windowed = card.querySelector('.ms-group-windowed');
       const full = card.querySelector('.ms-group-full');
-      if(windowed) windowed.style.display = 'none';
-      if(full) full.style.display = 'block';
+      if(windowed) windowed.classList.add('ms-hidden');
+      if(full) full.classList.remove('ms-hidden');
     }));
     document.querySelectorAll('[data-ms-collapse]').forEach(btn=> btn.addEventListener('click', ()=>{
       const card = btn.closest('.ms-card');
       if(!card) return;
       const windowed = card.querySelector('.ms-group-windowed');
       const full = card.querySelector('.ms-group-full');
-      if(full) full.style.display = 'none';
-      if(windowed) windowed.style.display = 'block';
+      if(full) full.classList.add('ms-hidden');
+      if(windowed) windowed.classList.remove('ms-hidden');
       card.scrollIntoView({block:'start', behavior:'smooth'});
     }));
 

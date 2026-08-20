@@ -292,12 +292,16 @@
     .ms-step.done:not(:last-child):after{background:var(--gold);}
     .ms-label{white-space:normal;overflow:visible;text-overflow:clip;max-width:none;}
   }
-  .ms-more-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(122,31,46,0.05);border:1px dashed var(--card-border);color:var(--pink);font-size:12px;font-weight:700;padding:9px 10px;border-radius:12px;cursor:pointer;margin:2px 0 10px;font-family:inherit;}
+  .ms-more-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(122,31,46,0.05);border:1px dashed var(--card-border);color:var(--pink);font-size:12px;font-weight:700;padding:9px 10px;border-radius:12px;cursor:pointer;margin:2px 0 10px;font-family:inherit;writing-mode:horizontal-tb;text-orientation:mixed;transform:none;}
   .ms-more-btn:hover{background:rgba(122,31,46,0.09);}
   .ms-stepper-windowed, .ms-stepper-full{flex-direction:column;align-items:stretch;gap:0;overflow-x:visible;padding:0;}
   @media (min-width:641px){
     .ms-stepper-windowed, .ms-stepper-full{flex-direction:row;align-items:stretch;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;}
-    .ms-more-btn{width:auto;flex:0 0 92px;margin:0;padding:6px 6px;white-space:normal;line-height:1.25;text-align:center;}
+    /* Dulu flex:0 0 92px + padding sempit bikin box ini kekecilan buat teks "X tahap
+       sebelumnya/berikutnya" — di sebagian browser Windows teks jadi ke-wrap parah &
+       kelihatan kebalik/vertikal. Sekarang dikasih ruang & baris lebih lega, dan
+       tinggi disamain sama node lain (ms-dot 28px + label) biar rapi sejajar. */
+    .ms-more-btn{width:auto;flex:0 0 116px;min-width:116px;height:100%;min-height:74px;margin:0;padding:8px 10px;white-space:normal;word-break:keep-all;overflow-wrap:normal;line-height:1.3;text-align:center;flex-wrap:wrap;}
   }
 
   .timeline{position:relative;padding-left:26px;}
@@ -2412,14 +2416,20 @@ function buildLeadNurtureMessage(lead, stageKey){
   const dateLabel = leadTargetDateLabel(lead);
   const dateLine = dateLabel ? `\n📅 Rencana Acara: ${dateLabel}` : `\n📅 Rencana Acara: belum ditentukan — tidak menjadi kendala, kami dapat memulai dari diskusi konsep dan anggaran terlebih dahulu.`;
   const sig = leadSignatureLine(lead);
+  // Nama marketing yang lagi pegang leads ini, dipakai buat isi otomatis di
+  // kalimat perkenalan ("Perkenalkan, saya ...") biar nggak perlu diedit manual
+  // satu-satu. Kalau leads belum ditugaskan ke marketing manapun, jatuh ke
+  // "Tim ArtaJava Wedding Organizer" biar kalimatnya tetap masuk akal.
+  const picM = lead.picId ? findMarketingById(lead.picId) : null;
+  const marketingName = (picM && picM.name) ? picM.name : 'Tim ArtaJava Wedding Organizer';
   switch(stageKey){
-    case 'h0': return `Yth. Bapak/Ibu ${name},\n\nPerkenalkan, saya [Nama Marketing] dari ArtaJava Wedding Organizer. Terima kasih atas ketertarikan Bapak/Ibu untuk mengenal lebih jauh layanan kami terkait rencana pernikahan yang akan diselenggarakan. Kami dengan senang hati siap membantu, baik untuk sekadar berdiskusi dan bertanya-tanya, maupun mendampingi proses persiapan secara penuh — mulai dari pemilihan konsep, penyusunan anggaran, hingga pelaksanaan hari bahagia tersebut.\n\nApabila ada pertanyaan mengenai paket layanan kami, jangan ragu untuk menghubungi saya kapan saja.${dateLine}\n\n${sig}`;
+    case 'h0': return `Yth. Bapak/Ibu ${name},\n\nPerkenalkan, saya ${marketingName} dari ArtaJava Wedding Organizer. Terima kasih atas ketertarikan Bapak/Ibu untuk mengenal lebih jauh layanan kami terkait rencana pernikahan yang akan diselenggarakan. Kami dengan senang hati siap membantu, baik untuk sekadar berdiskusi dan bertanya-tanya, maupun mendampingi proses persiapan secara penuh — mulai dari pemilihan konsep, penyusunan anggaran, hingga pelaksanaan hari bahagia tersebut.\n\nApabila ada pertanyaan mengenai paket layanan kami, jangan ragu untuk menghubungi saya kapan saja.${dateLine}\n\n${sig}`;
     case 'h1': return `Yth. Bapak/Ibu ${name},\n\nTerima kasih atas komunikasi yang telah terjalin dengan ArtaJava Wedding Organizer. Kami berharap informasi yang telah kami sampaikan dapat menjadi bahan pertimbangan yang bermanfaat. Apabila masih terdapat hal yang perlu didiskusikan lebih lanjut mengenai paket maupun harga, kami siap membantu.${dateLine}\n\n${sig}`;
     case 'h3': return `Yth. Bapak/Ibu ${name},\n\nKami ingin menanyakan kabar mengenai rencana pernikahan Bapak/Ibu — apakah sudah sempat didiskusikan bersama pasangan. Apabila ada pertanyaan seputar paket, konsep, atau anggaran yang masih perlu didiskusikan, kami siap membantu kapan pun dibutuhkan.${dateLine}\n\n${sig}`;
     case 'h7': return `Yth. Bapak/Ibu ${name},\n\nTidak terasa telah satu minggu sejak komunikasi pertama kita. Apabila Bapak/Ibu masih dalam proses mempertimbangkan beberapa vendor, kami dengan senang hati menawarkan sesi konsultasi agar dapat membahas konsep dan anggaran secara lebih mendalam.${dateLine}\n\n${sig}`;
-    case 'm1': return `Yth. Bapak/Ibu ${name},\n\nTelah satu bulan sejak komunikasi pertama kita. Kami ingin menginformasikan bahwa terdapat promo dan paket terbaru bulan ini yang mungkin sesuai dengan kebutuhan Bapak/Ibu. Apabila berkenan, kami akan segera mengirimkan detail lengkapnya.${dateLine}\n\n${sig}`;
-    case 'm2': return `Yth. Bapak/Ibu ${name},\n\nKami ingin menanyakan kembali perkembangan rencana pernikahan Bapak/Ibu. Apabila telah menentukan pilihan pada vendor lain, kami tetap mengucapkan terima kasih atas waktunya. Namun apabila masih terbuka kemungkinan untuk melanjutkan diskusi, kami dengan senang hati akan membantu.${dateLine}\n\n${sig}`;
-    case 'm3': return `Yth. Bapak/Ibu ${name},\n\nKami baru saja menyelesaikan beberapa acara dengan konsep yang mungkin sesuai dengan preferensi Bapak/Ibu. Apabila berkenan, kami dapat membagikan portofolio serta testimoni klien terbaru sebagai bahan inspirasi.${dateLine}\n\n${sig}`;
+    case 'm1': return `Yth. Bapak/Ibu ${name},\n\nTelah satu bulan sejak komunikasi pertama kita. Kami ingin menanyakan kembali sejauh mana perkembangan rencana pernikahan Bapak/Ibu, serta apakah masih ada hal yang perlu didiskusikan lebih lanjut mengenai paket maupun konsep. Kami dengan senang hati siap membantu kapan pun dibutuhkan.${dateLine}\n\n${sig}`;
+    case 'm2': return `Yth. Bapak/Ibu ${name},\n\nSudah dua bulan sejak komunikasi terakhir kita mengenai rencana pernikahan Bapak/Ibu. Kami ingin menanyakan kembali apakah masih ada hal yang perlu didiskusikan seputar konsep, paket, maupun anggaran. Apabila ada pertimbangan atau kendala tertentu, kami dengan senang hati akan membantu mencari solusinya bersama.${dateLine}\n\n${sig}`;
+    case 'm3': return `Yth. Bapak/Ibu ${name},\n\nKami ingin menawarkan sesi konsultasi lanjutan untuk membahas kembali rencana pernikahan Bapak/Ibu, termasuk pilihan konsep dan estimasi anggaran yang paling sesuai. Apabila berkenan, kami dapat menyesuaikan waktu diskusi sesuai kenyamanan Bapak/Ibu.${dateLine}\n\n${sig}`;
     case 'm4': return `Yth. Bapak/Ibu ${name},\n\nTidak terasa sudah empat bulan sejak awal komunikasi kita. Kami ingin mengingatkan bahwa tanggal-tanggal populer biasanya cepat dipesan, jadi apabila Bapak/Ibu sudah memiliki gambaran tanggal pernikahan, akan lebih baik jika mulai dipertimbangkan untuk segera diamankan. Kami siap membantu prosesnya kapan pun dibutuhkan.${dateLine}\n\n${sig}`;
     case 'm5': return `Yth. Bapak/Ibu ${name},\n\nKami ingin menanyakan kembali sejauh mana persiapan pernikahan Bapak/Ibu saat ini. Apabila masih ada yang perlu didiskusikan seputar konsep, vendor, maupun anggaran, kami dengan senang hati siap membantu kapan pun dibutuhkan.${dateLine}\n\n${sig}`;
     case 'm6': return `Yth. Bapak/Ibu ${name},\n\nTelah enam bulan sejak komunikasi pertama kita. Kami tetap dengan senang hati membantu apabila rencana pernikahan Bapak/Ibu masih berjalan. Apabila telah melanjutkan kerja sama dengan vendor lain, mohon kabarkan kepada kami agar tidak lagi mengirimkan pesan lanjutan.${dateLine}\n\n${sig}`;
@@ -5491,6 +5501,17 @@ function computeMilestoneStages(sorted){
   });
 }
 
+// Ukuran window peta progres disesuaikan lebar layar, supaya di layar lebar (desktop/tablet)
+// petanya keisi penuh (bukan cuma segelintir node + banyak ruang kosong di kanan), sementara
+// di HP tetap ringkas kayak semula. Dipanggil ulang tiap render() jadi otomatis ngikut resize.
+function getMilestoneWindowSize(){
+  const w = (typeof window !== 'undefined' && window.innerWidth) || 375;
+  if(w >= 1400) return { before:6, after:11 };
+  if(w >= 1024) return { before:5, after:8 };
+  if(w >= 640)  return { before:3, after:5 };
+  return { before:2, after:3 };
+}
+
 function renderMilestoneStepper(sorted){
   if(!sorted.length) return '';
   const stages = computeMilestoneStages(sorted);
@@ -5500,9 +5521,10 @@ function renderMilestoneStepper(sorted){
   const stageIdx = stages.findIndex(s=>s.state==='current');
   const displayStage = stageIdx===-1 ? stages.length : stageIdx+1;
 
-  // Window di sekitar current: 2 step done sebelumnya + current + 3 upcoming berikutnya.
-  // Kalau total step tidak lebih banyak dari window, tampilkan semua saja (toggle tidak muncul).
-  const WINDOW_BEFORE = 2, WINDOW_AFTER = 3;
+  // Window di sekitar current: sejumlah step sebelumnya + current + sejumlah step berikutnya,
+  // besarnya mengikuti lebar layar (lihat getMilestoneWindowSize). Kalau total step tidak lebih
+  // banyak dari window, tampilkan semua saja (toggle tidak muncul).
+  const { before: WINDOW_BEFORE, after: WINDOW_AFTER } = getMilestoneWindowSize();
   const anchorIdx = stageIdx===-1 ? stages.length-1 : stageIdx;
   const winStart = Math.max(0, anchorIdx - WINDOW_BEFORE);
   const winEnd = Math.min(stages.length, anchorIdx + WINDOW_AFTER + 1);
@@ -6857,6 +6879,23 @@ function attachHandlers(){
 
 (async function init(){
   await initRoleFlow();
+})();
+
+// Re-render peta progres kalau lebar layar pindah "tingkatan" (lihat getMilestoneWindowSize),
+// misalnya window di-maximize/restore atau device diputar, supaya jumlah node yang tampil
+// selalu pas sama ruang yang tersedia (tidak nyisain kolom kosong).
+(function(){
+  let lastTier = null;
+  function tierOf(w){ return w>=1400 ? 3 : w>=1024 ? 2 : w>=640 ? 1 : 0; }
+  lastTier = tierOf(window.innerWidth);
+  let resizeTimer = null;
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){
+      const t = tierOf(window.innerWidth);
+      if(t !== lastTier){ lastTier = t; if(typeof render==='function') render(); }
+    }, 180);
+  });
 })();
 
 /* ===== Gate background slideshow (auto-fade, dark overlay) ===== */

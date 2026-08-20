@@ -292,6 +292,13 @@
     .ms-step.done:not(:last-child):after{background:var(--gold);}
     .ms-label{white-space:normal;overflow:visible;text-overflow:clip;max-width:none;}
   }
+  .ms-more-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(122,31,46,0.05);border:1px dashed var(--card-border);color:var(--pink);font-size:12px;font-weight:700;padding:9px 10px;border-radius:12px;cursor:pointer;margin:2px 0 10px;font-family:inherit;}
+  .ms-more-btn:hover{background:rgba(122,31,46,0.09);}
+  .ms-stepper-windowed, .ms-stepper-full{flex-direction:column;align-items:stretch;gap:0;overflow-x:visible;padding:0;}
+  @media (min-width:641px){
+    .ms-stepper-windowed, .ms-stepper-full{flex-direction:row;align-items:flex-start;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;}
+    .ms-more-btn{width:auto;flex:0 0 92px;height:28px;margin:0;writing-mode:vertical-rl;text-orientation:mixed;padding:6px 4px;}
+  }
 
   .timeline{position:relative;padding-left:26px;}
   .timeline:before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--gold);opacity:.35;}
@@ -5492,25 +5499,51 @@ function renderMilestoneStepper(sorted){
   const total = sorted.length;
   const stageIdx = stages.findIndex(s=>s.state==='current');
   const displayStage = stageIdx===-1 ? stages.length : stageIdx+1;
+
+  // Window di sekitar current: 2 step done sebelumnya + current + 3 upcoming berikutnya.
+  // Kalau total step tidak lebih banyak dari window, tampilkan semua saja (toggle tidak muncul).
+  const WINDOW_BEFORE = 2, WINDOW_AFTER = 3;
+  const anchorIdx = stageIdx===-1 ? stages.length-1 : stageIdx;
+  const winStart = Math.max(0, anchorIdx - WINDOW_BEFORE);
+  const winEnd = Math.min(stages.length, anchorIdx + WINDOW_AFTER + 1);
+  const hiddenBefore = winStart;
+  const hiddenAfter = stages.length - winEnd;
+  const needsToggle = hiddenBefore > 0 || hiddenAfter > 0;
+
+  const stepHtml = (s,i)=>`
+    <div class="ms-step ${s.state}" title="${escapeAttr(s.label)}">
+      <div class="ms-line"></div>
+      <div class="ms-dot">${s.state==='done' ? '✓' : (i+1)}</div>
+      <div class="ms-step-text">
+        <div class="ms-cat-mini">${escapeHtml(s.cat)}</div>
+        <div class="ms-label">${escapeHtml(s.label)}</div>
+        <div class="ms-date">${fmtDateShort(s.date)}</div>
+      </div>
+    </div>
+  `;
+
+  const fullList = stages.map((s,i)=>stepHtml(s,i)).join('');
+  const windowedList = stages.slice(winStart, winEnd).map((s,i)=>stepHtml(s, winStart+i)).join('');
+
   return `
     <div class="ms-card">
       <div class="ms-head">
         <h3>🗺️ Peta Progres Persiapan</h3>
         <span class="ms-pill">Tahap ${displayStage} dari ${stages.length} · ${doneCount}/${total} agenda selesai</span>
       </div>
-      <div class="ms-stepper">
-        ${stages.map((s,i)=>`
-          <div class="ms-step ${s.state}" title="${escapeAttr(s.label)}">
-            <div class="ms-line"></div>
-            <div class="ms-dot">${s.state==='done' ? '✓' : (i+1)}</div>
-            <div class="ms-step-text">
-              <div class="ms-cat-mini">${escapeHtml(s.cat)}</div>
-              <div class="ms-label">${escapeHtml(s.label)}</div>
-              <div class="ms-date">${fmtDateShort(s.date)}</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
+      ${needsToggle ? `
+        <div class="ms-stepper ms-stepper-windowed">
+          ${hiddenBefore>0 ? `<button type="button" class="ms-more-btn ms-more-before" data-ms-expand="1">↑ ${hiddenBefore} tahap sebelumnya</button>` : ''}
+          ${windowedList}
+          ${hiddenAfter>0 ? `<button type="button" class="ms-more-btn ms-more-after" data-ms-expand="1">↓ ${hiddenAfter} tahap berikutnya</button>` : ''}
+        </div>
+        <div class="ms-stepper ms-stepper-full" style="display:none;">
+          ${fullList}
+          <button type="button" class="ms-more-btn" data-ms-collapse="1">↑ Ringkas tampilan</button>
+        </div>
+      ` : `
+        <div class="ms-stepper">${fullList}</div>
+      `}
       ${current ? `<div class="ms-note"><span>📍</span><div><b>Kamu ada di sini:</b> ${escapeHtml(current.label)} — target sekitar ${fmtDate(current.date)}.</div></div>` : `<div class="ms-note"><span>🎉</span><div><b>Semua tahap selesai!</b> Persiapan sudah lengkap.</div></div>`}
     </div>
   `;
@@ -6287,6 +6320,24 @@ function attachHandlers(){
     if(akadLocationInput) akadLocationInput.addEventListener('input', e=>{ state.couple.akadLocation = e.target.value; scheduleSave(); });
     const weddingTimeInput = document.getElementById('weddingTimeInput');
     if(weddingTimeInput) weddingTimeInput.addEventListener('change', e=>{ state.couple.weddingTime = e.target.value; scheduleSave(); render(); });
+
+    document.querySelectorAll('[data-ms-expand]').forEach(btn=> btn.addEventListener('click', ()=>{
+      const card = btn.closest('.ms-card');
+      if(!card) return;
+      const windowed = card.querySelector('.ms-stepper-windowed');
+      const full = card.querySelector('.ms-stepper-full');
+      if(windowed) windowed.style.display = 'none';
+      if(full) full.style.display = 'flex';
+    }));
+    document.querySelectorAll('[data-ms-collapse]').forEach(btn=> btn.addEventListener('click', ()=>{
+      const card = btn.closest('.ms-card');
+      if(!card) return;
+      const windowed = card.querySelector('.ms-stepper-windowed');
+      const full = card.querySelector('.ms-stepper-full');
+      if(full) full.style.display = 'none';
+      if(windowed) windowed.style.display = 'flex';
+      card.scrollIntoView({block:'start', behavior:'smooth'});
+    }));
 
     const resetTimelineDefault = document.getElementById('resetTimelineDefault');
     if(resetTimelineDefault) resetTimelineDefault.addEventListener('click', async ()=>{

@@ -276,6 +276,12 @@
   .leads-group-title{font-family:'Fraunces',serif;font-weight:700;font-size:15.5px;color:var(--pink);}
   .leads-group-count{background:rgba(122,31,46,0.08);border-radius:100px;padding:2px 10px;font-size:11.5px;color:var(--gold-deep);font-weight:700;}
   .leads-group-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+  .leads-stage-subs{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 14px;scrollbar-width:thin;margin-top:10px;}
+  .leads-stage-subs::-webkit-scrollbar{height:6px;}
+  .leads-stage-subs::-webkit-scrollbar-thumb{background:var(--card-border);border-radius:10px;}
+  .leads-stage-sub{flex:0 0 240px;background:rgba(122,31,46,0.025);border:1px solid var(--card-border);border-radius:14px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;max-height:520px;}
+  .leads-stage-sub-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:var(--gold-deep);text-transform:uppercase;letter-spacing:.04em;padding:0 2px;}
+  .leads-stage-sub .leads-group-body{display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding-right:2px;grid-template-columns:none;}
   @media (max-width:640px){
     .ms-stepper{flex-direction:column;align-items:flex-start;gap:0;overflow-x:visible;padding:0;}
     .ms-step{flex:0 0 auto;display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;padding:0 0 18px;}
@@ -1974,11 +1980,22 @@ function leadSourceGroups(leads){
   return [...pameranGroups, ...knownGroups, ...otherGroups, ...emptyGroup];
 }
 function leadsGroupHtml(group){
+  // Di dalam satu grup sumber, leads dikelompokkan lagi per TAHAP (Kontak Masuk →
+  // Batal/Hilang) — tapi disusun vertikal rapi (bukan kolom scroll horizontal
+  // kayak dulu), dan tahap yang belum ada isinya di grup ini tidak ditampilkan.
+  const byStage = LEAD_STAGES.map(s=>({ stage:s, items: group.items.filter(l=>l.stage===s.key) })).filter(x=>x.items.length);
   return `
     <div class="leads-groups-item">
       <div class="leads-group-head"><span class="leads-group-title">${escapeHtml(group.title)}</span><span class="leads-group-count">${group.items.length}</span></div>
-      <div class="leads-group-body">
-        ${group.items.map(leadCardHtml).join('')}
+      <div class="leads-stage-subs">
+        ${byStage.map(x=>`
+          <div class="leads-stage-sub">
+            <div class="leads-stage-sub-head"><span>${escapeHtml(x.stage.label)}</span><span class="leads-col-count">${x.items.length}</span></div>
+            <div class="leads-group-body">
+              ${x.items.map(leadCardHtml).join('')}
+            </div>
+          </div>
+        `).join('')}
       </div>
     </div>
   `;

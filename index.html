@@ -1858,6 +1858,18 @@ function leadEffectivePameranEndDate(lead){
   }
   return lead.pameranEndDate || '';
 }
+// Sama seperti leadEffectivePameranEndDate, tapi buat tanggal MULAI pameran —
+// cuma ada kalau leads-nya ditautkan ke master data Pameran (lead.pameranId).
+// Leads sumber "Pameran ..." yang manual (free text lama, tanpa pameranId)
+// tidak punya info tanggal mulai, jadi baliknya kosong (nanti fallback ke
+// tanggal leads masuk di buildLeadReminderItems).
+function leadEffectivePameranStartDate(lead){
+  if(lead.pameranId){
+    const p = findPameranById(lead.pameranId);
+    if(p) return p.startDate || '';
+  }
+  return '';
+}
 function leadIsFromPameran(lead){
   return !!lead.pameranId || isPameranSource(lead.source);
 }
@@ -2342,6 +2354,17 @@ function addMonthsIso(iso, months){
   d.setMonth(d.getMonth()+months);
   return isoFromLocalDate(d);
 }
+// Selisih hari antara dua tanggal ISO (b - a), dibulatkan. Dipakai buat nentuin
+// leads masuk itu sebenarnya hari ke berapa dari pameran (bukan cuma dihitung
+// dari tanggal leads masuk sendiri), biar label "Hari ke-N Pameran" match sama
+// jadwal pameran yang sebenarnya walau leads-nya baru masuk di hari ke-2/3.
+function isoDateDiffDays(a, b){
+  if(!a || !b) return null;
+  const da = new Date(a+'T00:00:00');
+  const db = new Date(b+'T00:00:00');
+  if(isNaN(da.getTime()) || isNaN(db.getTime())) return null;
+  return Math.round((db - da) / 86400000);
+}
 // Estimasi tanggal acara sering belum pasti — kadang klien baru tau tahunnya
 // aja, atau bulan+tahun aja. Fungsi ini nampilin kalimat yang sesuai presisi
 // datanya, dipakai di kartu leads & di teks reminder.
@@ -2401,6 +2424,7 @@ function buildLeadReminderItems(lead){
   const isPameran = leadIsFromPameran(lead);
   const pameranEndDate = leadEffectivePameranEndDate(lead);
   const pameranEndValid = isPameran && pameranEndDate && pameranEndDate > base;
+  const pameranStartDate = leadEffectivePameranStartDate(lead);
   // Kalau leads-nya dari pameran dan tanggal terakhir pamerannya udah keisi,
   // reminder H+1/H+3/H+7/bulanan (nurture) dihitung mulai dari SETELAH pameran
   // selesai — bukan dari tanggal leads masuk — soalnya selama pameran masih
@@ -2411,18 +2435,26 @@ function buildLeadReminderItems(lead){
     if(pameranEndValid){
       // Loop dinamis dari H+1 sampai tanggal terakhir pameran — otomatis
       // menyesuaikan berapa pun jumlah hari pamerannya (3 hari, 4 hari, dst).
+      // dayNum dihitung dari tanggal MULAI pameran yang sebenarnya (kalau ada),
+      // BUKAN dari tanggal leads masuk — soalnya leads bisa aja baru masuk di
+      // hari ke-2/3 pameran, bukan cuma hari pertama. Kalau dihitung dari
+      // tanggal leads masuk terus, labelnya ("Hari ke-2 Pameran" dst) jadi
+      // meleset dari jadwal pameran yang asli. Fallback ke cara lama (dari
+      // tanggal leads masuk) cuma buat leads manual yang tidak ditautkan ke
+      // master data Pameran, karena di situ memang tidak ada tanggal mulainya.
       let cursor = addDaysIso(base, 1);
-      let dayNum = 2;
       let guard = 0;
       while(cursor && cursor <= pameranEndDate && guard < 14){
         const isLast = cursor === pameranEndDate;
+        const dayNum = pameranStartDate
+          ? (isoDateDiffDays(pameranStartDate, cursor) + 1)
+          : (isoDateDiffDays(base, cursor) + 1);
         items.push({
           key: `p${dayNum}`,
           title: isLast ? '🎪 Follow Up Hari Terakhir Pameran' : `🎪 Follow Up Hari ke-${dayNum} Pameran`,
           date: cursor,
           message: buildLeadPameranMessage(lead, dayNum, isLast),
         });
-        dayNum++;
         cursor = addDaysIso(cursor, 1);
         guard++;
       }

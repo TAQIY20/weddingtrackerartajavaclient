@@ -292,16 +292,18 @@
     .ms-step.done:not(:last-child):after{background:var(--gold);}
     .ms-label{white-space:normal;overflow:visible;text-overflow:clip;max-width:none;}
   }
-  .ms-more-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;background:rgba(122,31,46,0.05);border:1px dashed var(--card-border);color:var(--pink);font-size:12px;font-weight:700;padding:9px 10px;border-radius:12px;cursor:pointer;margin:2px 0 10px;font-family:inherit;writing-mode:horizontal-tb;text-orientation:mixed;transform:none;}
+  /* PENTING: tombol "X tahap sebelumnya/berikutnya" SENGAJA dibuat block penuh lebar
+     (bukan ikut jadi flex-item di dalam baris .ms-stepper yang sama dengan node-node peta).
+     Sebelumnya tombol ini ditaruh sebagai flex-item sempit (92-116px) di ujung baris flex
+     yang bisa di-scroll horizontal — kombinasi itu yang bikin sebagian browser Windows
+     salah hitung ukuran box-nya dan me-render teksnya vertikal/kebalik. Dengan jadi block
+     mandiri di luar baris flex, browser tidak punya alasan lagi menyempitkan box-nya. */
+  .ms-more-btn{display:block;width:100%;box-sizing:border-box;background:rgba(122,31,46,0.05);border:1px dashed var(--card-border);color:var(--pink);font-size:12.5px;font-weight:700;padding:10px 14px;border-radius:12px;cursor:pointer;margin:0 0 10px;font-family:inherit;text-align:center;white-space:normal;line-height:1.35;writing-mode:horizontal-tb;text-orientation:mixed;transform:none;}
+  .ms-more-btn:last-child{margin-bottom:0;}
   .ms-more-btn:hover{background:rgba(122,31,46,0.09);}
   .ms-stepper-windowed, .ms-stepper-full{flex-direction:column;align-items:stretch;gap:0;overflow-x:visible;padding:0;}
   @media (min-width:641px){
     .ms-stepper-windowed, .ms-stepper-full{flex-direction:row;align-items:stretch;overflow-x:auto;overflow-y:hidden;padding:2px 2px 10px;}
-    /* Dulu flex:0 0 92px + padding sempit bikin box ini kekecilan buat teks "X tahap
-       sebelumnya/berikutnya" — di sebagian browser Windows teks jadi ke-wrap parah &
-       kelihatan kebalik/vertikal. Sekarang dikasih ruang & baris lebih lega, dan
-       tinggi disamain sama node lain (ms-dot 28px + label) biar rapi sejajar. */
-    .ms-more-btn{width:auto;flex:0 0 116px;min-width:116px;height:100%;min-height:74px;margin:0;padding:8px 10px;white-space:normal;word-break:keep-all;overflow-wrap:normal;line-height:1.3;text-align:center;flex-wrap:wrap;}
   }
 
   .timeline{position:relative;padding-left:26px;}
@@ -5554,13 +5556,13 @@ function renderMilestoneStepper(sorted){
         <span class="ms-pill">Tahap ${displayStage} dari ${stages.length} · ${doneCount}/${total} agenda selesai</span>
       </div>
       ${needsToggle ? `
-        <div class="ms-stepper ms-stepper-windowed">
+        <div class="ms-group-windowed">
           ${hiddenBefore>0 ? `<button type="button" class="ms-more-btn ms-more-before" data-ms-expand="1">↑ ${hiddenBefore} tahap sebelumnya</button>` : ''}
-          ${windowedList}
+          <div class="ms-stepper ms-stepper-windowed">${windowedList}</div>
           ${hiddenAfter>0 ? `<button type="button" class="ms-more-btn ms-more-after" data-ms-expand="1">↓ ${hiddenAfter} tahap berikutnya</button>` : ''}
         </div>
-        <div class="ms-stepper ms-stepper-full" style="display:none;">
-          ${fullList}
+        <div class="ms-group-full" style="display:none;">
+          <div class="ms-stepper ms-stepper-full">${fullList}</div>
           <button type="button" class="ms-more-btn" data-ms-collapse="1">↑ Ringkas tampilan</button>
         </div>
       ` : `
@@ -6346,18 +6348,18 @@ function attachHandlers(){
     document.querySelectorAll('[data-ms-expand]').forEach(btn=> btn.addEventListener('click', ()=>{
       const card = btn.closest('.ms-card');
       if(!card) return;
-      const windowed = card.querySelector('.ms-stepper-windowed');
-      const full = card.querySelector('.ms-stepper-full');
+      const windowed = card.querySelector('.ms-group-windowed');
+      const full = card.querySelector('.ms-group-full');
       if(windowed) windowed.style.display = 'none';
-      if(full) full.style.display = 'flex';
+      if(full) full.style.display = 'block';
     }));
     document.querySelectorAll('[data-ms-collapse]').forEach(btn=> btn.addEventListener('click', ()=>{
       const card = btn.closest('.ms-card');
       if(!card) return;
-      const windowed = card.querySelector('.ms-stepper-windowed');
-      const full = card.querySelector('.ms-stepper-full');
+      const windowed = card.querySelector('.ms-group-windowed');
+      const full = card.querySelector('.ms-group-full');
       if(full) full.style.display = 'none';
-      if(windowed) windowed.style.display = 'flex';
+      if(windowed) windowed.style.display = 'block';
       card.scrollIntoView({block:'start', behavior:'smooth'});
     }));
 

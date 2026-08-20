@@ -903,6 +903,8 @@ let vendorSchedule = [];       // jadwal lintas project: [{vendorAccountId,proje
 let viewingDashboard = false;  // showing the multi-project dashboard
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let leadsPicFilter = '';       // filter board Leads (Calon Klien) by nama marketing (PIC) — hanya dipakai admin
+let leadsBoardContext = null;  // null = board leads utama di dashboard (leads pameran disembunyikan dari sini);
+                                // kalau berisi id pameran, berarti sedang buka layar "Leads Pameran Ini" (showPameranLeadsDetail)
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
 let leadsList = [];            // CRM calon klien: [{id,name,phone,source,budget,targetDate,notes,stage,picId,lostReason,createdAt,convertedProjectId}]
@@ -1881,8 +1883,18 @@ function leadCardHtml(l){
     </div>
   `;
 }
-function renderLeadsBoard(){
-  let myLeads = myVisibleLeads();
+// opts.pameranId (opsional) → kalau diisi, board ini HANYA menampilkan leads yang
+// ditautkan ke pameran tsb (dipakai layar detail "Leads Pameran"). Kalau kosong,
+// ini board utama dashboard admin/marketing, dan leads yang sudah ditautkan ke
+// pameran resmi DISEMBUNYIKAN dari sini (biar tidak numpuk) — lihat leads pameran
+// lewat "🎪 Kelola Pameran" → klik pamerannya.
+function renderLeadsBoard(opts){
+  opts = opts || {};
+  const filterPameranId = opts.pameranId || null;
+  const baseLeads = filterPameranId
+    ? leadsList.filter(l => l.pameranId === filterPameranId)
+    : myVisibleLeads().filter(l => !l.pameranId);
+  let myLeads = [...baseLeads].sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
   // Filter per marketing cuma relevan buat admin — marketing sendiri udah otomatis
   // cuma lihat leads miliknya lewat myVisibleLeads().
   const showPicFilter = isAdmin && marketingList.length>0;
@@ -1892,9 +1904,9 @@ function renderLeadsBoard(){
       : myLeads.filter(l=>l.picId===leadsPicFilter);
   }
   return `
-    <div class="extra-vendor-head"><h2>Leads (Calon Klien)</h2>
+    <div class="extra-vendor-head"><h2>${filterPameranId ? 'Leads Pameran Ini' : 'Leads (Calon Klien)'}</h2>
       <div style="display:flex;gap:8px;">
-        ${isAdmin ? `<button class="btn small" id="managePameranBtn">🎪 Kelola Pameran</button>` : ''}
+        ${(!filterPameranId && isAdmin) ? `<button class="btn small" id="managePameranBtn">🎪 Kelola Pameran</button>` : ''}
         <button class="btn primary small" id="newLeadBtn">+ Leads Baru</button>
       </div>
     </div>
@@ -1903,8 +1915,8 @@ function renderLeadsBoard(){
       <span class="lp-label">Filter Marketing</span>
       <select class="btn small" id="leadsPicFilterSelect" style="flex:1;min-width:180px;">
         <option value="">Semua Marketing</option>
-        ${marketingList.map(m=>`<option value="${m.id}" ${leadsPicFilter===m.id?'selected':''}>${escapeHtml(m.name)} (${leadsList.filter(l=>l.picId===m.id).length})</option>`).join('')}
-        <option value="__unassigned__" ${leadsPicFilter==='__unassigned__'?'selected':''}>Belum ditugaskan (${leadsList.filter(l=>!l.picId).length})</option>
+        ${marketingList.map(m=>`<option value="${m.id}" ${leadsPicFilter===m.id?'selected':''}>${escapeHtml(m.name)} (${baseLeads.filter(l=>l.picId===m.id).length})</option>`).join('')}
+        <option value="__unassigned__" ${leadsPicFilter==='__unassigned__'?'selected':''}>Belum ditugaskan (${baseLeads.filter(l=>!l.picId).length})</option>
       </select>
     </div>
     ` : ''}
@@ -1923,7 +1935,7 @@ function renderLeadsBoard(){
     </div>
   `;
 }
-function showLeadForm(editId){
+function showLeadForm(editId, presetPameranId){
   const editing = editId ? findLeadById(editId) : null;
   const app = document.getElementById('app');
   const showPicSelect = isAdmin && marketingList.length>0;
@@ -1931,9 +1943,12 @@ function showLeadForm(editId){
   const sourceOtherVal = (editing && editing.source && !LEAD_SOURCE_OPTIONS.includes(editing.source)) ? editing.source : '';
   const defaultLeadDate = editing ? (editing.leadDate || (editing.createdAt||'').slice(0,10)) : new Date().toISOString().slice(0,10);
   // Mode sumber leads: 'pameran' kalau leads ini (waktu diedit) sudah ditautkan ke
-  // master data Pameran resmi (pameranId), selain itu default 'biasa' (IG, kantor,
-  // referensi, dll — termasuk leads lama yang masih pakai source string manual).
-  let leadSourceMode = (editing && editing.pameranId) ? 'pameran' : 'biasa';
+  // master data Pameran resmi (pameranId), atau kalau form ini dibuka dari dalam
+  // layar detail sebuah pameran (presetPameranId) — selain itu default 'biasa'
+  // (IG, kantor, referensi, dll — termasuk leads lama yang masih pakai source
+  // string manual).
+  let leadSourceMode = (editing && editing.pameranId) ? 'pameran' : (presetPameranId ? 'pameran' : 'biasa');
+  const effectivePameranId = (editing && editing.pameranId) ? editing.pameranId : (presetPameranId || '');
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
@@ -1964,7 +1979,7 @@ function showLeadForm(editId){
               ${pameranList.length ? `
               <select id="leadPameranSelect" style="padding:12px 14px;border-radius:12px;width:100%;">
                 <option value="">— Pilih Pameran —</option>
-                ${pameranList.map(p=>`<option value="${p.id}" ${editing&&editing.pameranId===p.id?'selected':''}>${escapeHtml(pameranOptionLabel(p))}</option>`).join('')}
+                ${pameranList.map(p=>`<option value="${p.id}" ${effectivePameranId===p.id?'selected':''}>${escapeHtml(pameranOptionLabel(p))}</option>`).join('')}
               </select>
               ` : `<div style="font-size:12.5px;color:rgba(255,255,255,.6);padding:8px 2px;">Belum ada pameran terdaftar. Admin bisa tambah dulu lewat tombol "🎪 Kelola Pameran" di halaman Leads.</div>`}
             </div>
@@ -2038,7 +2053,7 @@ function showLeadForm(editId){
   }
   precisionSel.addEventListener('change', syncDatePrecisionUI);
   syncDatePrecisionUI();
-  document.getElementById('cancelLeadForm').addEventListener('click', ()=> renderProjectDashboard());
+  document.getElementById('cancelLeadForm').addEventListener('click', ()=> refreshLeadsView());
   document.getElementById('saveLeadBtn').addEventListener('click', async ()=>{
     const name = document.getElementById('leadName').value.trim();
     if(!name){ await customAlert('Nama calon klien wajib diisi.'); return; }
@@ -2096,8 +2111,34 @@ function showLeadForm(editId){
       return;
     }
     showToast('Leads tersimpan ✓');
-    renderProjectDashboard();
+    refreshLeadsView();
   });
+}
+// Kembali ke tampilan leads yang sesuai konteks: kalau tadi sedang membuka detail
+// leads satu pameran (leadsBoardContext terisi), kembalikan ke situ lagi supaya
+// posisi tidak "kelempar" balik ke dashboard utama tiap habis edit/pindah tahap.
+function refreshLeadsView(){
+  if(leadsBoardContext) showPameranLeadsDetail(leadsBoardContext);
+  else renderProjectDashboard();
+}
+// Pasang semua event listener tombol/aksi di dalam board leads (dipakai board
+// utama dashboard admin MAUPUN layar detail "Leads Pameran Ini" — biar tidak
+// dobel kode). opts.pameranId diteruskan supaya "+ Leads Baru" otomatis
+// pre-select pameran yang sedang dibuka.
+function wireLeadsBoardEvents(opts){
+  opts = opts || {};
+  const pameranId = opts.pameranId || null;
+  const newLeadBtn = document.getElementById('newLeadBtn');
+  if(newLeadBtn) newLeadBtn.addEventListener('click', ()=> showLeadForm(null, pameranId));
+  const managePameranBtn = document.getElementById('managePameranBtn');
+  if(managePameranBtn) managePameranBtn.addEventListener('click', ()=> showPameranManager());
+  const leadsPicFilterSelect = document.getElementById('leadsPicFilterSelect');
+  if(leadsPicFilterSelect) leadsPicFilterSelect.addEventListener('change', ()=>{ leadsPicFilter = leadsPicFilterSelect.value; refreshLeadsView(); });
+  document.querySelectorAll('[data-action="lead-move"]').forEach(sel=> sel.addEventListener('change', ()=> handleLeadMoveStage(sel.dataset.id, sel.value)));
+  document.querySelectorAll('[data-action="lead-edit"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadForm(btn.dataset.id, pameranId)));
+  document.querySelectorAll('[data-action="lead-delete"]').forEach(btn=> btn.addEventListener('click', ()=> handleLeadDelete(btn.dataset.id)));
+  document.querySelectorAll('[data-action="lead-convert"]').forEach(btn=> btn.addEventListener('click', ()=> showNewProjectForm(btn.dataset.id)));
+  document.querySelectorAll('[data-action="lead-reminder"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadReminders(btn.dataset.id)));
 }
 async function handleLeadMoveStage(id, newStage){
   const lead = findLeadById(id);
@@ -2113,7 +2154,7 @@ async function handleLeadMoveStage(id, newStage){
   const ok = await saveLeadsList();
   hideLoadingOverlay();
   if(!ok){ await customAlert('Gagal menyimpan perubahan tahap.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
-  renderProjectDashboard();
+  refreshLeadsView();
 }
 async function handleLeadDelete(id){
   const lead = findLeadById(id);
@@ -2125,7 +2166,7 @@ async function handleLeadDelete(id){
   const ok = await saveLeadsList();
   hideLoadingOverlay();
   if(!ok){ await customAlert('Gagal menghapus dari storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
-  renderProjectDashboard();
+  refreshLeadsView();
 }
 
 /* ---------- REMINDER FOLLOW UP LEADS ----------
@@ -2341,7 +2382,7 @@ function showLeadReminders(id){
       </div>
     </div>
   `;
-  document.getElementById('backFromLeadReminders').addEventListener('click', ()=> renderProjectDashboard());
+  document.getElementById('backFromLeadReminders').addEventListener('click', ()=> refreshLeadsView());
   document.querySelectorAll('[data-action="toggle-lead-reminder-msg"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const card = btn.closest('.reminder-card');
@@ -2413,7 +2454,7 @@ async function handleToggleLeadReminderSent(idx){
 function pameranCardHtml(p){
   const recap = pameranRecap(p.id);
   return `
-    <div class="v-card">
+    <div class="v-card" data-action="view-pameran-leads" data-id="${p.id}" style="cursor:pointer;">
       <div class="v-cat"><div class="catleft"><span class="emoji">🎪</span><span>${escapeHtml(p.name)}</span></div></div>
       <div class="v-field"><label>Tanggal</label><div>${pameranDateRangeLabel(p)}</div></div>
       ${p.location ? `<div class="v-field"><label>Lokasi</label><div>${escapeHtml(p.location)}</div></div>` : ''}
@@ -2422,6 +2463,7 @@ function pameranCardHtml(p){
       <div class="v-field"><label>Per Marketing</label><div style="font-size:12.5px;line-height:1.7;">
         ${recap.breakdown.map(b=> `${escapeHtml(b.name)}: ${b.total} leads (${b.closing} closing)`).join('<br>')}
       </div></div>` : ''}
+      <div style="font-size:12px;color:var(--gold);margin-top:8px;">👥 Klik untuk lihat daftar leads →</div>
       <div class="row-actions" style="margin-top:10px;">
         <button class="btn small" data-action="edit-pameran" data-id="${p.id}">✏️ Edit</button>
         <button class="btn small danger" data-action="delete-pameran" data-id="${p.id}">🗑️ Hapus</button>
@@ -2430,6 +2472,7 @@ function pameranCardHtml(p){
   `;
 }
 function showPameranManager(){
+  leadsBoardContext = null;
   const app = document.getElementById('app');
   const sorted = [...pameranList].sort((a,b)=> (b.startDate||'').localeCompare(a.startDate||''));
   app.innerHTML = `
@@ -2438,15 +2481,21 @@ function showPameranManager(){
       <div class="topbar-right"><button class="btn tiny ghost" id="backFromPameranManager">← Kembali</button></div>
     </div>
     <div class="extra-vendor-head"><h2>🎪 Kelola Pameran</h2><button class="btn primary small" id="newPameranBtn">+ Tambah Pameran</button></div>
-    <p style="font-size:13px;color:rgba(255,255,255,.65);margin:-8px 0 16px;">Buat data pameran resmi di sini supaya leads yang masuk saat pameran bisa dipilih langsung dari dropdown (bukan ketik manual) dan direkap rapi per acara — total leads, closing, conversion rate, dan breakdown per marketing.</p>
+    <p style="font-size:13px;color:rgba(255,255,255,.65);margin:-8px 0 16px;">Buat data pameran resmi di sini supaya leads yang masuk saat pameran bisa dipilih langsung dari dropdown (bukan ketik manual) dan direkap rapi per acara. Klik salah satu pameran di bawah buat lihat daftar leads-nya.</p>
     <div id="pameranListBox" class="vendor-grid">
       ${sorted.length ? sorted.map(pameranCardHtml).join('') : `<div class="empty-mini">Belum ada pameran. Tambahkan dulu supaya leads yang masuk saat pameran bisa direkap rapi per acara.</div>`}
     </div>
   `;
   document.getElementById('backFromPameranManager').addEventListener('click', ()=> renderProjectDashboard());
   document.getElementById('newPameranBtn').addEventListener('click', ()=> showPameranForm());
-  document.querySelectorAll('[data-action="edit-pameran"]').forEach(btn=> btn.addEventListener('click', ()=> showPameranForm(btn.dataset.id)));
-  document.querySelectorAll('[data-action="delete-pameran"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+  document.querySelectorAll('[data-action="view-pameran-leads"]').forEach(card=> card.addEventListener('click', (e)=>{
+    // Jangan buka detail leads kalau yang diklik tombol Edit/Hapus di dalam kartu.
+    if(e.target.closest('[data-action="edit-pameran"]') || e.target.closest('[data-action="delete-pameran"]')) return;
+    showPameranLeadsDetail(card.dataset.id);
+  }));
+  document.querySelectorAll('[data-action="edit-pameran"]').forEach(btn=> btn.addEventListener('click', (e)=>{ e.stopPropagation(); showPameranForm(btn.dataset.id); }));
+  document.querySelectorAll('[data-action="delete-pameran"]').forEach(btn=> btn.addEventListener('click', async (e)=>{
+    e.stopPropagation();
     if(pameranListLoadFailed){
       await customAlert('Daftar pameran gagal dimuat lengkap dari server (koneksi lambat/gagal). Refresh halaman dulu sebelum menghapus.');
       return;
@@ -2466,6 +2515,27 @@ function showPameranManager(){
     showToast('Pameran dihapus ✓');
     showPameranManager();
   }));
+}
+// Layar detail: daftar leads milik SATU pameran saja (dibuka dengan klik kartu
+// pameran di showPameranManager) — supaya leads pameran tidak numpuk campur di
+// board utama dashboard admin, tapi tetap gampang diakses per acara.
+function showPameranLeadsDetail(pameranId){
+  const p = findPameranById(pameranId);
+  if(!p){ showPameranManager(); return; }
+  leadsBoardContext = pameranId;
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+      <div class="topbar-right"><button class="btn tiny ghost" id="backFromPameranLeadsDetail">← Kelola Pameran</button></div>
+    </div>
+    <div class="section-head">
+      <div><h2>🎪 ${escapeHtml(p.name)}</h2><p>${pameranDateRangeLabel(p)}${p.location ? ' · ' + escapeHtml(p.location) : ''}</p></div>
+    </div>
+    ${renderLeadsBoard({ pameranId })}
+  `;
+  document.getElementById('backFromPameranLeadsDetail').addEventListener('click', ()=>{ leadsBoardContext = null; showPameranManager(); });
+  wireLeadsBoardEvents({ pameranId });
 }
 function showPameranForm(editId){
   const editing = editId ? findPameranById(editId) : null;
@@ -4014,6 +4084,7 @@ function marketingCardHtml(m){
 }
 
 function renderProjectDashboard(){
+  leadsBoardContext = null; // balik ke board leads utama (leads pameran disembunyikan dari sini)
   const app = document.getElementById('app');
   const myList = myVisibleProjects();
   app.innerHTML = `
@@ -4084,17 +4155,7 @@ function renderProjectDashboard(){
     ` : ''}
   `;
   document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
-  const newLeadBtn = document.getElementById('newLeadBtn');
-  if(newLeadBtn) newLeadBtn.addEventListener('click', ()=> showLeadForm());
-  const managePameranBtn = document.getElementById('managePameranBtn');
-  if(managePameranBtn) managePameranBtn.addEventListener('click', ()=> showPameranManager());
-  const leadsPicFilterSelect = document.getElementById('leadsPicFilterSelect');
-  if(leadsPicFilterSelect) leadsPicFilterSelect.addEventListener('change', ()=>{ leadsPicFilter = leadsPicFilterSelect.value; renderProjectDashboard(); });
-  document.querySelectorAll('[data-action="lead-move"]').forEach(sel=> sel.addEventListener('change', ()=> handleLeadMoveStage(sel.dataset.id, sel.value)));
-  document.querySelectorAll('[data-action="lead-edit"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadForm(btn.dataset.id)));
-  document.querySelectorAll('[data-action="lead-delete"]').forEach(btn=> btn.addEventListener('click', ()=> handleLeadDelete(btn.dataset.id)));
-  document.querySelectorAll('[data-action="lead-convert"]').forEach(btn=> btn.addEventListener('click', ()=> showNewProjectForm(btn.dataset.id)));
-  document.querySelectorAll('[data-action="lead-reminder"]').forEach(btn=> btn.addEventListener('click', ()=> showLeadReminders(btn.dataset.id)));
+  wireLeadsBoardEvents();
   const gateDemoBtn = document.getElementById('gateDemoBtn');
   if(gateDemoBtn) gateDemoBtn.addEventListener('click', ()=>{ demoEnteredFromAdmin = true; enterDemoMode(); });
   const copyMarketingLinkBtn = document.getElementById('copyMarketingLink');

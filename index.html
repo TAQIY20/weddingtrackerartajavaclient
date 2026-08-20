@@ -1981,9 +1981,9 @@ function leadSourceGroups(leads){
 }
 function leadsGroupHtml(group){
   // Di dalam satu grup sumber, leads dikelompokkan lagi per TAHAP (Kontak Masuk →
-  // Batal/Hilang) — tapi disusun vertikal rapi (bukan kolom scroll horizontal
-  // kayak dulu), dan tahap yang belum ada isinya di grup ini tidak ditampilkan.
-  const byStage = LEAD_STAGES.map(s=>({ stage:s, items: group.items.filter(l=>l.stage===s.key) })).filter(x=>x.items.length);
+  // Batal/Hilang), disusun ke samping seperti board kanban aslinya — semua tahap
+  // ditampilkan (walau kosong) biar kelihatan alur pipeline-nya lengkap.
+  const byStage = LEAD_STAGES.map(s=>({ stage:s, items: group.items.filter(l=>l.stage===s.key) }));
   return `
     <div class="leads-groups-item">
       <div class="leads-group-head"><span class="leads-group-title">${escapeHtml(group.title)}</span><span class="leads-group-count">${group.items.length}</span></div>
@@ -1992,7 +1992,7 @@ function leadsGroupHtml(group){
           <div class="leads-stage-sub">
             <div class="leads-stage-sub-head"><span>${escapeHtml(x.stage.label)}</span><span class="leads-col-count">${x.items.length}</span></div>
             <div class="leads-group-body">
-              ${x.items.map(leadCardHtml).join('')}
+              ${x.items.length ? x.items.map(leadCardHtml).join('') : `<div class="empty-mini" style="font-size:12px;padding:14px 10px;">Belum ada.</div>`}
             </div>
           </div>
         `).join('')}

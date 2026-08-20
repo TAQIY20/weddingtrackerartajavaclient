@@ -271,6 +271,11 @@
   .lead-card-name{font-family:'Fraunces',serif;font-weight:700;font-size:14.5px;margin-bottom:4px;}
   .lead-card-row{font-size:12px;color:var(--cream-dim);margin-bottom:2px;}
   .lead-card-notes{font-size:11.5px;color:var(--cream-dimmer);margin-top:6px;padding-top:6px;border-top:1px dashed var(--card-border);font-style:italic;}
+  .leads-groups{display:flex;flex-direction:column;gap:22px;}
+  .leads-group-head{display:flex;justify-content:space-between;align-items:center;padding:0 2px 4px;border-bottom:1px solid var(--card-border);margin-bottom:2px;}
+  .leads-group-title{font-family:'Fraunces',serif;font-weight:700;font-size:15.5px;color:var(--pink);}
+  .leads-group-count{background:rgba(122,31,46,0.08);border-radius:100px;padding:2px 10px;font-size:11.5px;color:var(--gold-deep);font-weight:700;}
+  .leads-group-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
   @media (max-width:640px){
     .ms-stepper{flex-direction:column;align-items:flex-start;gap:0;overflow-x:visible;padding:0;}
     .ms-step{flex:0 0 auto;display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;padding:0 0 18px;}
@@ -1901,10 +1906,16 @@ function leadPameranRowHtml(l){
   }
   return l.pameranEndDate ? `<div class="lead-card-row">🎪 Pameran s/d: ${fmtDateShort(l.pameranEndDate)}</div>` : '';
 }
+function leadStageBadgeHtml(l){
+  const toneMap = { masuk:'rgba(122,31,46,.08);color:var(--pink)', presentasi:'rgba(184,134,11,.15);color:var(--gold-deep)', negosiasi:'rgba(184,134,11,.15);color:var(--gold-deep)', deal:'rgba(46,125,50,.15);color:#2E7D32', batal:'rgba(0,0,0,.08);color:rgba(0,0,0,.5)' };
+  const tone = toneMap[l.stage] || toneMap.masuk;
+  return `<span style="display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:100px;background:${tone.split(';')[0]};color:${tone.split(';')[1]};margin-bottom:6px;">${escapeHtml(leadStageLabel(l.stage))}</span>`;
+}
 function leadCardHtml(l){
   const canEdit = isAdmin || (currentMarketing && l.picId === currentMarketing.id) || (currentMarketing && !l.picId);
   return `
     <div class="lead-card" data-id="${l.id}">
+      ${leadStageBadgeHtml(l)}
       <div class="lead-card-name">${escapeHtml(l.name)}</div>
       ${l.phone ? `<div class="lead-card-row">📞 ${escapeHtml(l.phone)}</div>` : ''}
       ${l.budget ? `<div class="lead-card-row">💰 ${escapeHtml(l.budget)}</div>` : ''}
@@ -1930,7 +1941,48 @@ function leadCardHtml(l){
     </div>
   `;
 }
-// opts.pameranId (opsional) → kalau diisi, board ini HANYA menampilkan leads yang
+// Kelompokkan leads berdasarkan SUMBER (bukan lagi per tahap/stage) buat tampilan
+// board utama: satu pameran = satu grup (nama pameran dari master data), dan
+// leads sumber biasa (Kantor/IG/Referensi/Lainnya) masing-masing jadi satu grup.
+// Grup yang belum ada leads-nya TIDAK ditampilkan sama sekali (baik grup pameran
+// maupun grup sumber biasa) — biar daftar tidak penuh judul kosong.
+function leadSourceGroups(leads){
+  const pameranMap = new Map();
+  const bySource = new Map();
+  leads.forEach(l=>{
+    if(l.pameranId){
+      if(!pameranMap.has(l.pameranId)) pameranMap.set(l.pameranId, []);
+      pameranMap.get(l.pameranId).push(l);
+    } else {
+      const key = l.source || '';
+      if(!bySource.has(key)) bySource.set(key, []);
+      bySource.get(key).push(l);
+    }
+  });
+  const pameranGroups = [...pameranMap.entries()].map(([pid, items])=>{
+    const p = findPameranById(pid);
+    return { key:'pameran:'+pid, title: p ? ('🎪 ' + p.name) : (items[0].source || '🎪 Pameran'), items, sortKey: p ? (p.startDate||'') : '' };
+  }).sort((a,b)=> b.sortKey.localeCompare(a.sortKey));
+  const sourceIcon = { 'Kantor':'🏢','IG':'📸','Referensi':'🤝','Lainnya':'🔖' };
+  const knownGroups = LEAD_SOURCE_OPTIONS.filter(opt=> bySource.has(opt)).map(opt=>(
+    { key:'source:'+opt, title: (sourceIcon[opt]||'🔎') + ' ' + opt, items: bySource.get(opt) }
+  ));
+  const otherKeys = [...bySource.keys()].filter(k=> k && !LEAD_SOURCE_OPTIONS.includes(k));
+  const otherGroups = otherKeys.map(k=>({ key:'source:'+k, title:'🔎 '+k, items: bySource.get(k) }));
+  const emptyGroup = bySource.has('') ? [{ key:'source:__none__', title:'❔ Sumber Belum Diisi', items: bySource.get('') }] : [];
+  return [...pameranGroups, ...knownGroups, ...otherGroups, ...emptyGroup];
+}
+function leadsGroupHtml(group){
+  return `
+    <div class="leads-groups-item">
+      <div class="leads-group-head"><span class="leads-group-title">${escapeHtml(group.title)}</span><span class="leads-group-count">${group.items.length}</span></div>
+      <div class="leads-group-body">
+        ${group.items.map(leadCardHtml).join('')}
+      </div>
+    </div>
+  `;
+}
+
 // ditautkan ke pameran tsb (dipakai layar detail "Leads Pameran"). Kalau kosong,
 // ini board utama dashboard admin/marketing, dan leads yang sudah ditautkan ke
 // pameran resmi DISEMBUNYIKAN dari sini (biar tidak numpuk) — lihat leads pameran
@@ -1940,7 +1992,7 @@ function renderLeadsBoard(opts){
   const filterPameranId = opts.pameranId || null;
   const baseLeads = filterPameranId
     ? leadsList.filter(l => l.pameranId === filterPameranId)
-    : myVisibleLeads().filter(l => !l.pameranId);
+    : myVisibleLeads();
   let myLeads = [...baseLeads].sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
   // Filter per marketing cuma relevan buat admin — marketing sendiri udah otomatis
   // cuma lihat leads miliknya lewat myVisibleLeads().
@@ -1950,6 +2002,11 @@ function renderLeadsBoard(opts){
       ? myLeads.filter(l=>!l.picId)
       : myLeads.filter(l=>l.picId===leadsPicFilter);
   }
+  // Di layar utama, leads dikelompokkan otomatis per sumber (pameran, kantor, IG,
+  // dll) — grup yang belum ada isinya tidak ditampilkan. Di layar detail satu
+  // pameran (filterPameranId terisi), semua leads-nya sudah pasti satu sumber
+  // yang sama, jadi ditampilkan flat tanpa judul grup.
+  const groups = filterPameranId ? null : leadSourceGroups(myLeads);
   return `
     <div class="extra-vendor-head"><h2>${filterPameranId ? 'Leads Pameran Ini' : 'Leads (Calon Klien)'}</h2>
       <div style="display:flex;gap:8px;">
@@ -1967,19 +2024,15 @@ function renderLeadsBoard(opts){
       </select>
     </div>
     ` : ''}
-    <div class="leads-board">
-      ${LEAD_STAGES.map(s=>{
-        const items = myLeads.filter(l=>l.stage===s.key);
-        return `
-          <div class="leads-col">
-            <div class="leads-col-head"><span>${escapeHtml(s.label)}</span><span class="leads-col-count">${items.length}</span></div>
-            <div class="leads-col-body">
-              ${items.length ? items.map(leadCardHtml).join('') : `<div class="empty-mini" style="font-size:12px;padding:14px 10px;">Belum ada.</div>`}
-            </div>
-          </div>
-        `;
-      }).join('')}
+    ${filterPameranId ? `
+    <div class="leads-group-body">
+      ${myLeads.length ? myLeads.map(leadCardHtml).join('') : `<div class="empty-mini">Belum ada leads.</div>`}
     </div>
+    ` : `
+    <div class="leads-groups">
+      ${groups.length ? groups.map(leadsGroupHtml).join('') : `<div class="empty-mini">Belum ada leads sama sekali. Klik "+ Leads Baru" buat mulai.</div>`}
+    </div>
+    `}
   `;
 }
 function showLeadForm(editId, presetPameranId){

@@ -759,6 +759,7 @@ function lockMarketingModeIfNeeded(){
 
 const PACKAGE_LIST_KEY = 'wedding_package_list_' + APP_VERSION;
 const LEADS_LIST_KEY = 'wedding_leads_list_' + APP_VERSION;
+const PAMERAN_LIST_KEY = 'wedding_pameran_list_' + APP_VERSION;
 const CUSTOM_VENDOR_CATS_KEY = 'wedding_custom_vendor_cats_' + APP_VERSION;
 function projectKey(id){ return 'wedding_project_' + APP_VERSION + '_' + id; }
 
@@ -905,6 +906,7 @@ let leadsPicFilter = '';       // filter board Leads (Calon Klien) by nama marke
 let currentMarketing = null;   // the logged-in marketing account (if role === marketing)
 let packageList = [];          // list of {id, name, note, includedCats:[key,...], catItems:{key:[text,...]}}
 let leadsList = [];            // CRM calon klien: [{id,name,phone,source,budget,targetDate,notes,stage,picId,lostReason,createdAt,convertedProjectId}]
+let pameranList = [];          // master data pameran (admin): [{id,name,location,startDate,endDate,createdAt}] — leads dari pameran resmi ditautkan lewat lead.pameranId, biar rekapnya jelas per acara
 let isDemoMode = false;        // true kalau sedang menampilkan Preview Demo (data dummy, tidak pernah disimpan)
 let demoEnteredFromAdmin = false; // true kalau demo dibuka dari dalam dashboard admin, supaya waktu keluar balik ke situ lagi
 let demoPrevState = null;      // simpan project asli (state) sebelum masuk demo, supaya bisa dikembalikan saat keluar
@@ -1711,6 +1713,64 @@ function findPackageById(id){
   return packageList.find(pk => pk.id === id) || null;
 }
 
+/* ---------- PAMERAN (master data pameran, admin-managed, shared across all projects) ----------
+   Tujuan: admin bisa bikin data pameran resmi (nama, lokasi, tanggal mulai/selesai) satu kali,
+   lalu setiap leads yang masuk saat pameran itu tinggal DIPILIH dari dropdown (bukan ketik
+   manual) lewat lead.pameranId. Dengan begitu rekap per pameran (total leads, closing,
+   conversion rate, breakdown per marketing) bisa dihitung akurat. Marketing tetap bebas bikin
+   leads dengan "Sumber Biasa" (IG, Referensi, kantor, dll) di luar pameran seperti biasa. */
+let pameranListLoadFailed = false; // true kalau pengambilan daftar pameran dari storage gagal sesi ini
+async function loadPameranList(){
+  pameranListLoadFailed = false;
+  try{
+    const res = await storageGetWithRetry(PAMERAN_LIST_KEY, true);
+    pameranList = (res && res.value) ? JSON.parse(res.value) : [];
+  }catch(e){
+    // Sama seperti daftar marketing/paket/leads: jangan kosongkan pameranList yang
+    // sudah ada di memori hanya karena pengambilan ulang gagal.
+    pameranListLoadFailed = true;
+  }
+  if(!Array.isArray(pameranList)) pameranList = [];
+  pameranList.forEach(p=>{
+    if(!p.location) p.location = '';
+    if(!p.startDate) p.startDate = '';
+    if(!p.endDate) p.endDate = '';
+  });
+}
+async function savePameranList(){
+  return await storageSetWithRetry(PAMERAN_LIST_KEY, JSON.stringify(pameranList), true);
+}
+function findPameranById(id){
+  return pameranList.find(p => p.id === id) || null;
+}
+function pameranDateRangeLabel(p){
+  if(!p.startDate) return 'Tanggal belum diisi';
+  if(p.endDate && p.endDate !== p.startDate) return `${fmtDateShort(p.startDate)} – ${fmtDateShort(p.endDate)}`;
+  return fmtDateShort(p.startDate);
+}
+function pameranOptionLabel(p){
+  const range = p.startDate ? pameranDateRangeLabel(p) : '';
+  return range ? `${p.name} (${range})` : p.name;
+}
+// Rekap satu pameran: total leads yang masuk lewat pameran ini, berapa yang sudah
+// closing (stage 'deal'), conversion rate, dan breakdown per marketing (PIC) —
+// ini yang bikin rekapan pameran jelas & terpisah dari leads di luar pameran.
+function pameranRecap(id){
+  const leads = leadsList.filter(l => l.pameranId === id);
+  const total = leads.length;
+  const closing = leads.filter(l => l.stage === 'deal').length;
+  const conversionRate = total ? Math.round((closing/total)*100) : 0;
+  const byMarketing = {};
+  leads.forEach(l=>{
+    const key = l.picId || '__unassigned__';
+    if(!byMarketing[key]) byMarketing[key] = { name: leadPicName(l.picId), total:0, closing:0 };
+    byMarketing[key].total++;
+    if(l.stage === 'deal') byMarketing[key].closing++;
+  });
+  const breakdown = Object.values(byMarketing).sort((a,b)=> b.total - a.total);
+  return { total, closing, conversionRate, breakdown };
+}
+
 /* ---------- LEADS / CRM PIPELINE (calon klien sebelum jadi project, admin+marketing) ---------- */
 const LEAD_STAGES = [
   { key:'masuk',       label:'Kontak Masuk' },
@@ -1745,6 +1805,10 @@ async function loadLeadsList(){
     // tanggal dia dibuat.
     if(!l.leadDate) l.leadDate = (l.createdAt||'').slice(0,10);
     if(!l.pameranEndDate) l.pameranEndDate = '';
+    // Tautan ke master data Pameran (id) — dipakai buat rekap resmi per pameran.
+    // Leads lama (sebelum fitur Kelola Pameran ada) tidak punya ini, tetap
+    // dianggap leads biasa/sumber manual, tidak akan salah masuk rekap.
+    if(l.pameranId === undefined) l.pameranId = null;
     // Estimasi tanggal acara: dukung 3 level presisi (tanggal pasti / bulan+tahun /
     // tahun saja) karena banyak leads yang belum tau tanggal persisnya pas awal
     // kontak. Leads lama yang sudah punya targetDate (tanggal pasti) otomatis
@@ -1774,6 +1838,20 @@ function leadPicName(picId){
   const m = findMarketingById(picId);
   return m ? m.name : 'Belum ditugaskan';
 }
+// Kartu leads: kalau leads-nya ditautkan ke pameran resmi (l.pameranId), tampilkan
+// nama pameran dari master data (bukan cuma tanggal terakhir seperti sebelumnya).
+// Kalau pameran-nya sudah dihapus admin, atau leads lama masih pakai sistem
+// manual (source string + pameranEndDate), tetap fallback ke tampilan lama.
+function leadPameranRowHtml(l){
+  if(l.pameranId){
+    const p = findPameranById(l.pameranId);
+    if(p){
+      const range = p.endDate ? ` (s/d ${fmtDateShort(p.endDate)})` : '';
+      return `<div class="lead-card-row">🎪 ${escapeHtml(p.name)}${range}</div>`;
+    }
+  }
+  return l.pameranEndDate ? `<div class="lead-card-row">🎪 Pameran s/d: ${fmtDateShort(l.pameranEndDate)}</div>` : '';
+}
 function leadCardHtml(l){
   const canEdit = isAdmin || (currentMarketing && l.picId === currentMarketing.id) || (currentMarketing && !l.picId);
   return `
@@ -1784,7 +1862,7 @@ function leadCardHtml(l){
       ${leadTargetDateLabel(l) ? `<div class="lead-card-row">📅 Acara: ${escapeHtml(leadTargetDateLabel(l))}</div>` : ''}
       ${l.source ? `<div class="lead-card-row">🔎 ${escapeHtml(l.source)}</div>` : ''}
       ${l.leadDate ? `<div class="lead-card-row">🗓️ Masuk: ${fmtDateShort(l.leadDate)}</div>` : ''}
-      ${l.pameranEndDate ? `<div class="lead-card-row">🎪 Pameran s/d: ${fmtDateShort(l.pameranEndDate)}</div>` : ''}
+      ${leadPameranRowHtml(l)}
       ${l.notes ? `<div class="lead-card-notes">${escapeHtml(l.notes)}</div>` : ''}
       <div class="lead-card-row" style="opacity:.75;">👤 ${escapeHtml(leadPicName(l.picId))}</div>
       ${(l.stage==='batal' && l.lostReason) ? `<div class="lead-card-notes">❌ ${escapeHtml(l.lostReason)}</div>` : ''}
@@ -1814,7 +1892,12 @@ function renderLeadsBoard(){
       : myLeads.filter(l=>l.picId===leadsPicFilter);
   }
   return `
-    <div class="extra-vendor-head"><h2>Leads (Calon Klien)</h2><button class="btn primary small" id="newLeadBtn">+ Leads Baru</button></div>
+    <div class="extra-vendor-head"><h2>Leads (Calon Klien)</h2>
+      <div style="display:flex;gap:8px;">
+        ${isAdmin ? `<button class="btn small" id="managePameranBtn">🎪 Kelola Pameran</button>` : ''}
+        <button class="btn primary small" id="newLeadBtn">+ Leads Baru</button>
+      </div>
+    </div>
     ${showPicFilter ? `
     <div class="lp-row" style="margin-bottom:12px;">
       <span class="lp-label">Filter Marketing</span>
@@ -1847,6 +1930,10 @@ function showLeadForm(editId){
   const knownSource = editing && LEAD_SOURCE_OPTIONS.includes(editing.source) ? editing.source : (editing && editing.source ? 'Lainnya' : '');
   const sourceOtherVal = (editing && editing.source && !LEAD_SOURCE_OPTIONS.includes(editing.source)) ? editing.source : '';
   const defaultLeadDate = editing ? (editing.leadDate || (editing.createdAt||'').slice(0,10)) : new Date().toISOString().slice(0,10);
+  // Mode sumber leads: 'pameran' kalau leads ini (waktu diedit) sudah ditautkan ke
+  // master data Pameran resmi (pameranId), selain itu default 'biasa' (IG, kantor,
+  // referensi, dll — termasuk leads lama yang masih pakai source string manual).
+  let leadSourceMode = (editing && editing.pameranId) ? 'pameran' : 'biasa';
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
@@ -1858,19 +1945,33 @@ function showLeadForm(editId){
           <input id="leadPhone" placeholder="Nomor WhatsApp" value="${editing?escapeHtml(editing.phone||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <div>
             <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Sumber Leads</label>
-            <select id="leadSource" style="padding:12px 14px;border-radius:12px;width:100%;">
-              <option value="">— Pilih Sumber —</option>
-              ${LEAD_SOURCE_OPTIONS.map(opt=>`<option value="${escapeAttr(opt)}" ${knownSource===opt?'selected':''}>${escapeHtml(opt)}</option>`).join('')}
-            </select>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <button type="button" class="tab-btn" id="modeBiasaBtn" style="flex:1;">Sumber Biasa</button>
+              <button type="button" class="tab-btn" id="modePameranBtn" style="flex:1;">🎪 Dari Pameran</button>
+            </div>
+            <div id="leadSourceBiasaWrap">
+              <select id="leadSource" style="padding:12px 14px;border-radius:12px;width:100%;">
+                <option value="">— Pilih Sumber —</option>
+                ${LEAD_SOURCE_OPTIONS.map(opt=>`<option value="${escapeAttr(opt)}" ${knownSource===opt?'selected':''}>${escapeHtml(opt)}</option>`).join('')}
+              </select>
+              <input id="leadSourceOther" placeholder="Tulis sumber lainnya..." value="${escapeHtml(sourceOtherVal)}" style="padding:12px 14px;border-radius:12px;width:100%;display:none;margin-top:8px;"/>
+              <div id="leadPameranEndWrap" style="display:none;margin-top:8px;">
+                <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Terakhir Pameran (buat reminder hari terakhir)</label>
+                <input id="leadPameranEndDate" type="date" value="${editing?escapeAttr(editing.pameranEndDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+              </div>
+            </div>
+            <div id="leadSourcePameranWrap" style="display:none;">
+              ${pameranList.length ? `
+              <select id="leadPameranSelect" style="padding:12px 14px;border-radius:12px;width:100%;">
+                <option value="">— Pilih Pameran —</option>
+                ${pameranList.map(p=>`<option value="${p.id}" ${editing&&editing.pameranId===p.id?'selected':''}>${escapeHtml(pameranOptionLabel(p))}</option>`).join('')}
+              </select>
+              ` : `<div style="font-size:12.5px;color:rgba(255,255,255,.6);padding:8px 2px;">Belum ada pameran terdaftar. Admin bisa tambah dulu lewat tombol "🎪 Kelola Pameran" di halaman Leads.</div>`}
+            </div>
           </div>
-          <input id="leadSourceOther" placeholder="Tulis sumber lainnya..." value="${escapeHtml(sourceOtherVal)}" style="padding:12px 14px;border-radius:12px;width:100%;display:none;"/>
           <div>
             <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Leads Masuk / Ketemu</label>
             <input id="leadDate" type="date" value="${escapeAttr(defaultLeadDate)}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
-          </div>
-          <div id="leadPameranEndWrap" style="display:none;">
-            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Terakhir Pameran (buat reminder hari terakhir)</label>
-            <input id="leadPameranEndDate" type="date" value="${editing?escapeAttr(editing.pameranEndDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           </div>
           <input id="leadBudget" placeholder="Estimasi Budget (mis. 80 Juta)" value="${editing?escapeHtml(editing.budget||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <div>
@@ -1909,6 +2010,22 @@ function showLeadForm(editId){
   }
   sourceSel.addEventListener('change', syncSourceUI);
   syncSourceUI();
+  // Toggle "Sumber Biasa" vs "🎪 Dari Pameran" — pilih pameran resmi dari master
+  // data (dropdown) supaya leads-nya otomatis kehitung rapi di rekap per pameran,
+  // atau tetap pakai sumber manual seperti biasa buat leads di luar pameran.
+  const modeBiasaBtn = document.getElementById('modeBiasaBtn');
+  const modePameranBtn = document.getElementById('modePameranBtn');
+  const biasaWrap = document.getElementById('leadSourceBiasaWrap');
+  const pameranWrap = document.getElementById('leadSourcePameranWrap');
+  function syncSourceModeUI(){
+    modeBiasaBtn.classList.toggle('active', leadSourceMode === 'biasa');
+    modePameranBtn.classList.toggle('active', leadSourceMode === 'pameran');
+    biasaWrap.style.display = leadSourceMode === 'biasa' ? 'block' : 'none';
+    pameranWrap.style.display = leadSourceMode === 'pameran' ? 'block' : 'none';
+  }
+  modeBiasaBtn.addEventListener('click', ()=>{ leadSourceMode = 'biasa'; syncSourceModeUI(); });
+  modePameranBtn.addEventListener('click', ()=>{ leadSourceMode = 'pameran'; syncSourceModeUI(); });
+  syncSourceModeUI();
   const precisionSel = document.getElementById('leadDatePrecision');
   const dateExactInput = document.getElementById('leadTargetDate');
   const dateMonthInput = document.getElementById('leadTargetMonth');
@@ -1926,11 +2043,22 @@ function showLeadForm(editId){
     const name = document.getElementById('leadName').value.trim();
     if(!name){ await customAlert('Nama calon klien wajib diisi.'); return; }
     const phone = document.getElementById('leadPhone').value.trim();
-    const sourceSelVal = document.getElementById('leadSource').value;
-    const sourceOtherVal2 = document.getElementById('leadSourceOther').value.trim();
-    const source = sourceSelVal === 'Lainnya' ? (sourceOtherVal2 || 'Lainnya') : sourceSelVal;
+    let source, pameranId = null, pameranEndDate = '';
+    if(leadSourceMode === 'pameran'){
+      const pameranSelEl = document.getElementById('leadPameranSelect');
+      const pid = pameranSelEl ? pameranSelEl.value : '';
+      if(!pid){ await customAlert('Pilih pameran-nya dulu, atau ganti ke "Sumber Biasa".'); return; }
+      const pameran = findPameranById(pid);
+      pameranId = pid;
+      source = pameran ? ('Pameran ' + pameran.name) : 'Pameran';
+      pameranEndDate = pameran ? (pameran.endDate || '') : '';
+    } else {
+      const sourceSelVal = document.getElementById('leadSource').value;
+      const sourceOtherVal2 = document.getElementById('leadSourceOther').value.trim();
+      source = sourceSelVal === 'Lainnya' ? (sourceOtherVal2 || 'Lainnya') : sourceSelVal;
+      pameranEndDate = isPameranSource(source) ? document.getElementById('leadPameranEndDate').value : '';
+    }
     const leadDate = document.getElementById('leadDate').value;
-    const pameranEndDate = isPameranSource(source) ? document.getElementById('leadPameranEndDate').value : '';
     const budget = document.getElementById('leadBudget').value.trim();
     const targetDatePrecision = document.getElementById('leadDatePrecision').value;
     let targetDate = '', targetYear = '', targetMonth = '';
@@ -1956,9 +2084,9 @@ function showLeadForm(editId){
     }
     const stillEditing = editing ? findLeadById(editing.id) : null;
     if(stillEditing){
-      Object.assign(stillEditing, { name, phone, source, leadDate, pameranEndDate, budget, targetDate, targetDatePrecision, targetYear, targetMonth, picId, notes });
+      Object.assign(stillEditing, { name, phone, source, pameranId, leadDate, pameranEndDate, budget, targetDate, targetDatePrecision, targetYear, targetMonth, picId, notes });
     } else {
-      leadsList.push({ id: uid('lead'), name, phone, source, leadDate, pameranEndDate, budget, targetDate, targetDatePrecision, targetYear, targetMonth, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
+      leadsList.push({ id: uid('lead'), name, phone, source, pameranId, leadDate, pameranEndDate, budget, targetDate, targetDatePrecision, targetYear, targetMonth, picId, notes, stage:'masuk', lostReason:'', createdAt: new Date().toISOString(), convertedProjectId:null });
     }
     const ok = await saveLeadsList();
     hideLoadingOverlay();
@@ -2279,6 +2407,127 @@ async function handleToggleLeadReminderSent(idx){
   }
   const ok = await saveLeadsList();
   if(!ok){ await customAlert('Gagal menyimpan status "sudah dikirim".\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
+}
+
+/* ---------- KELOLA PAMERAN (admin: master data pameran + rekap leads per pameran) ---------- */
+function pameranCardHtml(p){
+  const recap = pameranRecap(p.id);
+  return `
+    <div class="v-card">
+      <div class="v-cat"><div class="catleft"><span class="emoji">🎪</span><span>${escapeHtml(p.name)}</span></div></div>
+      <div class="v-field"><label>Tanggal</label><div>${pameranDateRangeLabel(p)}</div></div>
+      ${p.location ? `<div class="v-field"><label>Lokasi</label><div>${escapeHtml(p.location)}</div></div>` : ''}
+      <div class="v-field"><label>Rekap Leads</label><div>${recap.total} leads · ${recap.closing} closing · ${recap.conversionRate}% konversi</div></div>
+      ${recap.breakdown.length ? `
+      <div class="v-field"><label>Per Marketing</label><div style="font-size:12.5px;line-height:1.7;">
+        ${recap.breakdown.map(b=> `${escapeHtml(b.name)}: ${b.total} leads (${b.closing} closing)`).join('<br>')}
+      </div></div>` : ''}
+      <div class="row-actions" style="margin-top:10px;">
+        <button class="btn small" data-action="edit-pameran" data-id="${p.id}">✏️ Edit</button>
+        <button class="btn small danger" data-action="delete-pameran" data-id="${p.id}">🗑️ Hapus</button>
+      </div>
+    </div>
+  `;
+}
+function showPameranManager(){
+  const app = document.getElementById('app');
+  const sorted = [...pameranList].sort((a,b)=> (b.startDate||'').localeCompare(a.startDate||''));
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
+      <div class="topbar-right"><button class="btn tiny ghost" id="backFromPameranManager">← Kembali</button></div>
+    </div>
+    <div class="extra-vendor-head"><h2>🎪 Kelola Pameran</h2><button class="btn primary small" id="newPameranBtn">+ Tambah Pameran</button></div>
+    <p style="font-size:13px;color:rgba(255,255,255,.65);margin:-8px 0 16px;">Buat data pameran resmi di sini supaya leads yang masuk saat pameran bisa dipilih langsung dari dropdown (bukan ketik manual) dan direkap rapi per acara — total leads, closing, conversion rate, dan breakdown per marketing.</p>
+    <div id="pameranListBox" class="vendor-grid">
+      ${sorted.length ? sorted.map(pameranCardHtml).join('') : `<div class="empty-mini">Belum ada pameran. Tambahkan dulu supaya leads yang masuk saat pameran bisa direkap rapi per acara.</div>`}
+    </div>
+  `;
+  document.getElementById('backFromPameranManager').addEventListener('click', ()=> renderProjectDashboard());
+  document.getElementById('newPameranBtn').addEventListener('click', ()=> showPameranForm());
+  document.querySelectorAll('[data-action="edit-pameran"]').forEach(btn=> btn.addEventListener('click', ()=> showPameranForm(btn.dataset.id)));
+  document.querySelectorAll('[data-action="delete-pameran"]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(pameranListLoadFailed){
+      await customAlert('Daftar pameran gagal dimuat lengkap dari server (koneksi lambat/gagal). Refresh halaman dulu sebelum menghapus.');
+      return;
+    }
+    const p = findPameranById(btn.dataset.id);
+    if(!p) return;
+    const leadsCount = leadsList.filter(l=>l.pameranId===p.id).length;
+    const warn = leadsCount ? `\n\n${leadsCount} leads sudah ditautkan ke pameran ini — leads-nya TIDAK ikut terhapus, hanya kehilangan tautan ke pameran (tetap tersimpan sebagai leads biasa).` : '';
+    const yes = await customConfirm(`Hapus pameran "${p.name}"?${warn}`);
+    if(!yes) return;
+    btn.disabled = true;
+    showLoadingOverlay('Menghapus pameran...');
+    pameranList = pameranList.filter(x=>x.id!==p.id);
+    const ok = await savePameranList();
+    hideLoadingOverlay();
+    if(!ok){ await customAlert('Gagal menghapus dari storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); return; }
+    showToast('Pameran dihapus ✓');
+    showPameranManager();
+  }));
+}
+function showPameranForm(editId){
+  const editing = editId ? findPameranById(editId) : null;
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="gate-wrap">
+      <div class="gate-card">
+        <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
+        <h2>${editing ? 'Edit Pameran' : 'Tambah Pameran'}</h2>
+        <p>Data ini nanti bisa dipilih langsung waktu bikin leads baru (mode "🎪 Dari Pameran"), biar rekapnya rapi per acara.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
+          <input id="pameranName" placeholder="Nama Pameran (mis. Pameran Tunjungan Plaza Agustus 2026)" value="${editing?escapeHtml(editing.name):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <input id="pameranLocation" placeholder="Lokasi (opsional)" value="${editing?escapeHtml(editing.location||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <div>
+            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Mulai</label>
+            <input id="pameranStartDate" type="date" value="${editing?escapeAttr(editing.startDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          </div>
+          <div>
+            <label style="font-size:12px;color:rgba(255,255,255,.6);display:block;margin-bottom:4px;">Tanggal Selesai</label>
+            <input id="pameranEndDate" type="date" value="${editing?escapeAttr(editing.endDate||''):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn ghost" id="cancelPameranForm" style="flex:1;">Batal</button>
+          <button class="btn primary" id="savePameranBtn" style="flex:1;">Simpan</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('cancelPameranForm').addEventListener('click', ()=> showPameranManager());
+  document.getElementById('savePameranBtn').addEventListener('click', async ()=>{
+    const name = document.getElementById('pameranName').value.trim();
+    if(!name){ await customAlert('Nama pameran wajib diisi.'); return; }
+    const location = document.getElementById('pameranLocation').value.trim();
+    const startDate = document.getElementById('pameranStartDate').value;
+    const endDate = document.getElementById('pameranEndDate').value;
+    if(startDate && endDate && endDate < startDate){ await customAlert('Tanggal selesai tidak boleh sebelum tanggal mulai.'); return; }
+    const btn = document.getElementById('savePameranBtn');
+    btn.disabled = true;
+    showLoadingOverlay('Menyimpan pameran...');
+    await loadPameranList();
+    if(pameranListLoadFailed){
+      hideLoadingOverlay(); btn.disabled = false;
+      await customAlert('Gagal mengambil daftar pameran terbaru dari server (koneksi lambat/gagal). Coba lagi setelah koneksi stabil.');
+      return;
+    }
+    const stillEditing = editing ? findPameranById(editing.id) : null;
+    if(stillEditing){
+      Object.assign(stillEditing, { name, location, startDate, endDate });
+    } else {
+      pameranList.push({ id: uid('pameran'), name, location, startDate, endDate, createdAt: new Date().toISOString() });
+    }
+    const ok = await savePameranList();
+    hideLoadingOverlay();
+    if(!ok){
+      btn.disabled = false;
+      await customAlert('Gagal menyimpan ke storage.\n\nDetail: ' + (lastStorageError || 'tidak diketahui'));
+      return;
+    }
+    showToast('Pameran tersimpan ✓');
+    showPameranManager();
+  });
 }
 
 /* ---------- PROJECTS INDEX ---------- */
@@ -3166,7 +3415,8 @@ async function initRoleFlow(){
       loadProjectsIndex(),
       loadVendorAccounts(),
       loadVendorSchedule(),
-      loadLeadsList()
+      loadLeadsList(),
+      loadPameranList()
     ]);
     hydrateMarketingPhotosInBackground();
     hydrateVendorPhotosInBackground();
@@ -3669,7 +3919,7 @@ async function showProjectDashboard(overlay){
   if(overlay) showLoadingOverlay('Memuat semua project...');
   else renderLoadingScreen('Memuat semua project...');
   try{
-    await Promise.all([loadProjectsIndex(), loadMarketingListMeta(), loadVendorAccounts()]);
+    await Promise.all([loadProjectsIndex(), loadMarketingListMeta(), loadVendorAccounts(), loadPameranList()]);
   }catch(e){ console.error('showProjectDashboard load failed', e); }
   if(overlay) hideLoadingOverlay();
   renderProjectDashboard();
@@ -3836,6 +4086,8 @@ function renderProjectDashboard(){
   document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
   const newLeadBtn = document.getElementById('newLeadBtn');
   if(newLeadBtn) newLeadBtn.addEventListener('click', ()=> showLeadForm());
+  const managePameranBtn = document.getElementById('managePameranBtn');
+  if(managePameranBtn) managePameranBtn.addEventListener('click', ()=> showPameranManager());
   const leadsPicFilterSelect = document.getElementById('leadsPicFilterSelect');
   if(leadsPicFilterSelect) leadsPicFilterSelect.addEventListener('change', ()=>{ leadsPicFilter = leadsPicFilterSelect.value; renderProjectDashboard(); });
   document.querySelectorAll('[data-action="lead-move"]').forEach(sel=> sel.addEventListener('change', ()=> handleLeadMoveStage(sel.dataset.id, sel.value)));

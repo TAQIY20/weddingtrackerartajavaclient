@@ -1806,7 +1806,7 @@ function pameranScheduleWidgetHtml(){
         const untilStart = p.startDate ? daysUntil(p.startDate) : null;
         const untilEnd = p.endDate ? daysUntil(p.endDate) : untilStart;
         let statusLabel = '', statusTone = '';
-        if(untilEnd !== null && untilEnd < 0){ statusLabel = 'Sudah selesai'; statusTone = 'color:rgba(255,255,255,.5);'; }
+        if(untilEnd !== null && untilEnd < 0){ statusLabel = 'Sudah selesai'; statusTone = 'color:var(--cream-dimmer);'; }
         else if(untilStart !== null && untilStart <= 0){ statusLabel = '🟢 Sedang berlangsung'; statusTone = 'color:#2E7D32;font-weight:700;'; }
         else if(untilStart !== null){ statusLabel = `Mulai ${untilStart} hari lagi`; statusTone = 'color:var(--gold);font-weight:700;'; }
         return `
@@ -1845,6 +1845,22 @@ const LEAD_STAGES = [
 // follow up hari ke-2/3/terakhir pameran).
 const LEAD_SOURCE_OPTIONS = ['Kantor','IG','Referensi','Lainnya'];
 function isPameranSource(source){ return /^Pameran /i.test(String(source||'')); }
+// Leads yang ditautkan ke master data Pameran (l.pameranId) HARUS selalu pakai
+// tanggal terakhir pameran yang LIVE dari master data — bukan salinan beku di
+// lead.pameranEndDate — supaya kalau admin edit tanggal pameran belakangan,
+// jadwal reminder follow up leads yang sudah ada ikut otomatis menyesuaikan.
+// lead.pameranEndDate cuma dipakai sebagai fallback buat leads lama/manual yang
+// tidak (lagi) ditautkan ke pameran resmi manapun.
+function leadEffectivePameranEndDate(lead){
+  if(lead.pameranId){
+    const p = findPameranById(lead.pameranId);
+    if(p) return p.endDate || '';
+  }
+  return lead.pameranEndDate || '';
+}
+function leadIsFromPameran(lead){
+  return !!lead.pameranId || isPameranSource(lead.source);
+}
 let leadsListLoadFailed = false; // true kalau pengambilan daftar leads dari storage gagal sesi ini
 async function loadLeadsList(){
   leadsListLoadFailed = false;
@@ -2382,13 +2398,14 @@ function buildLeadNurtureMessage(lead, stageKey){
 }
 function buildLeadReminderItems(lead){
   const base = lead.leadDate || (lead.createdAt||'').slice(0,10);
-  const isPameran = isPameranSource(lead.source);
-  const pameranEndValid = isPameran && lead.pameranEndDate && lead.pameranEndDate > base;
+  const isPameran = leadIsFromPameran(lead);
+  const pameranEndDate = leadEffectivePameranEndDate(lead);
+  const pameranEndValid = isPameran && pameranEndDate && pameranEndDate > base;
   // Kalau leads-nya dari pameran dan tanggal terakhir pamerannya udah keisi,
   // reminder H+1/H+3/H+7/bulanan (nurture) dihitung mulai dari SETELAH pameran
   // selesai — bukan dari tanggal leads masuk — soalnya selama pameran masih
   // berlangsung udah ada jadwal follow up hariannya sendiri (loop di bawah).
-  const nurtureBase = pameranEndValid ? lead.pameranEndDate : base;
+  const nurtureBase = pameranEndValid ? pameranEndDate : base;
   const items = [];
   if(isPameran){
     if(pameranEndValid){
@@ -2397,8 +2414,8 @@ function buildLeadReminderItems(lead){
       let cursor = addDaysIso(base, 1);
       let dayNum = 2;
       let guard = 0;
-      while(cursor && cursor <= lead.pameranEndDate && guard < 14){
-        const isLast = cursor === lead.pameranEndDate;
+      while(cursor && cursor <= pameranEndDate && guard < 14){
+        const isLast = cursor === pameranEndDate;
         items.push({
           key: `p${dayNum}`,
           title: isLast ? '🎪 Follow Up Hari Terakhir Pameran' : `🎪 Follow Up Hari ke-${dayNum} Pameran`,
@@ -2481,10 +2498,11 @@ function showLeadReminders(id){
   window.__leadReminderItems = items;
   window.__leadReminderLeadId = id;
   const baseDateFmt = fmtDate(lead.leadDate || (lead.createdAt||'').slice(0,10));
-  const pameranEndValidForCaption = isPameranSource(lead.source) && lead.pameranEndDate && lead.pameranEndDate > (lead.leadDate || (lead.createdAt||'').slice(0,10));
-  const captionExtra = isPameranSource(lead.source)
+  const pameranEndDate = leadEffectivePameranEndDate(lead);
+  const pameranEndValidForCaption = leadIsFromPameran(lead) && pameranEndDate && pameranEndDate > (lead.leadDate || (lead.createdAt||'').slice(0,10));
+  const captionExtra = leadIsFromPameran(lead)
     ? (pameranEndValidForCaption
-        ? `, termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya) — reminder H+1/H+3/H+7/bulanan dihitung mulai setelah pameran selesai (${fmtDate(lead.pameranEndDate)})`
+        ? `, termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya) — reminder H+1/H+3/H+7/bulanan dihitung mulai setelah pameran selesai (${fmtDate(pameranEndDate)})`
         : ', termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya)')
     : '';
   app.innerHTML = `
@@ -2599,7 +2617,7 @@ function showPameranManager(){
       <div class="topbar-right"><button class="btn tiny ghost" id="backFromPameranManager">← Kembali</button></div>
     </div>
     <div class="extra-vendor-head"><h2>🎪 Kelola Pameran</h2><button class="btn primary small" id="newPameranBtn">+ Tambah Pameran</button></div>
-    <p style="font-size:13px;color:rgba(255,255,255,.65);margin:-8px 0 16px;">Buat data pameran resmi di sini supaya leads yang masuk saat pameran bisa dipilih langsung dari dropdown (bukan ketik manual) dan direkap rapi per acara. Klik salah satu pameran di bawah buat lihat daftar leads-nya.</p>
+    <p style="font-size:13px;color:var(--cream-dim);margin:-8px 0 16px;">Buat data pameran resmi di sini supaya leads yang masuk saat pameran bisa dipilih langsung dari dropdown (bukan ketik manual) dan direkap rapi per acara. Klik salah satu pameran di bawah buat lihat daftar leads-nya.</p>
     <div id="pameranListBox" class="vendor-grid">
       ${sorted.length ? sorted.map(pameranCardHtml).join('') : `<div class="empty-mini">Belum ada pameran. Tambahkan dulu supaya leads yang masuk saat pameran bisa direkap rapi per acara.</div>`}
     </div>

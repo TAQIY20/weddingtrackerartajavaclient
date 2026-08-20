@@ -1773,6 +1773,53 @@ function pameranRecap(id){
   return { total, closing, conversionRate, breakdown };
 }
 
+// Widget "Jadwal Pameran" di dashboard (tampil buat admin & marketing) — supaya
+// pameran yang sedang/akan berlangsung langsung kelihatan tanpa perlu buka menu
+// "Kelola Pameran" dulu, dan marketing bisa langsung isi leads yang otomatis
+// ditautkan ke pameran itu lewat satu klik (tombol "+ Leads dari Pameran ini").
+// Pameran yang sudah lewat >7 hari disembunyikan dari sini biar tidak numpuk;
+// tetap bisa diakses lengkap lewat "Kelola Pameran" (admin).
+function pameranScheduleWidgetHtml(){
+  const today = todayISO();
+  const relevant = pameranList.filter(p=>{
+    if(!p.endDate && !p.startDate) return true;
+    const end = p.endDate || p.startDate;
+    return daysUntil(end) >= -7;
+  }).sort((a,b)=> (a.startDate||'').localeCompare(b.startDate||''));
+  if(!relevant.length && !isAdmin) return ''; // marketing: kalau belum ada pameran sama sekali, tidak usah tampilkan widget kosong
+  return `
+    <div class="extra-vendor-head"><h2>🎪 Jadwal Pameran</h2>${isAdmin ? `<button class="btn small" id="managePameranBtnTop">Kelola Pameran →</button>` : ''}</div>
+    <div id="pameranScheduleBox" class="vendor-grid">
+      ${relevant.length ? relevant.map(p=>{
+        const untilStart = p.startDate ? daysUntil(p.startDate) : null;
+        const untilEnd = p.endDate ? daysUntil(p.endDate) : untilStart;
+        let statusLabel = '', statusTone = '';
+        if(untilEnd !== null && untilEnd < 0){ statusLabel = 'Sudah selesai'; statusTone = 'color:rgba(255,255,255,.5);'; }
+        else if(untilStart !== null && untilStart <= 0){ statusLabel = '🟢 Sedang berlangsung'; statusTone = 'color:#2E7D32;font-weight:700;'; }
+        else if(untilStart !== null){ statusLabel = `Mulai ${untilStart} hari lagi`; statusTone = 'color:var(--gold);font-weight:700;'; }
+        return `
+        <div class="v-card">
+          <div class="v-cat"><div class="catleft"><span class="emoji">🎪</span><span>${escapeHtml(p.name)}</span></div></div>
+          <div class="v-field"><label>Tanggal</label><div>${pameranDateRangeLabel(p)}</div></div>
+          ${p.location ? `<div class="v-field"><label>Lokasi</label><div>${escapeHtml(p.location)}</div></div>` : ''}
+          ${statusLabel ? `<div style="font-size:12.5px;margin-top:6px;${statusTone}">${statusLabel}</div>` : ''}
+          <div class="row-actions" style="margin-top:10px;">
+            <button class="btn small primary" data-action="quick-lead-from-pameran" data-id="${p.id}" style="flex:1;">+ Leads dari Pameran Ini</button>
+          </div>
+        </div>
+        `;
+      }).join('') : `<div class="empty-mini">Belum ada pameran terjadwal.${isAdmin ? ' Tambahkan dulu lewat "Kelola Pameran".' : ' Minta admin untuk menambahkan jadwal pameran.'}</div>`}
+    </div>
+  `;
+}
+function wirePameranScheduleWidgetEvents(){
+  const topBtn = document.getElementById('managePameranBtnTop');
+  if(topBtn) topBtn.addEventListener('click', ()=> showPameranManager());
+  document.querySelectorAll('[data-action="quick-lead-from-pameran"]').forEach(btn=>{
+    btn.addEventListener('click', ()=> showLeadForm(null, btn.dataset.id));
+  });
+}
+
 /* ---------- LEADS / CRM PIPELINE (calon klien sebelum jadi project, admin+marketing) ---------- */
 const LEAD_STAGES = [
   { key:'masuk',       label:'Kontak Masuk' },
@@ -1784,7 +1831,7 @@ const LEAD_STAGES = [
 // Pilihan sumber leads — dropdown saja (bukan free text lagi) biar datanya rapi &
 // bisa dipakai buat nentuin apakah leads ini asalnya dari pameran (buat reminder
 // follow up hari ke-2/3/terakhir pameran).
-const LEAD_SOURCE_OPTIONS = ['Pameran Tunjungan Plaza','Pameran Royal Plaza','Kantor','IG','Referensi','Lainnya'];
+const LEAD_SOURCE_OPTIONS = ['Kantor','IG','Referensi','Lainnya'];
 function isPameranSource(source){ return /^Pameran /i.test(String(source||'')); }
 let leadsListLoadFailed = false; // true kalau pengambilan daftar leads dari storage gagal sesi ini
 async function loadLeadsList(){
@@ -4134,6 +4181,7 @@ function renderProjectDashboard(){
     <div id="projectList" class="vendor-grid">
       ${myList.length ? myList.map(projectCardHtml).join('') : `<div class="empty-mini">Belum ada project. Klik "+ Project Baru" buat mulai.</div>`}
     </div>
+    ${pameranScheduleWidgetHtml()}
     ${renderLeadsBoard()}
     ${isAdmin ? `
     <div class="extra-vendor-head"><h2>Paket Vendor</h2><button class="btn primary small" id="newPackageBtn">+ Tambah Paket</button></div>
@@ -4155,6 +4203,7 @@ function renderProjectDashboard(){
     ` : ''}
   `;
   document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
+  wirePameranScheduleWidgetEvents();
   wireLeadsBoardEvents();
   const gateDemoBtn = document.getElementById('gateDemoBtn');
   if(gateDemoBtn) gateDemoBtn.addEventListener('click', ()=>{ demoEnteredFromAdmin = true; enterDemoMode(); });

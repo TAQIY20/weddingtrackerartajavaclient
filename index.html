@@ -906,6 +906,7 @@ let vendorAuthed = false;      // has this session passed the master vendor PIN?
 let vendorAccounts = [];       // database vendor: [{id,name,category,phone,username,password}]
 let vendorSchedule = [];       // jadwal lintas project: [{vendorAccountId,projectId,catKey,catLabel,brideName,groomName,weddingDate}]
 let viewingDashboard = false;  // showing the multi-project dashboard
+let dashboardTab = 'project';  // tab aktif di halaman dashboard multi-project: 'project' | 'leads' | 'package' | 'marketing' | 'vendor'
 let marketingList = [];        // list of {id, name, phone, photoUrl, pin}
 let leadsPicFilter = '';       // filter board Leads (Calon Klien) by nama marketing (PIC) — hanya dipakai admin
 let leadsBoardContext = null;  // null = board leads utama di dashboard (leads pameran disembunyikan dari sini);
@@ -4187,6 +4188,17 @@ function renderProjectDashboard(){
   leadsBoardContext = null; // balik ke board leads utama (leads pameran disembunyikan dari sini)
   const app = document.getElementById('app');
   const myList = myVisibleProjects();
+  // Tab dashboard: Project & Leads selalu ada (admin+marketing), 3 lainnya khusus admin.
+  const dashboardTabs = [
+    { key:'project', label:'📁 Project' },
+    { key:'leads',   label:'🎪 Jadwal Pameran & Leads' },
+  ];
+  if(isAdmin){
+    dashboardTabs.push({ key:'package',   label:'📦 Paket Vendor' });
+    dashboardTabs.push({ key:'marketing', label:'🧑\u200d💼 Tim Marketing' });
+    dashboardTabs.push({ key:'vendor',    label:'🏷️ Database Vendor' });
+  }
+  if(!dashboardTabs.some(t=>t.key===dashboardTab)) dashboardTab = 'project';
   app.innerHTML = `
     <div class="topbar">
       <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
@@ -4198,6 +4210,10 @@ function renderProjectDashboard(){
         <button class="btn tiny ghost" id="logoutRoleBtn">Keluar</button>
       </div>
     </div>
+    <div class="dash-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 24px;">
+      ${dashboardTabs.map(t=>`<button type="button" class="tab-btn dash-tab-btn ${dashboardTab===t.key?'active':''}" data-tab="${t.key}">${t.label}</button>`).join('')}
+    </div>
+    ${dashboardTab === 'project' ? `
     <div class="section-head">
       <div><h2>${isAdmin ? 'Semua Project' : 'Project Klien Kamu'}</h2><p>${isAdmin ? 'Kelola semua wedding project & tim marketing di satu tempat.' : 'Klien yang kamu buat lewat link marketing kamu sendiri.'}</p></div>
       <button class="btn primary" id="newProjectBtn">+ Project Baru</button>
@@ -4234,28 +4250,36 @@ function renderProjectDashboard(){
     <div id="projectList" class="vendor-grid">
       ${myList.length ? myList.map(projectCardHtml).join('') : `<div class="empty-mini">Belum ada project. Klik "+ Project Baru" buat mulai.</div>`}
     </div>
+    ` : ''}
+    ${dashboardTab === 'leads' ? `
     ${pameranScheduleWidgetHtml()}
     ${renderLeadsBoard()}
-    ${isAdmin ? `
+    ` : ''}
+    ${(dashboardTab === 'package' && isAdmin) ? `
     <div class="extra-vendor-head"><h2>Paket Vendor</h2><button class="btn primary small" id="newPackageBtn">+ Tambah Paket</button></div>
     <div id="packageListBox" class="vendor-grid">
       ${packageList.length ? packageList.map(packageCardHtml).join('') : `<div class="empty-mini">Belum ada paket. Bikin dulu di sini, nanti tinggal dipilih tiap bikin project baru.</div>`}
     </div>
     ` : ''}
-    ${isAdmin ? `
+    ${(dashboardTab === 'marketing' && isAdmin) ? `
     <div class="extra-vendor-head"><h2>Tim Marketing</h2><button class="btn primary small" id="newMarketingBtn">+ Tambah Marketing</button></div>
     <div id="marketingList" class="vendor-grid">
       ${marketingList.length ? marketingList.map(marketingCardHtml).join('') : `<div class="empty-mini">Belum ada akun marketing. Tambahkan supaya mereka bisa punya link klien sendiri-sendiri.</div>`}
     </div>
     ` : ''}
-    ${isAdmin ? `
+    ${(dashboardTab === 'vendor' && isAdmin) ? `
     <div class="extra-vendor-head"><h2>Database Vendor</h2><button class="btn primary small" id="newVendorAccountBtn">+ Tambah Vendor</button></div>
     <div id="vendorAccountListBox">
       ${vendorAccountsGroupedHtml(vendorAccounts)}
     </div>
     ` : ''}
   `;
-  document.getElementById('newProjectBtn').addEventListener('click', ()=> showNewProjectForm());
+  document.querySelectorAll('.dash-tab-btn').forEach(btn=> btn.addEventListener('click', ()=>{
+    dashboardTab = btn.dataset.tab;
+    renderProjectDashboard();
+  }));
+  const newProjectBtn = document.getElementById('newProjectBtn');
+  if(newProjectBtn) newProjectBtn.addEventListener('click', ()=> showNewProjectForm());
   wirePameranScheduleWidgetEvents();
   wireLeadsBoardEvents();
   const gateDemoBtn = document.getElementById('gateDemoBtn');
@@ -4293,8 +4317,10 @@ function renderProjectDashboard(){
         else { masterSettings.vendorPin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage — cek koneksi internet dan coba lagi.'); }
       }
     });
-    document.getElementById('newMarketingBtn').addEventListener('click', ()=> showMarketingForm());
-    document.getElementById('newPackageBtn').addEventListener('click', ()=> showPackageForm());
+    const newMarketingBtn = document.getElementById('newMarketingBtn');
+    if(newMarketingBtn) newMarketingBtn.addEventListener('click', ()=> showMarketingForm());
+    const newPackageBtn = document.getElementById('newPackageBtn');
+    if(newPackageBtn) newPackageBtn.addEventListener('click', ()=> showPackageForm());
     document.querySelectorAll('[data-action="edit-package"]').forEach(btn=> btn.addEventListener('click', ()=> showPackageForm(btn.dataset.id)));
     document.querySelectorAll('[data-action="delete-package"]').forEach(btn=> btn.addEventListener('click', async ()=>{
       if(packageListLoadFailed){

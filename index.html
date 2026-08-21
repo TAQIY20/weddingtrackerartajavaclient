@@ -5513,14 +5513,10 @@ function computeMilestoneStages(sorted){
   });
 }
 
-// Ukuran window peta progres disesuaikan lebar layar, supaya di layar lebar (desktop/tablet)
-// petanya keisi penuh (bukan cuma segelintir node + banyak ruang kosong di kanan), sementara
-// di HP tetap ringkas kayak semula. Dipanggil ulang tiap render() jadi otomatis ngikut resize.
+// Ukuran window peta progres di HP (mobile) — di layar lebar sekarang TIDAK pakai window/
+// tombol sama sekali, node langsung ditampilkan semua dalam satu baris yang bisa digeser
+// (scroll horizontal), lihat isRow di bawah.
 function getMilestoneWindowSize(){
-  const w = (typeof window !== 'undefined' && window.innerWidth) || 375;
-  if(w >= 1400) return { before:6, after:11 };
-  if(w >= 1024) return { before:5, after:8 };
-  if(w >= 640)  return { before:3, after:5 };
   return { before:2, after:3 };
 }
 
@@ -5533,22 +5529,11 @@ function renderMilestoneStepper(sorted){
   const stageIdx = stages.findIndex(s=>s.state==='current');
   const displayStage = stageIdx===-1 ? stages.length : stageIdx+1;
 
-  // Window di sekitar current: sejumlah step sebelumnya + current + sejumlah step berikutnya,
-  // besarnya mengikuti lebar layar (lihat getMilestoneWindowSize). Kalau total step tidak lebih
-  // banyak dari window, tampilkan semua saja (toggle tidak muncul).
-  const { before: WINDOW_BEFORE, after: WINDOW_AFTER } = getMilestoneWindowSize();
-  const anchorIdx = stageIdx===-1 ? stages.length-1 : stageIdx;
-  const winStart = Math.max(0, anchorIdx - WINDOW_BEFORE);
-  const winEnd = Math.min(stages.length, anchorIdx + WINDOW_AFTER + 1);
-  const hiddenBefore = winStart;
-  const hiddenAfter = stages.length - winEnd;
-  const needsToggle = hiddenBefore > 0 || hiddenAfter > 0;
-  // Di layar lebar node disusun ke SAMPING (row) jadi panahnya ke kiri/kanan; di HP node
-  // ditumpuk ke BAWAH (column) jadi panahnya ke atas/bawah — samain sama breakpoint CSS
-  // .ms-stepper (max-width:640px berarti masih mode tumpuk/column).
+  // Di layar lebar (desktop/tablet) node disusun ke SAMPING (row) — semua tahap langsung
+  // ditampilkan dalam satu baris yang tinggal digeser/di-scroll, tanpa tombol "selengkapnya/
+  // ringkas". Di HP (mode tumpuk/column) tombol itu tetap dipakai supaya listnya nggak
+  // kepanjangan ke bawah. Breakpoint-nya samain sama CSS .ms-stepper (max-width:640px).
   const isRow = (typeof window !== 'undefined' && window.innerWidth) >= 641;
-  const arrowBefore = isRow ? '←' : '↑';
-  const arrowAfter = isRow ? '→' : '↓';
 
   const stepHtml = (s,i)=>`
     <div class="ms-step ${s.state}" title="${escapeAttr(s.label)}">
@@ -5563,7 +5548,31 @@ function renderMilestoneStepper(sorted){
   `;
 
   const fullList = stages.map((s,i)=>stepHtml(s,i)).join('');
-  const windowedList = stages.slice(winStart, winEnd).map((s,i)=>stepHtml(s, winStart+i)).join('');
+
+  let bodyHtml;
+  if(isRow){
+    bodyHtml = `<div class="ms-stepper">${fullList}</div>`;
+  } else {
+    const { before: WINDOW_BEFORE, after: WINDOW_AFTER } = getMilestoneWindowSize();
+    const anchorIdx = stageIdx===-1 ? stages.length-1 : stageIdx;
+    const winStart = Math.max(0, anchorIdx - WINDOW_BEFORE);
+    const winEnd = Math.min(stages.length, anchorIdx + WINDOW_AFTER + 1);
+    const hiddenBefore = winStart;
+    const hiddenAfter = stages.length - winEnd;
+    const needsToggle = hiddenBefore > 0 || hiddenAfter > 0;
+    const windowedList = stages.slice(winStart, winEnd).map((s,i)=>stepHtml(s, winStart+i)).join('');
+    bodyHtml = needsToggle ? `
+        <div class="ms-group-windowed">
+          ${hiddenBefore>0 ? `<button type="button" class="ms-more-btn ms-more-before" data-ms-expand="1">↑ ${hiddenBefore} tahap sebelumnya</button>` : ''}
+          <div class="ms-stepper ms-stepper-windowed">${windowedList}</div>
+          ${hiddenAfter>0 ? `<button type="button" class="ms-more-btn ms-more-after" data-ms-expand="1">↓ ${hiddenAfter} tahap berikutnya</button>` : ''}
+        </div>
+        <div class="ms-group-full ms-hidden">
+          <div class="ms-stepper ms-stepper-full">${fullList}</div>
+          <button type="button" class="ms-more-btn" data-ms-collapse="1">↑ Ringkas tampilan</button>
+        </div>
+      ` : `<div class="ms-stepper">${fullList}</div>`;
+  }
 
   return `
     <div class="ms-card">
@@ -5571,19 +5580,7 @@ function renderMilestoneStepper(sorted){
         <h3>🗺️ Peta Progres Persiapan</h3>
         <span class="ms-pill">Tahap ${displayStage} dari ${stages.length} · ${doneCount}/${total} agenda selesai</span>
       </div>
-      ${needsToggle ? `
-        <div class="ms-group-windowed">
-          ${hiddenBefore>0 ? `<button type="button" class="ms-more-btn ms-more-before" data-ms-expand="1">${arrowBefore} ${hiddenBefore} tahap sebelumnya</button>` : ''}
-          <div class="ms-stepper ms-stepper-windowed">${windowedList}</div>
-          ${hiddenAfter>0 ? `<button type="button" class="ms-more-btn ms-more-after" data-ms-expand="1">${arrowAfter} ${hiddenAfter} tahap berikutnya</button>` : ''}
-        </div>
-        <div class="ms-group-full ms-hidden">
-          <div class="ms-stepper ms-stepper-full">${fullList}</div>
-          <button type="button" class="ms-more-btn" data-ms-collapse="1">${isRow ? '←' : '↑'} Ringkas tampilan</button>
-        </div>
-      ` : `
-        <div class="ms-stepper">${fullList}</div>
-      `}
+      ${bodyHtml}
       ${current ? `<div class="ms-note"><span>📍</span><div><b>Kamu ada di sini:</b> ${escapeHtml(current.label)} — target sekitar ${fmtDate(current.date)}.</div></div>` : `<div class="ms-note"><span>🎉</span><div><b>Semua tahap selesai!</b> Persiapan sudah lengkap.</div></div>`}
     </div>
   `;
@@ -6904,7 +6901,7 @@ function attachHandlers(){
 // selalu pas sama ruang yang tersedia (tidak nyisain kolom kosong).
 (function(){
   let lastTier = null;
-  function tierOf(w){ return w>=1400 ? 3 : w>=1024 ? 2 : w>=640 ? 1 : 0; }
+  function tierOf(w){ return w>=641 ? 1 : 0; }
   lastTier = tierOf(window.innerWidth);
   let resizeTimer = null;
   window.addEventListener('resize', function(){

@@ -2464,6 +2464,14 @@ function buildLeadReminderItems(lead){
   // berlangsung udah ada jadwal follow up hariannya sendiri (loop di bawah).
   const nurtureBase = pameranEndValid ? pameranEndDate : base;
   const items = [];
+  // Push "👋 Follow Up Perkenalan" (h0) LEBIH DULU sebelum item pameran —
+  // soalnya kalau leads masuk tepat di hari terakhir pameran, item "🎪 Follow
+  // Up Hari Terakhir Pameran" tanggalnya SAMA dengan h0 (base), dan sort di
+  // bawah cuma bandingin string tanggal doang (localeCompare) — kalau
+  // tanggalnya sama, sort JS stabil, jadi urutan HASIL akhir ngikutin urutan
+  // push ini. Perkenalan logisnya harus lebih dulu (itu kontak pertama),
+  // baru follow up hari terakhir pamerannya nyusul di bawahnya.
+  items.push({ key:'h0', title:'👋 Follow Up Perkenalan', date: base, message: buildLeadNurtureMessage(lead, 'h0') });
   if(isPameran){
     if(pameranEndValid){
       // Loop dinamis dari H+1 sampai tanggal terakhir pameran — otomatis
@@ -2522,10 +2530,9 @@ function buildLeadReminderItems(lead){
       items.push({ key:'p_default', title:'🎪 Follow Up Selama Pameran (isi Tanggal Terakhir Pameran di form edit biar jadwalnya lengkap)', date: addDaysIso(base,1), message: buildLeadPameranMessage(lead, 2, false) });
     }
   }
-  // Pesan perkenalan dikirim di tanggal leads pertama kali disimpan (base),
-  // terpisah dari nurtureBase — perkenalan tetap di hari kontak masuk walau
-  // leads-nya dari pameran dan H+1/H+3/dst baru mulai setelah pameran selesai.
-  items.push({ key:'h0', title:'👋 Follow Up Perkenalan', date: base, message: buildLeadNurtureMessage(lead, 'h0') });
+  // Perkenalan (h0) sudah di-push di awal fungsi (lihat komentar di atas) —
+  // biar urutannya benar kalau tanggalnya bentrok dengan follow up hari
+  // terakhir pameran.
   [
     ['h1','H+1'], ['h3','H+3'], ['h7','H+7'],
     ['m1','H+1 Bulan'], ['m2','H+2 Bulan'], ['m3','H+3 Bulan'],

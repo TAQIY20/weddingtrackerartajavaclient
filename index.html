@@ -2475,21 +2475,46 @@ function buildLeadReminderItems(lead){
       // meleset dari jadwal pameran yang asli. Fallback ke cara lama (dari
       // tanggal leads masuk) cuma buat leads manual yang tidak ditautkan ke
       // master data Pameran, karena di situ memang tidak ada tanggal mulainya.
-      let cursor = addDaysIso(base, 1);
-      let guard = 0;
-      while(cursor && cursor <= pameranEndDate && guard < 14){
-        const isLast = cursor === pameranEndDate;
-        const dayNum = pameranStartDate
-          ? (isoDateDiffDays(pameranStartDate, cursor) + 1)
-          : (isoDateDiffDays(base, cursor) + 1);
+      if(base === pameranEndDate){
+        // Leads-nya masuk TEPAT di hari terakhir pameran — gak ada hari
+        // susulan buat di-loop (besok pameran udah tutup), tapi tetap kasih 1
+        // reminder "Hari Terakhir Pameran" di hari itu juga, soalnya ini
+        // kesempatan terakhir follow up selagi booth-nya masih buka. Beda
+        // dari "👋 Follow Up Perkenalan" (h0) yang isinya perkenalan awal —
+        // ini pesan yang lebih ke ajakan closing di hari penutupan.
+        const dayNum = pameranStartDate ? (isoDateDiffDays(pameranStartDate, base) + 1) : 1;
         items.push({
           key: `p${dayNum}`,
-          title: isLast ? '🎪 Follow Up Hari Terakhir Pameran' : `🎪 Follow Up Hari ke-${dayNum} Pameran`,
-          date: cursor,
-          message: buildLeadPameranMessage(lead, dayNum, isLast),
+          title: '🎪 Follow Up Hari Terakhir Pameran',
+          date: base,
+          message: buildLeadPameranMessage(lead, dayNum, true),
         });
-        cursor = addDaysIso(cursor, 1);
-        guard++;
+      } else {
+        // Loop dinamis dari H+1 sampai tanggal terakhir pameran — otomatis
+        // menyesuaikan berapa pun jumlah hari pamerannya (3 hari, 4 hari, dst).
+        // dayNum dihitung dari tanggal MULAI pameran yang sebenarnya (kalau ada),
+        // BUKAN dari tanggal leads masuk — soalnya leads bisa aja baru masuk di
+        // hari ke-2/3 pameran, bukan cuma hari pertama. Kalau dihitung dari
+        // tanggal leads masuk terus, labelnya ("Hari ke-2 Pameran" dst) jadi
+        // meleset dari jadwal pameran yang asli. Fallback ke cara lama (dari
+        // tanggal leads masuk) cuma buat leads manual yang tidak ditautkan ke
+        // master data Pameran, karena di situ memang tidak ada tanggal mulainya.
+        let cursor = addDaysIso(base, 1);
+        let guard = 0;
+        while(cursor && cursor <= pameranEndDate && guard < 14){
+          const isLast = cursor === pameranEndDate;
+          const dayNum = pameranStartDate
+            ? (isoDateDiffDays(pameranStartDate, cursor) + 1)
+            : (isoDateDiffDays(base, cursor) + 1);
+          items.push({
+            key: `p${dayNum}`,
+            title: isLast ? '🎪 Follow Up Hari Terakhir Pameran' : `🎪 Follow Up Hari ke-${dayNum} Pameran`,
+            date: cursor,
+            message: buildLeadPameranMessage(lead, dayNum, isLast),
+          });
+          cursor = addDaysIso(cursor, 1);
+          guard++;
+        }
       }
     } else {
       // Tanggal terakhir pameran belum diisi — tetap kasih 1 reminder default

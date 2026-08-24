@@ -2452,7 +2452,11 @@ function buildLeadReminderItems(lead){
   const base = lead.leadDate || (lead.createdAt||'').slice(0,10);
   const isPameran = leadIsFromPameran(lead);
   const pameranEndDate = leadEffectivePameranEndDate(lead);
-  const pameranEndValid = isPameran && pameranEndDate && pameranEndDate > base;
+  // Pakai >= (bukan >) — leads yang diisi TEPAT di hari terakhir pameran (base
+  // == pameranEndDate) itu valid & sudah lengkap tanggalnya, jangan dianggap
+  // "belum diisi". Kalau strict >, kasus ini malah nyasar ke fallback p_default
+  // yang nyuruh admin isi ulang tanggal padahal sudah diisi (bug).
+  const pameranEndValid = isPameran && pameranEndDate && pameranEndDate >= base;
   const pameranStartDate = leadEffectivePameranStartDate(lead);
   // Kalau leads-nya dari pameran dan tanggal terakhir pamerannya udah keisi,
   // reminder H+1/H+3/H+7/bulanan (nurture) dihitung mulai dari SETELAH pameran
@@ -2560,7 +2564,7 @@ function showLeadReminders(id){
   window.__leadReminderLeadId = id;
   const baseDateFmt = fmtDate(lead.leadDate || (lead.createdAt||'').slice(0,10));
   const pameranEndDate = leadEffectivePameranEndDate(lead);
-  const pameranEndValidForCaption = leadIsFromPameran(lead) && pameranEndDate && pameranEndDate > (lead.leadDate || (lead.createdAt||'').slice(0,10));
+  const pameranEndValidForCaption = leadIsFromPameran(lead) && pameranEndDate && pameranEndDate >= (lead.leadDate || (lead.createdAt||'').slice(0,10));
   const captionExtra = leadIsFromPameran(lead)
     ? (pameranEndValidForCaption
         ? `, termasuk jadwal selama pameran berlangsung (menyesuaikan lama pamerannya) — reminder H+1/H+3/H+7/bulanan dihitung mulai setelah pameran selesai (${fmtDate(pameranEndDate)})`
@@ -3415,7 +3419,7 @@ function contactMailtoLink(email, subject, message){
 }
 function buildEventReminderMessage(recipientLabel, coupleLabel, weddingDateFmt, daysLeft){
   const dText = daysLeft < 0 ? ('telah melewati tanggal yang dijadwalkan sekitar ' + Math.abs(daysLeft) + ' hari yang lalu') : (daysLeft === 0 ? 'jatuh pada hari ini' : ('tinggal ' + daysLeft + ' hari lagi'));
-  return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan bahwa acara pernikahan ${coupleLabel} yang dijadwalkan pada ${weddingDateFmt} ${dText}.\n\nMohon kesediaan Bapak/Ibu untuk mengecek kembali persiapan yang sudah berjalan. Apabila ada hal yang perlu didiskusikan atau dikonfirmasi ulang, silakan hubungi kami kembali.\n\nTerima kasih atas perhatian dan kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  return `Yth. Bapak/Ibu/Saudara/i ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan bahwa acara pernikahan ${coupleLabel} yang dijadwalkan pada ${weddingDateFmt} ${dText}.\n\nMohon kesediaan Bapak/Ibu untuk mengecek kembali persiapan yang sudah berjalan. Apabila ada hal yang perlu didiskusikan atau dikonfirmasi ulang, silakan hubungi kami kembali.\n\nTerima kasih atas perhatian dan kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
 function buildPaymentReminderMessage(recipientLabel, coupleLabel, paymentLabel, amountFmt, dueDateFmt, daysLeft){
   const dText = daysLeft < 0 ? ('sudah melewati jatuh tempo sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'jatuh tempo hari ini' : ('jatuh tempo dalam ' + daysLeft + ' hari'));
@@ -3425,13 +3429,13 @@ function buildAgendaReminderMessage(recipientLabel, coupleLabel, agendaTitle, ag
   const dText = daysLeft < 0 ? ('sudah melewati jadwal sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'dijadwalkan hari ini' : ('dijadwalkan dalam ' + daysLeft + ' hari'));
   const locLine = location ? ('\n📍 Lokasi: ' + location) : '';
   const mapsLine = mapsUrl ? ('\n🗺️ Share Lokasi: ' + mapsUrl) : '';
-  return `Assalamu'alaikum / Selamat pagi ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan salah satu agenda persiapan pernikahan Anda berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}${locLine}${mapsLine}\n\nMohon kesediaan Bapak/Ibu mempersiapkan dan mengonfirmasi kembali kesiapannya, agar rangkaian acara berjalan lancar sesuai jadwal. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  return `Yth. Bapak/Ibu/Saudara/i ${recipientLabel},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan salah satu agenda persiapan pernikahan Anda berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}${locLine}${mapsLine}\n\nMohon kesediaan Bapak/Ibu mempersiapkan dan mengonfirmasi kembali kesiapannya, agar rangkaian acara berjalan lancar sesuai jadwal. Jika ada kendala, silakan hubungi kami kembali.\n\nTerima kasih banyak.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
 function buildAgendaVendorReminderMessage(vendorName, coupleLabel, agendaTitle, agendaDesc, dateFmt, daysLeft, location, mapsUrl){
   const dText = daysLeft < 0 ? ('sudah melewati jadwal sekitar ' + Math.abs(daysLeft) + ' hari') : (daysLeft === 0 ? 'dijadwalkan hari ini' : ('dijadwalkan dalam ' + daysLeft + ' hari'));
   const locLine = location ? ('\n📍 Lokasi: ' + location) : '';
   const mapsLine = mapsUrl ? ('\n🗺️ Share Lokasi: ' + mapsUrl) : '';
-  return `Assalamu'alaikum / Selamat pagi Bapak/Ibu ${vendorName},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan jadwal koordinasi untuk project ${coupleLabel} berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}${locLine}${mapsLine}\n\nMohon kesediaan tim untuk mempersiapkan kebutuhan terkait dan mengonfirmasi kesiapannya. Jika ada kendala atau perubahan jadwal, silakan hubungi kami kembali.\n\nTerima kasih atas kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  return `Yth. Bapak/Ibu/Saudara/i ${vendorName},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan jadwal koordinasi untuk project ${coupleLabel} berikut:\n\n📅 ${agendaTitle}\n🕓 ${dateFmt} (${dText})${agendaDesc ? ('\n📝 ' + agendaDesc) : ''}${locLine}${mapsLine}\n\nMohon kesediaan tim untuk mempersiapkan kebutuhan terkait dan mengonfirmasi kesiapannya. Jika ada kendala atau perubahan jadwal, silakan hubungi kami kembali.\n\nTerima kasih atas kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
 /* Kumpulkan SEMUA reminder (acara, pembayaran & agenda timeline) untuk project yang
    sedang dibuka (pakai variabel global `state`) — baik yang statusnya sudah aktif
@@ -3447,7 +3451,7 @@ function getReminderVendorOptions(){
 }
 function buildVendorEventReminderMessage(vendorName, coupleLabel, weddingDateFmt, daysLeft){
   const dText = daysLeft < 0 ? ('telah melewati tanggal yang dijadwalkan sekitar ' + Math.abs(daysLeft) + ' hari yang lalu') : (daysLeft === 0 ? 'jatuh pada hari ini' : ('tinggal ' + daysLeft + ' hari lagi'));
-  return `Assalamu'alaikum / Selamat pagi Bapak/Ibu ${vendorName},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan bahwa acara pernikahan ${coupleLabel} yang dijadwalkan pada ${weddingDateFmt} ${dText}.\n\nMohon kesediaan tim untuk memastikan kembali kesiapan peralatan dan personel di lapangan sesuai kesepakatan. Jika ada kendala atau perubahan, silakan hubungi kami kembali.\n\nTerima kasih atas kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
+  return `Yth. Bapak/Ibu/Saudara/i ${vendorName},\n\nKami dari tim admin *ArtaJava Wedding Organizer* ingin mengingatkan bahwa acara pernikahan ${coupleLabel} yang dijadwalkan pada ${weddingDateFmt} ${dText}.\n\nMohon kesediaan tim untuk memastikan kembali kesiapan peralatan dan personel di lapangan sesuai kesepakatan. Jika ada kendala atau perubahan, silakan hubungi kami kembali.\n\nTerima kasih atas kerja samanya.\n\nHormat kami,\nTim Admin — ArtaJava Wedding Organizer`;
 }
 function buildProjectReminders(){
   const items = [];

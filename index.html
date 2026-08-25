@@ -3655,6 +3655,21 @@ function paintGateForCurrentHash(){
   else { showProjectGate(); }
 }
 async function initRoleFlow(){
+  // FIX PWA: kalau app dibuka sebagai aplikasi terinstall (shortcut/PWA) dan
+  // mendarat di alamat "kosong" (tanpa ?p=... dan tanpa #vendor/#client dst),
+  // coba pulihkan alamat pribadi terakhir yang berhasil login di device ini,
+  // supaya tidak selalu balik ke halaman pilih peran umum.
+  try{
+    const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    const noParams = !location.search && (!location.hash || location.hash === '');
+    if(isStandalone && noParams){
+      const savedUrl = localStorage.getItem('artajava_last_url');
+      if(savedUrl && savedUrl !== location.href){
+        location.replace(savedUrl);
+        return;
+      }
+    }
+  }catch(e){}
   const params = new URLSearchParams(location.search);
   currentProjectId = params.get('p');
 
@@ -3760,7 +3775,11 @@ function showProjectNotFound(){
 
 function showEntryGate(){
   if(location.hash === '#vendorlink'){ showVendorLinkProjectPicker(); return; }
-  const clientOnlyMode = (location.hash === '#clientlink');
+  // FIX AKSES: halaman awal PUBLIK (alamat tanpa embel-embel apapun) sekarang
+  // HANYA menampilkan login Klien — tombol Admin/Marketing/Vendor(Akun)
+  // disembunyikan dari orang umum. Admin punya link rahasia sendiri (#admin)
+  // untuk tetap bisa mengakses opsi lengkap.
+  const clientOnlyMode = (location.hash === '#clientlink') || (location.hash === '');
   if(clientOnlyMode) clientLinkMode = true;
   lockMarketingModeIfNeeded();
   const app = document.getElementById('app');
@@ -4439,7 +4458,7 @@ function renderProjectDashboard(){
   document.getElementById('logoutRoleBtn').addEventListener('click', ()=>{
     // Kalau tadi masuk lewat link khusus marketing (#marketing), pertahankan hash itu
     // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan di layar ini.
-    const keepHash = isMarketingLocked() ? '#marketing' : '';
+    const keepHash = isMarketingLocked() ? '#marketing' : '#admin';
     isVendor=false; isAdmin=false; vendorAuthed=false; currentMarketing=null; viewingDashboard=false; roleDecided=false;
     isVendorAccountSession=false; currentVendorAccountSession=null; isSupplier=false; supplierVendorKey=null;
     currentProjectId = null; state = null;
@@ -5130,6 +5149,12 @@ function setTab(tab){ currentTab = tab; navDrawerOpen = false; render(); }
 /* ---------- MAIN RENDER ---------- */
 function render(){
   if(!roleDecided){ showProjectGate(); return; }
+  // FIX PWA: simpan alamat pribadi yang sedang aktif (sudah login) supaya
+  // bisa dipulihkan otomatis kalau app dibuka lagi lewat shortcut/PWA yang
+  // mendarat di alamat kosong (lihat initRoleFlow).
+  try{
+    if(location.search || location.hash){ localStorage.setItem('artajava_last_url', location.href); }
+  }catch(e){}
   if(isSupplier && currentTab==='pembayaran'){ currentTab = 'beranda'; }
   if(!isVendor && currentTab==='notifikasi'){ currentTab = 'beranda'; }
   const app = document.getElementById('app');
@@ -6300,7 +6325,7 @@ function attachHandlers(){
         showVendorLinkProjectPicker();
         return;
       }
-      history.replaceState(null, '', location.pathname);
+      history.replaceState(null, '', location.pathname + '#admin');
       showEntryGate();
       return;
     }

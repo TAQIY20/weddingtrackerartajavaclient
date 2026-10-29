@@ -365,6 +365,11 @@
   .v-emoji-input{width:40px;text-align:center;font-size:18px;padding:3px 2px;border-radius:8px;background:transparent;border:1px dashed var(--card-border);flex-shrink:0;}
   .v-emoji-input:focus{border-style:solid;}
   .v-card .v-cat input.catname{font-family:'Fraunces',serif;font-size:16px;font-weight:600;background:transparent;border:none;border-bottom:1px dashed var(--card-border);padding:0 0 2px;min-width:0;flex:1;}
+  .evt-info{margin-bottom:10px;display:flex;flex-direction:column;gap:8px;}
+  .evt-row{border-left:3px solid var(--gold);padding:2px 0 2px 9px;}
+  .evt-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--cream-dimmer);margin-bottom:2px;}
+  .evt-main{font-size:14.5px;font-weight:600;line-height:1.35;}
+  .evt-place{font-size:12.5px;color:var(--cream-dim);line-height:1.35;margin-top:1px;word-break:break-word;}
   .v-field{margin-bottom:8px;}
   .v-field label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--cream-dimmer);display:block;margin-bottom:3px;}
   .v-field input, .v-field textarea, .v-field select{width:100%;background:rgba(122,31,46,.05);border:1px solid var(--card-border);border-radius:9px;color:var(--cream);padding:7px 9px;font-family:inherit;font-size:13px;}
@@ -988,6 +993,18 @@ function computePaymentFlags(payments){
     nextDueLabel: nextDue ? nextDue.label : null,
   };
 }
+// Info akad & resepsi yang ditampilkan di kartu project (disalin ke projectsIndex).
+function computeEventInfo(couple){
+  const c = couple || {};
+  return {
+    akadDate: c.akadDate || c.weddingDate || '',
+    akadTime: c.akadTime || '',
+    akadLocation: c.akadLocation || '',
+    weddingTime: c.weddingTime || '',
+    venueName: c.venueName || '',
+    eventInfoSynced: true,
+  };
+}
 function computeAllAgendaDone(timeline){
   const list = Array.isArray(timeline) ? timeline : [];
   return list.length>0 && list.every(t=>t.status==='done');
@@ -1375,6 +1392,8 @@ function normalizeState(s){
   }
   if(typeof s.budget !== 'number') s.budget = 0;
   if(typeof s.packageName !== 'string') s.packageName = '';
+  if(!s.invoiceInfo || typeof s.invoiceInfo !== 'object') s.invoiceInfo = {};
+  ['customerName','address','phone','nb'].forEach(k=>{ if(typeof s.invoiceInfo[k] !== 'string') s.invoiceInfo[k] = ''; });
   if(!Array.isArray(s.bonuses)) s.bonuses = [];
   if(!Array.isArray(s.removedVendorCats)) s.removedVendorCats = [];
   if(typeof s.subsidiTakeOut !== 'number'){
@@ -2864,7 +2883,7 @@ async function migrateLegacyProject(){
     data.id = genProjectId();
     if(!data.clientPassword) data.clientPassword = genPassword(6);
     await window.storage.set(projectKey(data.id), JSON.stringify(data), true);
-    projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt || new Date().toISOString(), clientUsername: data.clientUsername || '', ...computePaymentFlags(data.payments), allAgendaDone: computeAllAgendaDone(data.timeline) });
+    projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt || new Date().toISOString(), clientUsername: data.clientUsername || '', ...computePaymentFlags(data.payments), ...computeEventInfo(data.couple), allAgendaDone: computeAllAgendaDone(data.timeline) });
     await saveProjectsIndex();
   }catch(e){ /* no legacy data, ignore */ }
 }
@@ -2884,7 +2903,7 @@ async function createProject(brideName, groomName, marketingId, packageId){
   const pkg = packageId ? findPackageById(packageId) : null;
   const data = defaultData(brideName, groomName, null, marketingId || null, pkg);
   await window.storage.set(projectKey(data.id), JSON.stringify(data), true);
-  projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt, marketingId: data.marketingId || null, clientUsername: data.clientUsername || '', ...computePaymentFlags(data.payments), allAgendaDone: computeAllAgendaDone(data.timeline) });
+  projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt, marketingId: data.marketingId || null, clientUsername: data.clientUsername || '', ...computePaymentFlags(data.payments), ...computeEventInfo(data.couple), allAgendaDone: computeAllAgendaDone(data.timeline) });
   await saveProjectsIndex();
   return data;
 }
@@ -3165,6 +3184,7 @@ async function persist(){
       idxEntry.weddingDate = state.couple.weddingDate;
       idxEntry.packageName = state.packageName || '';
       Object.assign(idxEntry, computePaymentFlags(state.payments));
+      Object.assign(idxEntry, computeEventInfo(state.couple));
       idxEntry.allAgendaDone = computeAllAgendaDone(state.timeline);
       saveProjectsIndex();
     }
@@ -3600,6 +3620,148 @@ function computeDp20(payments, packageHarga){
     dp1Amount,
     dp20: dp1Paid ? Math.max(dp20Base - dp1Amount, 0) : dp20Base,
   };
+}
+
+// Urutkan item pembayaran berdasarkan jatuh tempo (tanggal kosong di paling bawah; urutan asli dijaga kalau tanggal sama).
+function sortPayments(){
+  if(!state || !Array.isArray(state.payments)) return;
+  const ordered = state.payments.map((p,i)=>({p,i})).sort((a,b)=>{
+    const da = a.p.dueDate || '9999-99-99', db = b.p.dueDate || '9999-99-99';
+    return da < db ? -1 : da > db ? 1 : a.i - b.i;
+  });
+  state.payments = ordered.map(x=>x.p);
+}
+function currentSisaTagihan(){
+  const kontrak = totalVendorHarga() + totalAddonsAll() + (Number(state.budget)||0);
+  const paid = state.payments.filter(p=>p.status==='paid').reduce((s,p)=>s+(Number(p.amount)||0),0);
+  return Math.max(kontrak - paid - totalSubsidi(), 0);
+}
+// Setelah satu item dicentang lunas, isi otomatis nominal tagihan berikutnya (masih bisa diedit manual).
+function autofillNextPayment(paidItem){
+  const idx = state.payments.indexOf(paidItem);
+  const next = state.payments.slice(idx+1).find(x=>x.status!=='paid');
+  if(!next) return;
+  const sisa = currentSisaTagihan();
+  const isDp25 = /dp\s*25/i.test(next.label||'');
+  const hasLaterUnpaid = state.payments.slice(state.payments.indexOf(next)+1).some(x=>x.status!=='paid');
+  // Kalau berikutnya DP 25% dan masih ada pelunasan sesudahnya, pakai nominal DP 25% (sudah dikurangi DP 1).
+  next.amount = (isDp25 && hasLaterUnpaid)
+    ? Math.min(computeDp20(state.payments, Number(state.budget)||0).dp20, sisa)
+    : sisa;
+}
+
+/* ---------- INVOICE OTOMATIS ----------
+   Format mengikuti invoice manual ArtaJava: Dasar Paket + semua item add-on vendor,
+   lalu Note berisi pembayaran (DP 1jt, DP 25%, dst) yang mengurangi total. */
+const INVOICE_LOGO_SRC = "data:image/jpeg;base64,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";
+function invoiceNum(n){ return 'Rp ' + (Number(n)||0).toLocaleString('id-ID'); }
+function invoiceDateLong(d){
+  return d.toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+}
+function invoiceDdMmYyyy(iso){
+  if(!iso) return '-';
+  const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`;
+}
+function buildInvoiceHtml(payId){
+  sortPayments();
+  const pays = state.payments;
+  const idx = pays.findIndex(x=>x.id===payId);
+  if(idx < 0) return null;
+  const cur = pays[idx];
+  const info = state.invoiceInfo || {};
+  const c = state.couple;
+
+  // Item: paket + semua add-on dari seluruh vendor
+  const items = [];
+  const pkgPrice = Number(state.budget)||0;
+  items.push({ name: 'Dasar Paket ' + (state.packageName ? state.packageName.replace(/^paket\s+/i,'') : ''), qty:1, rate:pkgPrice, amount:pkgPrice });
+  const pushAddons = (label, v)=>{
+    (v.addons||[]).forEach(a=>{
+      const qty = Number(a.qty)||0, rate = Number(a.amount)||0;
+      if(!a.name && !rate) return;
+      items.push({ name: `${a.name||'Add-on'} (${label})`, qty, rate, amount: qty*rate });
+    });
+  };
+  activeVendorCats().forEach(cat=> pushAddons(cat.key, state.vendors[cat.key]));
+  (state.extraVendors||[]).forEach(v=> pushAddons(v.category||'Vendor Tambahan', v));
+  const subTotal = items.reduce((t,i)=>t+i.amount,0);
+  const subsidi = totalSubsidi();
+
+  // Pembayaran yang dikurangkan: semua item sampai item invoice ini (kalau ini item terakhir/pelunasan, hanya yang sebelumnya).
+  const isLast = idx === pays.length-1;
+  const deduct = pays.slice(0, isLast ? idx : idx+1);
+  const deductSum = deduct.reduce((t,x)=>t+(Number(x.amount)||0),0);
+  const sisa = Math.max(subTotal - subsidi - deductSum, 0);
+
+  const noteRows = deduct.map(x=>`<tr><td class="n">(${invoiceDdMmYyyy(x.dueDate)}) ${escapeHtml(x.label)} ${invoiceNum(x.amount)},-</td><td class="a">- ${invoiceNum(x.amount)}</td></tr>`);
+  if(subsidi>0) noteRows.push(`<tr><td class="n">Subsidi Take-Out</td><td class="a">- ${invoiceNum(subsidi)}</td></tr>`);
+  const customer = info.customerName || `${c.brideName} & ${c.groomName}`;
+  const minRows = Math.max(0, 6 - items.length);
+  const gap = Array.from({length:minRows}).map((_,i)=>`<tr class="${i%2===0?'g':''}"><td>&nbsp;</td><td></td><td></td><td></td></tr>`).join('');
+
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Invoice ${escapeHtml(cur.label)} - ${escapeHtml(c.brideName)} & ${escapeHtml(c.groomName)}</title>
+<style>
+@page{size:A4;margin:0}
+*{box-sizing:border-box}
+body{margin:0;font-family:Calibri,Carlito,Arial,sans-serif;color:#222;font-size:12.5px;background:#eee}
+.page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:0 16mm 14mm;position:relative}
+.topbar{height:4px;background:#1f3b63;margin:0 -16mm 0;position:relative;top:22px}
+.head{text-align:right;color:#1f3b63;padding-top:40px;line-height:2.1}
+.title-row{display:flex;justify-content:space-between;align-items:flex-start;margin-top:4px}
+.title{font-size:21px;font-weight:700;color:#1f3b63}
+.date{color:#d11;font-weight:700;font-size:11.5px;margin-top:2px}
+.logo{height:62px}
+.cust{margin-top:12px;display:flex;justify-content:space-between;gap:16px}
+.cust .l b{display:block;margin-bottom:2px}
+.cust .l div{line-height:1.5;white-space:pre-line}
+.cust .r{text-align:right;line-height:1.5}
+.cust .r b{font-size:12px}
+table{width:100%;border-collapse:collapse}
+.items{margin-top:6px}
+.items th{background:#a6a6a6;color:#1f3b63;font-weight:400;text-align:right;padding:2px 6px}
+.items th:first-child,.items td:first-child{text-align:left}
+.items td{padding:3px 6px;text-align:right}
+.items tr.g td{background:#d9d9d9}
+.note{margin-top:14px;border-top:1px solid #000}
+.note .hd td{padding:3px 6px;font-weight:700}
+.note .hd .a{color:#1f3b63;text-align:right}
+.note td.n{padding:3px 6px;font-weight:700}
+.note td.a{padding:3px 6px;text-align:right;font-weight:700;white-space:nowrap}
+.tagihan{margin-top:12px;padding:6px 8px;background:#f7efe0;border-left:4px solid #C6A15B;font-weight:700}
+.total{margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:26px}
+.total .t{color:#d11;font-weight:700;font-size:15px}
+.total .v{border:1.5px solid #000;padding:3px 10px;color:#d11;font-weight:700;font-size:14px}
+.nb{margin-top:16px;font-weight:700;white-space:pre-line}
+.bank{margin-top:16px;display:inline-block;background:#4f81bd;color:#fff;font-weight:700;padding:5px 8px;border:1px solid #1f3b63;font-size:11.5px;line-height:1.5}
+.noprint{position:fixed;top:10px;right:10px;background:#7A1F2E;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer}
+@media print{body{background:#fff}.noprint{display:none}.page{padding-bottom:0}}
+</style></head><body>
+<button class="noprint" onclick="window.print()">🖨️ Cetak / Simpan PDF</button>
+<div class="page">
+<div class="topbar"></div>
+<div class="head">Jl. Tempel Sukorejo I, No. 78A<br>Tegalsari Surabaya, Jawa Timur 60263<br>WA/ Phone : +62 81367588766 / +62 81455101267</div>
+<div class="title-row"><div><div class="title">Invoice</div><div class="date">${escapeHtml(invoiceDateLong(new Date()))}</div></div><img class="logo" src="${INVOICE_LOGO_SRC}" alt="ArtaJava"></div>
+<div class="cust">
+  <div class="l"><b>Customer</b><div>${escapeHtml(customer)}${info.address?'\n'+escapeHtml(info.address):''}${info.phone?'\n'+escapeHtml(info.phone):''}</div></div>
+  <div class="r">Wedding<br>${escapeHtml(fmtDate(c.weddingDate))}<br><b>${escapeHtml(c.venueName||'')}</b></div>
+</div>
+<table class="items"><thead><tr><th style="width:52%">Items</th><th style="width:8%">Qty</th><th style="width:20%">Rate</th><th style="width:20%">Amount</th></tr></thead><tbody>
+${items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td>${i.qty}</td><td>${invoiceNum(i.rate)}</td><td>${invoiceNum(i.amount)}</td></tr>`).join('')}
+${gap}
+</tbody></table>
+<table class="note"><tr class="hd"><td>Note :</td><td class="a">Sub Total &nbsp;&nbsp;${invoiceNum(subTotal)}</td></tr>${noteRows.join('')}</table>
+<div class="tagihan">Tagihan ini: ${escapeHtml(cur.label)} — ${invoiceNum(cur.amount)}${cur.dueDate?` (jatuh tempo ${invoiceDdMmYyyy(cur.dueDate)})`:''}</div>
+<div class="total"><span class="t">${isLast?'TOTAL':'SISA TAGIHAN'}</span><span class="v">${invoiceNum(sisa)}</span></div>
+<div class="nb">NB : ${escapeHtml(info.nb||'')}</div>
+<div class="bank">No Rekening Artajava Wedding Organizer<br>BCA 2582667749 A/N SANDRA AMELIA PUSPITA</div>
+</div></body></html>`;
+}
+function openInvoice(payId){
+  const html = buildInvoiceHtml(payId);
+  if(!html){ showToast('Item pembayaran tidak ditemukan', true); return; }
+  const w = window.open('', '_blank');
+  if(!w){ showToast('Pop-up diblokir browser. Izinkan pop-up lalu coba lagi.', true); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 function refreshPaymentSummary(){
@@ -4226,8 +4388,39 @@ async function showProjectDashboard(overlay){
   }catch(e){ console.error('showProjectDashboard load failed', e); }
   if(overlay) hideLoadingOverlay();
   renderProjectDashboard();
+  backfillEventInfoInBackground();
   hydrateMarketingPhotosInBackground();
   hydrateVendorPhotosInBackground();
+}
+
+// Project lama belum punya info akad/resepsi di index -> ambil sekali dari data project, lalu simpan.
+let eventInfoBackfillRunning = false;
+async function backfillEventInfoInBackground(){
+  if(eventInfoBackfillRunning || isDemoMode) return;
+  const pending = projectsIndex.filter(p=>!p.eventInfoSynced);
+  if(!pending.length) return;
+  eventInfoBackfillRunning = true;
+  let changed = false;
+  try{
+    for(const p of pending){
+      const full = await loadProjectById(p.id);
+      if(full && full.couple){ Object.assign(p, computeEventInfo(full.couple)); changed = true; }
+    }
+    if(changed){ await saveProjectsIndex(); renderProjectDashboard(); }
+  }catch(e){ console.error('backfill event info failed', e); }
+  eventInfoBackfillRunning = false;
+}
+
+function eventInfoBlockHtml(p){
+  const fmtT = t => t ? `🕐 ${escapeHtml(t.replace(':','.'))} WIB` : '';
+  const row = (label, date, time, place)=>`
+    <div class="evt-row"><div class="evt-label">${label}</div>
+      <div class="evt-main">${date ? escapeHtml(fmtDate(date)) : 'Tanggal belum diisi'}${time ? ` · ${fmtT(time)}` : ''}</div>
+      <div class="evt-place">📍 ${place ? escapeHtml(place) : 'Lokasi belum diisi'}</div></div>`;
+  return `<div class="evt-info">
+    ${row('Akad / Pemberkatan', p.akadDate || p.weddingDate, p.akadTime, p.akadLocation)}
+    ${row('Resepsi', p.weddingDate, p.weddingTime, p.venueName)}
+  </div>`;
 }
 
 function myVisibleProjects(){
@@ -4279,7 +4472,7 @@ function projectCardHtml(p){
           <span class="stage-badge v-status-badge ${stage.key}" title="Status: ${stage.label}">${stage.label}</span>
           <div class="v-cat" style="padding-right:88px;"><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(p.brideName)} &amp; ${escapeHtml(p.groomName)}</span></div></div>
           ${reminderChip}
-          <div class="v-field"><label>Tanggal Nikah</label><div>${fmtDate(p.weddingDate)}</div></div>
+          ${eventInfoBlockHtml(p)}
           <div class="v-field"><label>Kode Project</label><div style="font-family:monospace;font-weight:700;">${escapeHtml(p.id)}</div></div>
           ${p.packageName ? `<div class="v-field"><label>Paket</label><div>${escapeHtml(p.packageName)}</div></div>` : ''}
           ${isAdmin ? (p.clientUsername
@@ -5833,6 +6026,7 @@ function renderVendors(){
 }
 
 function renderPayments(){
+  sortPayments();
   const totalAddons = totalAddonsAll();
   const totalHarga = totalVendorHarga();
   const packageHarga = Number(state.budget)||0;
@@ -5847,7 +6041,6 @@ function renderPayments(){
       <div class="pay-item pay-item-package"><div class="lbl">Harga Paket</div>
         ${state.packageName ? `<div class="pkg-name">${escapeHtml(state.packageName)}</div>` : ''}
         <div class="val">${isVendor ? `<input class="currency" id="budgetInput" value="${fmtIDR(state.budget)}">` : fmtIDR(state.budget)}</div></div>
-      <div class="pay-item"><div class="lbl">Total Harga Vendor</div><div class="val" id="totalHargaVendorVal">${fmtIDR(totalHarga)}</div></div>
       <div class="pay-item"><div class="lbl">Total Add-Ons Vendor</div><div class="val" id="totalAddonsVal">${fmtIDR(totalAddons)}</div></div>
       <div class="pay-item highlight"><div class="lbl">Total Kontrak Keseluruhan</div><div class="val" id="totalKontrakVal">${fmtIDR(totalKontrak)}</div></div>
       <div class="pay-item"><div class="lbl">Subsidi Take-Out</div><div class="val" id="totalSubsidiVal" style="${subsidi>0?'color:var(--danger);':''}">${isVendor ? `<input class="currency" id="subsidiInput" value="${fmtIDR(state.subsidiTakeOut)}">` : ((subsidi>0 ? '- ' : '') + fmtIDR(subsidi))}</div></div>
@@ -5859,6 +6052,13 @@ function renderPayments(){
       <h3>🏦 Info Rekening</h3>
       <div class="v-field"><label>Rekening BCA</label><div class="val">a.n. Sandra Amelia Puspita — 2582667749</div></div>
     </div>
+    ${isVendor ? `<div class="mb-card">
+      <h3>🧾 Data Customer untuk Invoice</h3>
+      <div class="v-field"><label>Nama Customer</label><input id="invCustomerName" value="${escapeAttr((state.invoiceInfo||{}).customerName||'')}" placeholder="${escapeAttr(state.couple.brideName+' & '+state.couple.groomName)}"/></div>
+      <div class="v-field"><label>Alamat</label><input id="invAddress" value="${escapeAttr((state.invoiceInfo||{}).address||'')}" placeholder="Alamat customer"/></div>
+      <div class="v-field"><label>No. Telepon</label><input id="invPhone" value="${escapeAttr((state.invoiceInfo||{}).phone||'')}" placeholder="08xxxxxxxxxx"/></div>
+      <div class="v-field"><label>NB (catatan di invoice, opsional)</label><input id="invNb" value="${escapeAttr((state.invoiceInfo||{}).nb||'')}" placeholder="Catatan tambahan"/></div>
+    </div>` : ''}
     <div class="pay-list">
       ${state.payments.map(p=>`
         <div class="p-row" data-payid="${p.id}">
@@ -5879,7 +6079,7 @@ function renderPayments(){
           </div>
           <input class="amt" data-field="amount" value="${fmtIDR(p.amount)}" ${isVendor?'':'disabled'}/>
           <span class="p-status ${p.status}">${p.status==='paid'?'Sudah Dibayar':'Belum Dibayar'}</span>
-          ${isVendor ? `<button class="btn small" data-action="toggle-paid">${p.status==='paid'?'↺ Batal':'✓ Lunas'}</button><button class="btn small danger" data-action="delete-payment">🗑️</button>` : ''}
+          ${isVendor ? `<button class="btn small" data-action="make-invoice">🧾 Invoice</button><button class="btn small" data-action="toggle-paid">${p.status==='paid'?'↺ Batal':'✓ Lunas'}</button><button class="btn small danger" data-action="delete-payment">🗑️</button>` : ''}
         </div>
       `).join('')}
       ${isVendor ? `<button class="btn ghost" id="addPayment">+ Tambah Item Pembayaran</button>` : ''}
@@ -6536,9 +6736,14 @@ function attachHandlers(){
       });
     });
 
+    [['invCustomerName','customerName'],['invAddress','address'],['invPhone','phone'],['invNb','nb']].forEach(([id,key])=>{
+      const el = document.getElementById(id);
+      if(el) el.addEventListener('input', e=>{ state.invoiceInfo[key] = e.target.value; scheduleSave(); });
+    });
     const addPayment = document.getElementById('addPayment');
     if(addPayment) addPayment.addEventListener('click', ()=>{
       state.payments.push({id:uid('p'), label:'Item Pembayaran Baru', amount:0, dueDate: state.couple.weddingDate, status:'unpaid', invoice:null});
+      sortPayments();
       scheduleSave(); render();
     });
 
@@ -6771,13 +6976,16 @@ function attachHandlers(){
     const labelInp = el.querySelector('[data-field="label"]');
     if(labelInp) labelInp.addEventListener('input', e=>{ p.label = e.target.value; scheduleSave(); });
     const dueInp = el.querySelector('[data-field="dueDate"]');
-    if(dueInp) dueInp.addEventListener('change', e=>{ p.dueDate = e.target.value; scheduleSave(); render(); });
+    if(dueInp) dueInp.addEventListener('change', e=>{ p.dueDate = e.target.value; sortPayments(); scheduleSave(); render(); });
     const amtInp = el.querySelector('[data-field="amount"]');
     setupCurrencyInput(amtInp, ()=>p.amount, v=>{ p.amount=v; });
+    const invBtn = el.querySelector('[data-action="make-invoice"]');
+    if(invBtn) invBtn.addEventListener('click', ()=> openInvoice(id));
     const toggle = el.querySelector('[data-action="toggle-paid"]');
     if(toggle) toggle.addEventListener('click', ()=>{
       p.status = p.status==='paid'?'unpaid':'paid';
       if(p.status==='paid'){
+        autofillNextPayment(p);
         const entry = logActivity('payment', `${p.label} — ${fmtIDR(p.amount)} sudah dikonfirmasi lunas`, 'admin');
         if(entry) p.activityId = entry.id;
       } else if(p.activityId){

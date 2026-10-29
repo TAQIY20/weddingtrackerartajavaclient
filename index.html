@@ -3715,23 +3715,27 @@ function buildInvoiceHtml(payId){
 html,body{margin:0;padding:0}
 body{font-family:Calibri,Carlito,Arial,sans-serif;color:#000;font-size:10.7pt;background:#eee}
 .page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;position:relative;overflow:hidden}
-.topline{position:absolute;left:90px;width:610px;top:36px;height:3px;background:#244061}
-.addr{position:absolute;right:97px;top:71px;text-align:right;color:#244061;font-size:10.7pt;line-height:16px}
+.topline{position:absolute;left:90px;width:611px;top:91px;height:3px;background:#244061}
+.addr{position:absolute;right:97px;top:125px;text-align:right;color:#244061;font-size:10.7pt;line-height:16px}
 .addr div:nth-child(2){margin-top:26px}
 .addr div:nth-child(3){margin-top:16px}
-.content{position:absolute;left:116px;top:179px;width:584px}
+.content{position:absolute;left:117px;top:234px;width:584px}
 .title-row{position:relative;height:66px}
 .title{position:absolute;left:4px;top:-4px;font-size:19.45pt;font-weight:700;color:#244061;line-height:26px}
-.date{position:absolute;left:4px;top:26px;font-size:10.7pt;font-weight:700;color:#f00;line-height:17px}
-.logo{position:absolute;left:336px;top:0;width:213px;height:auto}
-.cust{display:flex;justify-content:space-between;min-height:82px;padding:0 4px;font-size:10.7pt;line-height:20.5px}
-.cust .l{white-space:pre-line}
-.cust .l b{display:block;font-weight:700}
-.cust .r{text-align:right;padding-top:20.5px}
-.cust .r .dt{font-size:9.7pt}
-.cust .r b{font-size:10.7pt}
+.date{position:absolute;left:4px;top:24px;font-size:10.7pt;font-weight:700;color:#f00;line-height:17px}
+.logo{position:absolute;left:337px;top:8px;width:213px;height:50px}
+.cust{display:flex;justify-content:space-between;align-items:flex-start;min-height:80px;margin-top:-1px;padding:0 4px;font-size:10.7pt;line-height:20px}
+.cust .l{flex:1 1 auto;min-width:0;padding-right:12px}
+.cust .l div{line-height:20px}
+.cust .l .ad{font-size:11.7pt;line-height:21px;white-space:pre-line}
+.cust .l .ph{font-size:11.7pt;line-height:17px;padding-top:2px}
+.cust .l b{font-weight:700}
+.cust .r{flex:0 0 auto;text-align:right;padding-top:20px;white-space:nowrap}
+.cust .r div{line-height:20px}
+.cust .r .dt{font-size:9.7pt;line-height:21px}
+.cust .r .vn{line-height:19px;font-weight:700;font-size:10.7pt}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
-.items th{background:#a5a5a5;color:#244061;font-weight:400;height:20px;padding:0 4px;text-align:right}
+.items th{background:#a5a5a5;color:#244061;font-weight:400;height:21px;padding:0 4px;text-align:right}
 .items th:first-child{text-align:left}
 .items th:nth-child(2){text-align:center}
 .items td{height:20px;padding:0 4px;white-space:nowrap}
@@ -3742,18 +3746,19 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
 .items tr.g td{background:#d8d8d8}
 .mn{display:flex;justify-content:space-between;padding:0 9px 0 3px}
 .items td.m.amt .mn{padding-left:6px}
-.note{margin-top:19px}
-.note .hd td{background:#d8d8d8;height:22px;padding:0 4px;font-weight:700}
-.note .hd td.lb{border-top:2px solid #000;text-align:right;color:#244061;font-weight:400}
-.note .hd td.a{border-top:2px solid #000;padding:0}
+.note{margin-top:17px}
+.note .hd td{background:#d8d8d8;height:21px;padding:0 4px;font-weight:700}
+.note .hd td.lb{border-top:2px solid #000;border-bottom:2px solid #000;text-align:right;color:#244061;font-weight:400}
+.note .hd td.a{border-top:2px solid #000;border-bottom:2px solid #000;padding:0}
+.note tr.hd+tr.nr td{height:20px}
 .note tr.nr td{height:21px;padding:0 4px;font-weight:700;white-space:nowrap}
 .note tr.nr td.a{padding:0}
 .note .mn{font-weight:700}
 .total{margin-top:20px;display:flex;justify-content:flex-end;align-items:center}
 .total .t{color:#f00;font-weight:700;font-size:12.65pt;margin-right:74px}
 .total .v{width:116px;height:30px;border:2px solid #000;color:#f00;font-weight:700;font-size:11.5pt;display:flex;justify-content:space-between;align-items:center;padding:0 7px}
-.nb{margin-top:5px;font-weight:700;padding-left:4px;line-height:20px;white-space:pre-line}
-.bank{margin-top:41px;width:298px;min-height:44px;background:#4f81bd;border:2px solid #000;color:#000;font-weight:700;font-size:9.73pt;line-height:19px;padding:2px 4px;display:flex;flex-direction:column;justify-content:center}
+.nb{margin-top:2px;font-weight:700;padding-left:4px;line-height:20px;white-space:pre-line}
+.bank{margin-top:40px;width:298px;min-height:44px;background:#4f81bd;border:2px solid #000;color:#000;font-weight:700;font-size:9.73pt;line-height:19px;padding:0 4px;display:flex;flex-direction:column;justify-content:center}
 .noprint{position:fixed;top:10px;right:10px;background:#7A1F2E;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;z-index:9}
 @media print{body{background:#fff}.noprint{display:none}}
 </style></head><body>
@@ -3764,8 +3769,8 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
 <div class="content">
 <div class="title-row"><div class="title">Invoice</div><div class="date">${escapeHtml(invoiceDateLong(invDateOk))}</div><img class="logo" src="${INVOICE_LOGO_SRC}" alt="ArtaJava"></div>
 <div class="cust">
-  <div class="l"><b>Customer</b>${escapeHtml(customer)}${custAddress?'\n'+escapeHtml(custAddress):''}${custPhone?'\n'+escapeHtml(custPhone):''}</div>
-  <div class="r">Wedding<br><span class="dt">${escapeHtml(fmtDate(c.weddingDate))}</span><br><b>${escapeHtml(c.venueName||'')}</b></div>
+  <div class="l"><div><b>Customer</b></div><div>${escapeHtml(customer)}</div>${custAddress?'<div class="ad">'+escapeHtml(custAddress)+'</div>':''}${custPhone?'<div class="ph">'+escapeHtml(custPhone)+'</div>':''}</div>
+  <div class="r"><div>Wedding</div><div class="dt">${escapeHtml(fmtDate(c.weddingDate))}</div><div class="vn">${escapeHtml(c.venueName||'')}</div></div>
 </div>
 <table class="items"><colgroup><col style="width:53.3%"><col style="width:6.7%"><col style="width:20.6%"><col style="width:19.4%"></colgroup><thead><tr><th>Items</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
 ${items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="q">${i.qty}</td><td class="m">${invoiceMoney(i.rate)}</td><td class="m amt">${invoiceMoney(i.amount)}</td></tr>`).join('')}

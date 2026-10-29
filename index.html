@@ -7240,8 +7240,6 @@ function attachHandlers(){
     new MutationObserver(syncGateBg).observe(appEl, {childList:true, subtree:false});
   }
 })();
-
-</script>
 <script>
 /* PWA & Push Notification Service Worker */
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
@@ -7252,10 +7250,40 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       
       // 2. Daftarkan Service Worker Notifikasi Firebase
       navigator.serviceWorker.register('/firebase-messaging-sw.js')
-        .then(function(reg) { console.log('Notifikasi Siap:', reg.scope); })
+        .then(function(reg) { 
+          console.log('Notifikasi Siap:', reg.scope);
+          
+          // 3. MINTA IZIN NOTIFIKASI KE USER OTOMATIS
+          mintaIzinNotifikasi();
+        })
         .catch(function(err) { console.error('Gagal daftar notifikasi:', err); });
     } catch(e) {}
   });
+}
+
+// Fungsi untuk meminta izin & menampilkan token di Console
+function mintaIzinNotifikasi() {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(function(permission) {
+      if (permission === 'granted') {
+        console.log('Izin notifikasi DIBERIKAN!');
+        
+        // Ambil token unik HP/Browser untuk dites
+        if (window.firebase && firebase.messaging) {
+          firebase.messaging().getToken().then(function(token) {
+            console.log('====================================');
+            console.log('TOKEN FCM ANDA (COPYS KODE INI UNTUK TES):');
+            console.log(token);
+            console.log('====================================');
+          }).catch(function(err) {
+            console.error('Gagal mengambil token FCM:', err);
+          });
+        }
+      } else {
+        console.warn('Izin notifikasi DITOLAK/DIBLOKIR oleh pengguna.');
+      }
+    });
+  }
 }
 </script>
 </body>

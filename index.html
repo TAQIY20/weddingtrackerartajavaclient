@@ -3712,8 +3712,8 @@ function buildInvoiceHtml(payId){
   const gapCount = Math.max(0, 4 - items.length);
   const gap = Array.from({length:gapCount}).map((_,i)=>`<tr class="gp ${(items.length+i)%2===1?'g':''}"><td></td><td></td><td></td><td></td></tr>`).join('');
   const fileName = ('Invoice ' + cur.label + ' - ' + c.brideName + ' & ' + c.groomName).replace(/[\\/:*?"<>|]+/g,'');
-  const invDate = cur.dueDate ? new Date(cur.dueDate + 'T00:00:00') : new Date();
-  const invDateOk = isNaN(invDate.getTime()) ? new Date() : invDate;
+  // Tanggal pembuatan invoice = hari ini (real time, zona waktu perangkat), BUKAN jatuh tempo item pembayaran.
+  const invDateOk = new Date();
 
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Invoice ${escapeHtml(cur.label)} - ${escapeHtml(c.brideName)} & ${escapeHtml(c.groomName)}</title>
 <style>

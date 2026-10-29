@@ -3662,6 +3662,9 @@ function invoiceDdMmYyyy(iso){
   if(!iso) return '-';
   const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`;
 }
+function invoiceEn(n){ return (Number(n)||0).toLocaleString('en-US'); }
+function invoiceRp(n){ return 'Rp. ' + (Number(n)||0).toLocaleString('id-ID') + ',-'; }
+function invoiceMoney(n, cls){ return `<div class="mn ${cls||''}"><span>Rp</span><span>${invoiceEn(n)}</span></div>`; }
 function buildInvoiceHtml(payId){
   sortPayments();
   const pays = state.payments;
@@ -3670,6 +3673,11 @@ function buildInvoiceHtml(payId){
   const cur = pays[idx];
   const info = state.invoiceInfo || {};
   const c = state.couple;
+  // Data customer otomatis dari Data Klien -> mempelai wanita (CPW)
+  const cd = (state.details && state.details.clientData) || {};
+  const customer = (cd.cpwName || '').trim() || c.brideName || '';
+  const custAddress = (cd.cpwAddress || '').trim();
+  const custPhone = (cd.cpwContact || '').trim();
 
   // Item: paket + semua add-on dari seluruh vendor
   const items = [];
@@ -3693,67 +3701,81 @@ function buildInvoiceHtml(payId){
   const deductSum = deduct.reduce((t,x)=>t+(Number(x.amount)||0),0);
   const sisa = Math.max(subTotal - subsidi - deductSum, 0);
 
-  const noteRows = deduct.map(x=>`<tr><td class="n">(${invoiceDdMmYyyy(x.dueDate)}) ${escapeHtml(x.label)} ${invoiceNum(x.amount)},-</td><td class="a">- ${invoiceNum(x.amount)}</td></tr>`);
-  if(subsidi>0) noteRows.push(`<tr><td class="n">Subsidi Take-Out</td><td class="a">- ${invoiceNum(subsidi)}</td></tr>`);
-  const customer = info.customerName || `${c.brideName} & ${c.groomName}`;
-  const minRows = Math.max(0, 6 - items.length);
-  const gap = Array.from({length:minRows}).map((_,i)=>`<tr class="${i%2===0?'g':''}"><td>&nbsp;</td><td></td><td></td><td></td></tr>`).join('');
+  const noteRows = deduct.map(x=>`<tr class="nr"><td colspan="2" class="n">(${invoiceDdMmYyyy(x.dueDate)}) ${escapeHtml(x.label)} ${invoiceRp(x.amount)}</td><td class="a">${invoiceMoney(x.amount)}</td></tr>`);
+  if(subsidi>0) noteRows.push(`<tr class="nr"><td colspan="2" class="n">Subsidi Take-Out</td><td class="a">${invoiceMoney(subsidi)}</td></tr>`);
+  const gapCount = Math.max(0, 4 - items.length);
+  const gap = Array.from({length:gapCount}).map((_,i)=>`<tr class="gp ${i%2===0?'g':''}"><td></td><td></td><td></td><td></td></tr>`).join('');
+  const invDate = cur.dueDate ? new Date(cur.dueDate + 'T00:00:00') : new Date();
+  const invDateOk = isNaN(invDate.getTime()) ? new Date() : invDate;
 
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Invoice ${escapeHtml(cur.label)} - ${escapeHtml(c.brideName)} & ${escapeHtml(c.groomName)}</title>
 <style>
 @page{size:A4;margin:0}
-*{box-sizing:border-box}
-body{margin:0;font-family:Calibri,Carlito,Arial,sans-serif;color:#222;font-size:12.5px;background:#eee}
-.page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:0 16mm 14mm;position:relative}
-.topbar{height:4px;background:#1f3b63;margin:0 -16mm 0;position:relative;top:22px}
-.head{text-align:right;color:#1f3b63;padding-top:40px;line-height:2.1}
-.title-row{display:flex;justify-content:space-between;align-items:flex-start;margin-top:4px}
-.title{font-size:21px;font-weight:700;color:#1f3b63}
-.date{color:#d11;font-weight:700;font-size:11.5px;margin-top:2px}
-.logo{height:62px}
-.cust{margin-top:12px;display:flex;justify-content:space-between;gap:16px}
-.cust .l b{display:block;margin-bottom:2px}
-.cust .l div{line-height:1.5;white-space:pre-line}
-.cust .r{text-align:right;line-height:1.5}
-.cust .r b{font-size:12px}
-table{width:100%;border-collapse:collapse}
-.items{margin-top:6px}
-.items th{background:#a6a6a6;color:#1f3b63;font-weight:400;text-align:right;padding:2px 6px}
-.items th:first-child,.items td:first-child{text-align:left}
-.items td{padding:3px 6px;text-align:right}
-.items tr.g td{background:#d9d9d9}
-.note{margin-top:14px;border-top:1px solid #000}
-.note .hd td{padding:3px 6px;font-weight:700}
-.note .hd .a{color:#1f3b63;text-align:right}
-.note td.n{padding:3px 6px;font-weight:700}
-.note td.a{padding:3px 6px;text-align:right;font-weight:700;white-space:nowrap}
-.tagihan{margin-top:12px;padding:6px 8px;background:#f7efe0;border-left:4px solid #C6A15B;font-weight:700}
-.total{margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:26px}
-.total .t{color:#d11;font-weight:700;font-size:15px}
-.total .v{border:1.5px solid #000;padding:3px 10px;color:#d11;font-weight:700;font-size:14px}
-.nb{margin-top:16px;font-weight:700;white-space:pre-line}
-.bank{margin-top:16px;display:inline-block;background:#4f81bd;color:#fff;font-weight:700;padding:5px 8px;border:1px solid #1f3b63;font-size:11.5px;line-height:1.5}
-.noprint{position:fixed;top:10px;right:10px;background:#7A1F2E;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer}
-@media print{body{background:#fff}.noprint{display:none}.page{padding-bottom:0}}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;padding:0}
+body{font-family:Calibri,Carlito,Arial,sans-serif;color:#000;font-size:10.7pt;background:#eee}
+.page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;position:relative;overflow:hidden}
+.topline{position:absolute;left:90px;width:610px;top:36px;height:3px;background:#244061}
+.addr{position:absolute;right:97px;top:71px;text-align:right;color:#244061;font-size:10.7pt;line-height:16px}
+.addr div:nth-child(2){margin-top:26px}
+.addr div:nth-child(3){margin-top:16px}
+.content{position:absolute;left:116px;top:179px;width:584px}
+.title-row{position:relative;height:66px}
+.title{position:absolute;left:4px;top:-4px;font-size:19.45pt;font-weight:700;color:#244061;line-height:26px}
+.date{position:absolute;left:4px;top:26px;font-size:10.7pt;font-weight:700;color:#f00;line-height:17px}
+.logo{position:absolute;left:336px;top:0;width:213px;height:auto}
+.cust{display:flex;justify-content:space-between;min-height:82px;padding:0 4px;font-size:10.7pt;line-height:20.5px}
+.cust .l{white-space:pre-line}
+.cust .l b{display:block;font-weight:700}
+.cust .r{text-align:right;padding-top:20.5px}
+.cust .r .dt{font-size:9.7pt}
+.cust .r b{font-size:10.7pt}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+.items th{background:#a5a5a5;color:#244061;font-weight:400;height:20px;padding:0 4px;text-align:right}
+.items th:first-child{text-align:left}
+.items th:nth-child(2){text-align:center}
+.items td{height:20px;padding:0 4px;white-space:nowrap}
+.items td.q{text-align:center}
+.items td.m{padding:0}
+.items td:first-child{overflow:hidden;text-overflow:ellipsis}
+.items tr.gp td{height:21px}
+.items tr.g td{background:#d8d8d8}
+.mn{display:flex;justify-content:space-between;padding:0 9px 0 3px}
+.items td.m.amt .mn{padding-left:6px}
+.note{margin-top:19px}
+.note .hd td{background:#d8d8d8;height:22px;padding:0 4px;font-weight:700}
+.note .hd td.lb{border-top:2px solid #000;text-align:right;color:#244061;font-weight:400}
+.note .hd td.a{border-top:2px solid #000;padding:0}
+.note tr.nr td{height:21px;padding:0 4px;font-weight:700;white-space:nowrap}
+.note tr.nr td.a{padding:0}
+.note .mn{font-weight:700}
+.total{margin-top:20px;display:flex;justify-content:flex-end;align-items:center}
+.total .t{color:#f00;font-weight:700;font-size:12.65pt;margin-right:74px}
+.total .v{width:116px;height:30px;border:2px solid #000;color:#f00;font-weight:700;font-size:11.5pt;display:flex;justify-content:space-between;align-items:center;padding:0 7px}
+.nb{margin-top:5px;font-weight:700;padding-left:4px;line-height:20px;white-space:pre-line}
+.bank{margin-top:41px;width:298px;min-height:44px;background:#4f81bd;border:2px solid #000;color:#000;font-weight:700;font-size:9.73pt;line-height:19px;padding:2px 4px;display:flex;flex-direction:column;justify-content:center}
+.noprint{position:fixed;top:10px;right:10px;background:#7A1F2E;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;z-index:9}
+@media print{body{background:#fff}.noprint{display:none}}
 </style></head><body>
 <button class="noprint" onclick="window.print()">🖨️ Cetak / Simpan PDF</button>
 <div class="page">
-<div class="topbar"></div>
-<div class="head">Jl. Tempel Sukorejo I, No. 78A<br>Tegalsari Surabaya, Jawa Timur 60263<br>WA/ Phone : +62 81367588766 / +62 81455101267</div>
-<div class="title-row"><div><div class="title">Invoice</div><div class="date">${escapeHtml(invoiceDateLong(new Date()))}</div></div><img class="logo" src="${INVOICE_LOGO_SRC}" alt="ArtaJava"></div>
+<div class="topline"></div>
+<div class="addr"><div>Jl. Tempel Sukorejo I, No. 78A</div><div>Tegalsari Surabaya, Jawa Timur 60263</div><div>WA/ Phone : +62 81367588766 / +62 81455101267</div></div>
+<div class="content">
+<div class="title-row"><div class="title">Invoice</div><div class="date">${escapeHtml(invoiceDateLong(invDateOk))}</div><img class="logo" src="${INVOICE_LOGO_SRC}" alt="ArtaJava"></div>
 <div class="cust">
-  <div class="l"><b>Customer</b><div>${escapeHtml(customer)}${info.address?'\n'+escapeHtml(info.address):''}${info.phone?'\n'+escapeHtml(info.phone):''}</div></div>
-  <div class="r">Wedding<br>${escapeHtml(fmtDate(c.weddingDate))}<br><b>${escapeHtml(c.venueName||'')}</b></div>
+  <div class="l"><b>Customer</b>${escapeHtml(customer)}${custAddress?'\n'+escapeHtml(custAddress):''}${custPhone?'\n'+escapeHtml(custPhone):''}</div>
+  <div class="r">Wedding<br><span class="dt">${escapeHtml(fmtDate(c.weddingDate))}</span><br><b>${escapeHtml(c.venueName||'')}</b></div>
 </div>
-<table class="items"><thead><tr><th style="width:52%">Items</th><th style="width:8%">Qty</th><th style="width:20%">Rate</th><th style="width:20%">Amount</th></tr></thead><tbody>
-${items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td>${i.qty}</td><td>${invoiceNum(i.rate)}</td><td>${invoiceNum(i.amount)}</td></tr>`).join('')}
+<table class="items"><colgroup><col style="width:53.3%"><col style="width:6.7%"><col style="width:20.6%"><col style="width:19.4%"></colgroup><thead><tr><th>Items</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
+${items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="q">${i.qty}</td><td class="m">${invoiceMoney(i.rate)}</td><td class="m amt">${invoiceMoney(i.amount)}</td></tr>`).join('')}
 ${gap}
 </tbody></table>
-<table class="note"><tr class="hd"><td>Note :</td><td class="a">Sub Total &nbsp;&nbsp;${invoiceNum(subTotal)}</td></tr>${noteRows.join('')}</table>
-<div class="tagihan">Tagihan ini: ${escapeHtml(cur.label)} — ${invoiceNum(cur.amount)}${cur.dueDate?` (jatuh tempo ${invoiceDdMmYyyy(cur.dueDate)})`:''}</div>
-<div class="total"><span class="t">${isLast?'TOTAL':'SISA TAGIHAN'}</span><span class="v">${invoiceNum(sisa)}</span></div>
+<table class="note"><colgroup><col style="width:51.1%"><col style="width:29.5%"><col style="width:19.4%"></colgroup><tr class="hd"><td>Note :</td><td class="lb">Sub Total</td><td class="a">${invoiceMoney(subTotal)}</td></tr>${noteRows.join('')}</table>
+<div class="total"><span class="t">TOTAL</span><div class="v"><span>Rp</span><span>${invoiceEn(sisa)}</span></div></div>
 <div class="nb">NB : ${escapeHtml(info.nb||'')}</div>
-<div class="bank">No Rekening Artajava Wedding Organizer<br>BCA 2582667749 A/N SANDRA AMELIA PUSPITA</div>
+<div class="bank"><div>No Rekening Artajava Wedding Organizer</div><div>BCA 2582667749 A/N SANDRA AMELIA PUSPITA</div></div>
+</div>
 </div></body></html>`;
 }
 function openInvoice(payId){
@@ -6054,9 +6076,9 @@ function renderPayments(){
     </div>
     ${isVendor ? `<div class="mb-card">
       <h3>🧾 Data Customer untuk Invoice</h3>
-      <div class="v-field"><label>Nama Customer</label><input id="invCustomerName" value="${escapeAttr((state.invoiceInfo||{}).customerName||'')}" placeholder="${escapeAttr(state.couple.brideName+' & '+state.couple.groomName)}"/></div>
-      <div class="v-field"><label>Alamat</label><input id="invAddress" value="${escapeAttr((state.invoiceInfo||{}).address||'')}" placeholder="Alamat customer"/></div>
-      <div class="v-field"><label>No. Telepon</label><input id="invPhone" value="${escapeAttr((state.invoiceInfo||{}).phone||'')}" placeholder="08xxxxxxxxxx"/></div>
+      <div class="v-field"><label>Nama Customer (otomatis dari Data Klien — CPW)</label><div class="val">${escapeHtml(((state.details.clientData||{}).cpwName||'').trim() || state.couple.brideName || '⚠️ Belum diisi')}</div></div>
+      <div class="v-field"><label>Alamat (otomatis)</label><div class="val">${((state.details.clientData||{}).cpwAddress||'').trim() ? escapeHtml(state.details.clientData.cpwAddress) : '⚠️ Belum diisi di Data Klien'}</div></div>
+      <div class="v-field"><label>No. Telepon (otomatis)</label><div class="val">${((state.details.clientData||{}).cpwContact||'').trim() ? escapeHtml(state.details.clientData.cpwContact) : '⚠️ Belum diisi di Data Klien'}</div></div>
       <div class="v-field"><label>NB (catatan di invoice, opsional)</label><input id="invNb" value="${escapeAttr((state.invoiceInfo||{}).nb||'')}" placeholder="Catatan tambahan"/></div>
     </div>` : ''}
     <div class="pay-list">

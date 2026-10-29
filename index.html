@@ -551,7 +551,6 @@
 <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-messaging-compat.js"></script>
 <script>
 /* Storage backend for when this file runs outside Claude.ai (e.g. hosted on
    Netlify, opened directly from disk). Claude.ai's artifact preview injects
@@ -3713,7 +3712,7 @@ function buildInvoiceHtml(payId){
   const gapCount = Math.max(0, 4 - items.length);
   const gap = Array.from({length:gapCount}).map((_,i)=>`<tr class="gp ${(items.length+i)%2===1?'g':''}"><td></td><td></td><td></td><td></td></tr>`).join('');
   const fileName = ('Invoice ' + cur.label + ' - ' + c.brideName + ' & ' + c.groomName).replace(/[\\/:*?"<>|]+/g,'');
-  // Tanggal pembuatan invoice = hari ini (real time, zona waktu perangkat), BUKAN jatuh tempo item pembayaran.
+  // Tanggal invoice = tanggal pembuatan (real-time hari ini), BUKAN jatuh tempo pembayaran.
   const invDateOk = new Date();
 
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Invoice ${escapeHtml(cur.label)} - ${escapeHtml(c.brideName)} & ${escapeHtml(c.groomName)}</title>
@@ -4585,7 +4584,6 @@ function renderProjectDashboard(){
       <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
       <div class="topbar-right">
         ${roleChipHtml()}
-        ${(isAdmin || currentMarketing) ? `<button class="btn tiny ghost" id="enablePushBtn">🔔 Notifikasi</button>` : ''}
         ${isAdmin ? `<button class="btn tiny ghost" id="changeMasterPin">🔑 Ganti PIN Admin</button>` : ''}
         ${isAdmin ? `<button class="btn tiny ghost" id="gateDemoBtn">🎬 Lihat Contoh Dashboard (Demo)</button>` : ''}
         ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
@@ -7249,40 +7247,6 @@ function attachHandlers(){
 if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){} });
 }
-</script>
-<script>
-/* ---------- PUSH NOTIFICATION (FCM) untuk Admin & Marketing ----------
-   Alur: tombol "Notifikasi" -> minta izin -> ambil token FCM -> simpan ke Firestore (wedding_kv/push_token_*).
-   Pengiriman jadwal harian dilakukan Cloud Function (lihat folder functions/). */
-const PUSH_VAPID_KEY = 'BAXRtq0I-VrPd7Af1QVH2DE3hguVKQ0iBy1zk3GsLpgncpYwTGhv_EW5pifAn-LHq5IBB0FFYxe_H-xXA-ZlrRg';
-async function pushSha(str){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,32);
-}
-async function enablePush(){
-  try{
-    if(!('Notification' in window) || !('serviceWorker' in navigator) || !window.firebase || !firebase.messaging){
-      showToast('Browser ini belum mendukung notifikasi. Di iPhone, tambahkan aplikasi ke Home Screen dulu.', true); return;
-    }
-    if(PUSH_VAPID_KEY.indexOf('ISI_')===0){ showToast('VAPID key belum diisi di kode (PUSH_VAPID_KEY).', true); return; }
-    if(!(isAdmin || currentMarketing)){ showToast('Notifikasi hanya untuk Admin & Marketing.', true); return; }
-    const perm = await Notification.requestPermission();
-    if(perm !== 'granted'){ showToast('Izin notifikasi ditolak. Aktifkan lewat pengaturan browser.', true); return; }
-    const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
-    await navigator.serviceWorker.ready;
-    const token = await firebase.messaging().getToken({ vapidKey: PUSH_VAPID_KEY, serviceWorkerRegistration: reg });
-    if(!token){ showToast('Gagal mengambil token notifikasi.', true); return; }
-    const rec = { token, role: isAdmin ? 'admin' : 'marketing', marketingId: (!isAdmin && currentMarketing) ? currentMarketing.id : null, createdAt: new Date().toISOString() };
-    await window.storage.set('push_token_' + await pushSha(token), JSON.stringify(rec), true);
-    showToast('Notifikasi aktif di perangkat ini \u2713');
-  }catch(err){
-    console.error('enablePush gagal', err);
-    showToast('Gagal mengaktifkan notifikasi: ' + (err && err.message ? err.message : err), true);
-  }
-}
-document.addEventListener('click', function(e){
-  if(e.target.closest && e.target.closest('#enablePushBtn')) enablePush();
-});
 </script>
 </body>
 </html>

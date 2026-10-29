@@ -3704,7 +3704,8 @@ function buildInvoiceHtml(payId){
   const noteRows = deduct.map(x=>`<tr class="nr"><td colspan="2" class="n">(${invoiceDdMmYyyy(x.dueDate)}) ${escapeHtml(x.label)} ${invoiceRp(x.amount)}</td><td class="a">${invoiceMoney(x.amount)}</td></tr>`);
   if(subsidi>0) noteRows.push(`<tr class="nr"><td colspan="2" class="n">Subsidi Take-Out</td><td class="a">${invoiceMoney(subsidi)}</td></tr>`);
   const gapCount = Math.max(0, 4 - items.length);
-  const gap = Array.from({length:gapCount}).map((_,i)=>`<tr class="gp ${i%2===0?'g':''}"><td></td><td></td><td></td><td></td></tr>`).join('');
+  const gap = Array.from({length:gapCount}).map((_,i)=>`<tr class="gp ${(items.length+i)%2===1?'g':''}"><td></td><td></td><td></td><td></td></tr>`).join('');
+  const fileName = ('Invoice ' + cur.label + ' - ' + c.brideName + ' & ' + c.groomName).replace(/[\\/:*?"<>|]+/g,'');
   const invDate = cur.dueDate ? new Date(cur.dueDate + 'T00:00:00') : new Date();
   const invDateOk = isNaN(invDate.getTime()) ? new Date() : invDate;
 
@@ -3730,7 +3731,7 @@ body{font-family:'Times New Roman',Times,'Liberation Serif',serif;color:#000;fon
 .cust .l .ad{font-size:11.7pt;line-height:21px;white-space:pre-line}
 .cust .l .ph{font-size:11.7pt;line-height:17px;padding-top:2px}
 .cust .l b{font-weight:700}
-.cust .r{flex:0 0 auto;text-align:right;padding-top:20px;white-space:nowrap}
+.cust .r{flex:0 0 auto;align-self:stretch;display:flex;flex-direction:column;justify-content:flex-end;text-align:right;white-space:nowrap}
 .cust .r div{line-height:20px}
 .cust .r .dt{font-size:9.7pt;line-height:21px}
 .cust .r .vn{line-height:19px;font-weight:700;font-size:10.7pt}
@@ -3745,7 +3746,7 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
 .items td.m{padding:0}
 .items td:first-child{overflow:hidden;text-overflow:ellipsis}
 .items tr.gp td{height:21px}
-.items tr.g{background:#d8d8d8}
+.items tr.g,.items tr.g>td{background:#d8d8d8}
 .mn{display:flex;justify-content:space-between;padding:0 9px 0 3px}
 .items td.m.amt .mn{padding-left:6px}
 .note{margin-top:17px}
@@ -3762,10 +3763,28 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
 .total .v{width:116px;height:30px;border:2px solid #000;color:#f00;font-weight:700;font-size:11.5pt;display:flex;justify-content:space-between;align-items:center;padding:0 7px}
 .nb{margin-top:2px;font-weight:700;padding-left:4px;line-height:20px;white-space:pre-line}
 .bank{margin-top:40px;width:298px;min-height:44px;background:#4f81bd;border:2px solid #000;color:#000;font-weight:700;font-size:8.8pt;white-space:nowrap;line-height:19px;padding:0 4px;display:flex;flex-direction:column;justify-content:center}
-.noprint{position:fixed;top:10px;right:10px;background:#7A1F2E;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;z-index:9}
+.bar{position:fixed;top:10px;right:10px;display:flex;gap:8px;z-index:9}.bar button{background:#7A1F2E;color:#fff;border:1px solid #7A1F2E;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer}.bar button.alt{background:#fff;color:#7A1F2E}.bar button:disabled{opacity:.6;cursor:wait}
 @media print{body{background:#fff}.noprint{display:none}}
 </style></head><body>
-<button class="noprint" onclick="window.print()">🖨️ Cetak / Simpan PDF</button>
+<div class="bar noprint"><button id="btnDl" onclick="dlPdf()">⬇️ Download PDF</button><button class="alt" onclick="window.print()">🖨️ Cetak</button></div>
+<script>
+const FN=${JSON.stringify(fileName).replace(/</g,'\\u003c')};
+function loadJs(u){return new Promise((ok,no)=>{const x=document.createElement('script');x.src=u;x.onload=ok;x.onerror=no;document.head.appendChild(x);});}
+async function dlPdf(){
+  const b=document.getElementById('btnDl'),t=b.textContent;b.disabled=true;b.textContent='Membuat PDF…';
+  try{
+    if(!window.html2canvas) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if(!window.jspdf) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    window.scrollTo(0,0);
+    const c=await html2canvas(document.querySelector('.page'),{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4'});
+    let h=210*c.height/c.width; if(h>297) h=297;
+    pdf.addImage(c.toDataURL('image/jpeg',0.95),'JPEG',0,0,210,h);
+    pdf.save(FN+'.pdf');
+  }catch(e){ alert('Download PDF otomatis gagal (cek koneksi internet). Gunakan tombol Cetak, lalu pilih Simpan sebagai PDF.'); }
+  b.disabled=false;b.textContent=t;
+}
+<\/script>
 <div class="page">
 <div class="topline"></div>
 <div class="addr"><div>Jl. Tempel Sukorejo I, No. 78A</div><div>Tegalsari Surabaya, Jawa Timur 60263</div><div>WA/ Phone : +62 81367588766 / +62 81455101267</div></div>
@@ -3776,7 +3795,7 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
   <div class="r"><div>Wedding</div><div class="dt">${escapeHtml(fmtDate(c.weddingDate))}</div><div class="vn">${escapeHtml(c.venueName||'')}</div></div>
 </div>
 <table class="items"><colgroup><col style="width:53.3%"><col style="width:6.7%"><col style="width:20.6%"><col style="width:19.4%"></colgroup><thead><tr><th>Items</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>
-${items.map(i=>`<tr><td>${escapeHtml(i.name)}</td><td class="q">${i.qty}</td><td class="m">${invoiceMoney(i.rate)}</td><td class="m amt">${invoiceMoney(i.amount)}</td></tr>`).join('')}
+${items.map((i,ix)=>`<tr class="${ix%2===1?'g':''}"><td>${escapeHtml(i.name)}</td><td class="q">${i.qty}</td><td class="m">${invoiceMoney(i.rate)}</td><td class="m amt">${invoiceMoney(i.amount)}</td></tr>`).join('')}
 ${gap}
 </tbody></table>
 <table class="note"><colgroup><col style="width:51.1%"><col style="width:29.5%"><col style="width:19.4%"></colgroup><tr class="hd"><td>Note :</td><td class="lb">Sub Total</td><td class="a">${invoiceMoney(subTotal)}</td></tr>${noteRows.join('')}</table>

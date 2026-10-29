@@ -551,6 +551,7 @@
 <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-messaging-compat.js"></script>
 <script>
 /* Storage backend for when this file runs outside Claude.ai (e.g. hosted on
    Netlify, opened directly from disk). Claude.ai's artifact preview injects
@@ -4584,6 +4585,7 @@ function renderProjectDashboard(){
       <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
       <div class="topbar-right">
         ${roleChipHtml()}
+        ${(isAdmin || currentMarketing) ? `<button class="btn tiny ghost" id="enablePushBtn">🔔 Notifikasi</button>` : ''}
         ${isAdmin ? `<button class="btn tiny ghost" id="changeMasterPin">🔑 Ganti PIN Admin</button>` : ''}
         ${isAdmin ? `<button class="btn tiny ghost" id="gateDemoBtn">🎬 Lihat Contoh Dashboard (Demo)</button>` : ''}
         ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
@@ -7240,51 +7242,47 @@ function attachHandlers(){
     new MutationObserver(syncGateBg).observe(appEl, {childList:true, subtree:false});
   }
 })();
-<script>
-/* PWA & Push Notification Service Worker */
-if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-  window.addEventListener('load', function() {
-    try {
-      // 1. Daftarkan Service Worker PWA biasa
-      navigator.serviceWorker.register('sw.js').catch(function(){});
-      
-      // 2. Daftarkan Service Worker Notifikasi Firebase
-      navigator.serviceWorker.register('/firebase-messaging-sw.js')
-        .then(function(reg) { 
-          console.log('Notifikasi Siap:', reg.scope);
-          
-          // 3. MINTA IZIN NOTIFIKASI KE USER OTOMATIS
-          mintaIzinNotifikasi();
-        })
-        .catch(function(err) { console.error('Gagal daftar notifikasi:', err); });
-    } catch(e) {}
-  });
-}
 
-// Fungsi untuk meminta izin & menampilkan token di Console
-function mintaIzinNotifikasi() {
-  if ('Notification' in window) {
-    Notification.requestPermission().then(function(permission) {
-      if (permission === 'granted') {
-        console.log('Izin notifikasi DIBERIKAN!');
-        
-        // Ambil token unik HP/Browser untuk dites
-        if (window.firebase && firebase.messaging) {
-          firebase.messaging().getToken().then(function(token) {
-            console.log('====================================');
-            console.log('TOKEN FCM ANDA (COPYS KODE INI UNTUK TES):');
-            console.log(token);
-            console.log('====================================');
-          }).catch(function(err) {
-            console.error('Gagal mengambil token FCM:', err);
-          });
-        }
-      } else {
-        console.warn('Izin notifikasi DITOLAK/DIBLOKIR oleh pengguna.');
-      }
-    });
+</script>
+<script>
+/* PWA: daftarkan service worker (hanya jalan di https/localhost, aman diabaikan di tempat lain) */
+if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+  window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){} });
+}
+</script>
+<script>
+/* ---------- PUSH NOTIFICATION (FCM) untuk Admin & Marketing ----------
+   Alur: tombol "Notifikasi" -> minta izin -> ambil token FCM -> simpan ke Firestore (wedding_kv/push_token_*).
+   Pengiriman jadwal harian dilakukan Cloud Function (lihat folder functions/). */
+const PUSH_VAPID_KEY = 'BAXRtq0I-VrPd7Af1QVH2DE3hguVKQ0iBy1zk3GsLpgncpYwTGhv_EW5pifAn-LHq5IBB0FFYxe_H-xXA-ZlrRg';
+async function pushSha(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,32);
+}
+async function enablePush(){
+  try{
+    if(!('Notification' in window) || !('serviceWorker' in navigator) || !window.firebase || !firebase.messaging){
+      showToast('Browser ini belum mendukung notifikasi. Di iPhone, tambahkan aplikasi ke Home Screen dulu.', true); return;
+    }
+    if(PUSH_VAPID_KEY.indexOf('ISI_')===0){ showToast('VAPID key belum diisi di kode (PUSH_VAPID_KEY).', true); return; }
+    if(!(isAdmin || currentMarketing)){ showToast('Notifikasi hanya untuk Admin & Marketing.', true); return; }
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted'){ showToast('Izin notifikasi ditolak. Aktifkan lewat pengaturan browser.', true); return; }
+    const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    await navigator.serviceWorker.ready;
+    const token = await firebase.messaging().getToken({ vapidKey: PUSH_VAPID_KEY, serviceWorkerRegistration: reg });
+    if(!token){ showToast('Gagal mengambil token notifikasi.', true); return; }
+    const rec = { token, role: isAdmin ? 'admin' : 'marketing', marketingId: (!isAdmin && currentMarketing) ? currentMarketing.id : null, createdAt: new Date().toISOString() };
+    await window.storage.set('push_token_' + await pushSha(token), JSON.stringify(rec), true);
+    showToast('Notifikasi aktif di perangkat ini \u2713');
+  }catch(err){
+    console.error('enablePush gagal', err);
+    showToast('Gagal mengaktifkan notifikasi: ' + (err && err.message ? err.message : err), true);
   }
 }
+document.addEventListener('click', function(e){
+  if(e.target.closest && e.target.closest('#enablePushBtn')) enablePush();
+});
 </script>
 </body>
 </html>

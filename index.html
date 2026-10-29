@@ -7243,9 +7243,19 @@ function attachHandlers(){
 
 </script>
 <script>
-/* PWA: daftarkan service worker (hanya jalan di https/localhost, aman diabaikan di tempat lain) */
-if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-  window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){} });
+/* PWA & Push Notification Service Worker */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function() {
+    try {
+      // 1. Daftarkan Service Worker PWA biasa
+      navigator.serviceWorker.register('sw.js').catch(function(){});
+      
+      // 2. Daftarkan Service Worker Notifikasi Firebase
+      navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        .then(function(reg) { console.log('Notifikasi Siap:', reg.scope); })
+        .catch(function(err) { console.error('Gagal daftar notifikasi:', err); });
+    } catch(e) {}
+  });
 }
 </script>
 </body>

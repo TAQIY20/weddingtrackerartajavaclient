@@ -4,6 +4,47 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="manifest.webmanifest">
+<script>
+/* PERAN PER LINK + INSTALL TERKUNCI.
+   Tiap link (#admin / #marketing / #clientlink / #vendorlink) = 1 peran. Manifest PWA dibuat ulang
+   per peran (nama, id, start_url) supaya "Install" dari link Klien benar-benar terbuka sebagai Klien,
+   bukan balik ke halaman Admin. iOS kadang mengabaikan start_url, jadi peran juga dikunci di
+   localStorage (aj_role_lock) dan dipakai saat app dibuka dari ikon tanpa hash. */
+(function(){
+  var MAP = { admin:{h:'#admin',n:'Admin'}, marketing:{h:'#marketing',n:'Marketing'}, client:{h:'#clientlink',n:'Klien'}, vendor:{h:'#vendorlink',n:'Vendor'} };
+  var hs = location.hash, role = '';
+  if(hs==='#clientlink'||hs==='#client') role='client';
+  else if(hs==='#vendorlink'||hs==='#vendor') role='vendor';
+  else if(hs==='#marketing') role='marketing';
+  else if(hs==='#admin') role='admin';
+  var standalone = false;
+  try{ standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }catch(e){}
+  try{
+    if(!role && !location.search && standalone){
+      var lk = localStorage.getItem('aj_role_lock');
+      if(lk && MAP[lk] && lk!=='admin'){ role = lk; history.replaceState(null,'',location.pathname + MAP[lk].h); }
+    }
+    if(role && role!=='admin') localStorage.setItem('aj_role_lock', role);
+    else if(role==='admin') localStorage.removeItem('aj_role_lock');
+  }catch(e){}
+  var key = role || 'admin', r = MAP[key];
+  window.__AJ_ROLE = key;
+  try{
+    var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
+    fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
+      var base = new URL('./', location.href);
+      m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
+      m.id = base.href + '?app=' + key;
+      m.scope = base.href;
+      m.start_url = new URL(location.pathname, location.origin).href + r.h;
+      if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
+      if(m.shortcuts) delete m.shortcuts;
+      var link = document.querySelector('link[rel="manifest"]');
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], {type:'application/manifest+json'}));
+    }).catch(function(){});
+  }catch(e){}
+})();
+</script>
 <meta name="theme-color" content="#7A1F2E">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -799,6 +840,67 @@ const MARKETING_LIST_KEY = 'wedding_marketing_list_' + APP_VERSION;
    ini pernah dipakai buka link marketing sebelumnya. */
 function isMarketingLocked(){
   return location.hash === '#marketing';
+}
+/* ---------- LINK PER PERAN + LOGIN SEKALI ----------
+   ADMIN_LINK_ONLY: link utama (tanpa hash / #admin) HANYA menampilkan login Admin. Marketing, Klien, dan
+   Vendor masing-masing punya link sendiri (#marketing, #clientlink, #vendorlink). Set false kalau mau
+   link utama kembali menampilkan semua pilihan peran. */
+const ADMIN_LINK_ONLY = true;
+const ROLE_SESSION_KEY = 'aj_session_v1';
+function pwSig(v){ v = String(v==null?'':v); let h = 5381; for(let i=0;i<v.length;i++){ h = ((h<<5)+h+v.charCodeAt(i))|0; } return 'k'+(h>>>0).toString(36); }
+function readRoleSession(){ try{ return JSON.parse(localStorage.getItem(ROLE_SESSION_KEY)||'null'); }catch(e){ return null; } }
+function saveRoleSession(o){ try{ localStorage.setItem(ROLE_SESSION_KEY, JSON.stringify(Object.assign({savedAt:Date.now()}, o))); }catch(e){} }
+function clearRoleSession(){ try{ localStorage.removeItem(ROLE_SESSION_KEY); }catch(e){} if(!isAdmin) removePushRecord(); }
+function currentHashRole(){
+  const h = location.hash;
+  return (h==='#clientlink'||h==='#client') ? 'client' : (h==='#vendorlink'||h==='#vendor') ? 'vendor' : (h==='#marketing') ? 'marketing' : '';
+}
+function entryMode(){
+  if(location.hash === '#clientlink') return 'client';
+  if(isMarketingLocked()) return 'marketing';
+  return ADMIN_LINK_ONLY ? 'admin' : 'all';
+}
+/* Pulihkan sesi tersimpan (login sekali). Return true kalau layar sudah ditangani. */
+async function restoreRoleSession(){
+  const role = currentHashRole(); const s = readRoleSession();
+  if(!role || !s || s.role !== role) return false;
+  try{
+    if(role === 'marketing'){
+      await loadMarketingListMeta();
+      const m = findMarketingById(s.id);
+      if(!m || pwSig(m.pin) !== s.sig){ clearRoleSession(); return false; }
+      isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m;
+      showProjectDashboard(); hydrateMarketingPhotosInBackground();
+      return true;
+    }
+    if(role === 'vendor'){
+      await Promise.all([loadVendorAccounts(), loadVendorSchedule()]);
+      const v = findVendorAccountById(s.accountId);
+      if(!v || pwSig(v.password) !== s.sig){ clearRoleSession(); return false; }
+      vendorLinkMode = true;
+      currentVendorAccountSession = v; isAdmin = false; isVendor = false; currentMarketing = null; roleDecided = false;
+      currentProjectId = null; state = null; isSupplier = false; supplierVendorKey = null; isVendorAccountSession = false;
+      history.replaceState(null, '', location.pathname + '#vendorlink');
+      showVendorAccountDashboard();
+      return true;
+    }
+    if(role === 'client' && s.projectId){
+      const proj = (currentProjectId === s.projectId && state) ? state : await loadProjectById(s.projectId);
+      if(!proj){ clearRoleSession(); return false; }
+      if(s.uid){
+        const raw = await window.storage.get(clientAccountStorageKey(s.uid), true).catch(()=>undefined);
+        if(raw === null){ clearRoleSession(); return false; }
+        if(raw && raw.value){ try{ if(JSON.parse(raw.value).projectId !== s.projectId){ clearRoleSession(); return false; } }catch(e){} }
+      } else if(pwSig(proj.clientPassword) !== s.sig){ clearRoleSession(); return false; }
+      currentProjectId = s.projectId; state = proj; isVendor = false; isAdmin = false; roleDecided = true;
+      clientLinkMode = !!s.uid;
+      attachmentsHydrated = false;
+      history.replaceState(null, '', location.pathname + '?p=' + s.projectId + '#client');
+      render(); hydrateAttachmentsInBackground();
+      return true;
+    }
+  }catch(e){ console.error('restore sesi gagal', e); }
+  return false;
 }
 function lockMarketingModeIfNeeded(){
 }
@@ -3669,6 +3771,43 @@ let pushSessionRefreshed = false;
 function pushPermission(){ return ('Notification' in window) ? Notification.permission : 'unsupported'; }
 function pushIsOn(){ let f=false; try{ f = localStorage.getItem('aj_push_on')==='1'; }catch(e){} return f && pushPermission()==='granted'; }
 function pushButtonHtml(){ return `<button class="btn tiny ghost" id="enablePushBtn">${pushIsOn() ? '🔔 Notifikasi aktif' : '🔔 Aktifkan Notifikasi'}</button><button class="btn tiny ghost" id="testPushBtn" title="Munculkan 1 notif contoh di perangkat ini">🧪 Tes Notif</button>`; }
+/* Identitas penerima notif untuk perangkat ini. Dipakai notifier untuk menyaring token:
+   admin -> semua; marketing -> marketingId; vendor -> vendorAccountId (atau projectId+supplierKey kalau
+   masuk lewat link supplier tanpa akun); client -> projectId. */
+function pushIdentity(){
+  if(isDemoMode) return null;
+  if(isAdmin) return { role:'admin', name:'Admin' };
+  if(currentMarketing) return { role:'marketing', marketingId:currentMarketing.id, name:currentMarketing.name||'Marketing' };
+  if(currentVendorAccountSession) return { role:'vendor', vendorAccountId:currentVendorAccountSession.id, name:currentVendorAccountSession.name||'Vendor' };
+  if(isSupplier && state) return { role:'vendor', projectId:state.id, supplierKey:supplierVendorKey||'', name:supplierVendorKey||'Vendor' };
+  if(roleDecided && state && !isVendor) return { role:'client', projectId:state.id, name:(state.couple.brideName||'') + ' & ' + (state.couple.groomName||'') };
+  return null;
+}
+/* Hapus token perangkat ini dari daftar penerima (dipanggil saat Keluar, kecuali admin), supaya notif
+   akun lama tidak nyasar ke HP yang sudah ganti akun. Izin & flag "notif aktif" dibiarkan, jadi login
+   berikutnya otomatis mendaftarkan ulang token ke identitas baru. */
+async function removePushRecord(){
+  pushSessionRefreshed = false;
+  let tok = null; try{ tok = localStorage.getItem('aj_push_token'); }catch(e){}
+  if(!tok) return;
+  try{ await window.storage.delete(PUSH_TOKEN_PREFIX + tok, true); localStorage.removeItem('aj_push_token'); }catch(e){}
+}
+function bindPushButtons(){
+  const testPushBtn = document.getElementById('testPushBtn');
+  if(testPushBtn) testPushBtn.addEventListener('click', sendLocalTestNotification);
+  const enablePushBtn = document.getElementById('enablePushBtn');
+  if(!enablePushBtn) return;
+  enablePushBtn.addEventListener('click', async ()=>{
+    enablePushBtn.disabled = true;
+    const ok = await enablePushNotifications(false);
+    enablePushBtn.disabled = false;
+    if(ok) enablePushBtn.textContent = '🔔 Notifikasi aktif';
+  });
+  if(!pushSessionRefreshed && pushIsOn()){
+    pushSessionRefreshed = true; // perbarui token diam-diam sekali per sesi (token bisa berganti)
+    enablePushNotifications(true).then(ok=>{ if(ok && enablePushBtn.isConnected) enablePushBtn.textContent = '🔔 Notifikasi aktif'; });
+  }
+}
 function pushSupported(){
   try{ return ('Notification' in window) && ('serviceWorker' in navigator) && !!window.firebase && !!firebase.messaging && firebase.messaging.isSupported(); }catch(e){ return false; }
 }
@@ -3708,9 +3847,11 @@ async function enablePushNotifications(silent){
     const messaging = firebase.messaging();
     const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
     if(!token) throw new Error('token kosong');
-    const rec = { token, role: isAdmin ? 'admin' : 'marketing', marketingId: currentMarketing ? currentMarketing.id : null, name: currentMarketing ? (currentMarketing.name||'Marketing') : 'Admin', updatedAt: new Date().toISOString() };
+    const ident = pushIdentity();
+    if(!ident){ if(!silent) showToast('Masuk dulu ke akunmu sebelum mengaktifkan notifikasi.', true); return false; }
+    const rec = Object.assign({ marketingId:null, vendorAccountId:null, projectId:null }, ident, { token, updatedAt: new Date().toISOString() });
     await window.storage.set(PUSH_TOKEN_PREFIX + token, JSON.stringify(rec), true);
-    try{ localStorage.setItem('aj_push_on','1'); }catch(e){}
+    try{ localStorage.setItem('aj_push_on','1'); localStorage.setItem('aj_push_token', token); }catch(e){}
     if(!window.__pushFgBound){
       window.__pushFgBound = true;
       messaging.onMessage(p=>{ const d = p.data||{}; reg.showNotification(d.title||'ArtaJava', pushNotifOptions(d, reg)); });
@@ -3911,6 +4052,15 @@ function refreshPaymentSummary(){
 
 /* ---------- ROLE / PROJECT GATE ---------- */
 function paintGateForCurrentHash(){
+  const hr = currentHashRole(); const sess = readRoleSession();
+  if((hr==='client' || hr==='vendor') && sess && sess.role===hr && (hr!=='client' || !currentProjectId || sess.projectId===currentProjectId)){
+    renderLoadingScreen('Membuka akunmu...');
+    restoreRoleSession().then(ok=>{ if(!ok) paintGateLegacy(); });
+    return;
+  }
+  paintGateLegacy();
+}
+function paintGateLegacy(){
   if(location.hash === '#client'){ showClientPasswordGate(); }
   else if(location.hash === '#vendor'){
     // Ini cuma kepanggil pas HALAMAN BARU DIBUKA/DI-REFRESH (bukan pas navigasi
@@ -4008,6 +4158,7 @@ async function initRoleFlow(){
     ]);
     hydrateMarketingPhotosInBackground();
     hydrateVendorPhotosInBackground();
+    if(currentHashRole() && await restoreRoleSession()) return;
     showEntryGate();
   }
 }
@@ -4031,137 +4182,150 @@ function showProjectNotFound(){
 
 function showEntryGate(){
   if(location.hash === '#vendorlink'){ showVendorLinkProjectPicker(); return; }
-  const clientOnlyMode = (location.hash === '#clientlink');
-  if(clientOnlyMode) clientLinkMode = true;
+  const mode = entryMode();   // 'admin' | 'marketing' | 'client' | 'all'
+  if(mode === 'client') clientLinkMode = true;
   lockMarketingModeIfNeeded();
+  const single = mode !== 'all';
+  const showAdminOpt = (mode==='all' || mode==='admin');
+  const showMktOpt = (mode==='all' || mode==='marketing');
+  const showVendOpt = (mode==='all');
+  const showClientOpt = (mode==='all' || mode==='client');
+  const heading = { admin:'Login Admin', marketing:'Login Marketing', client:'Login Klien', all:'Wedding Project Tracker' }[mode];
+  const sub = { admin:'Masukkan PIN Admin untuk membuka dashboard.', marketing:'Masuk pakai PIN marketing kamu.', client:'Masuk pakai Username &amp; Password klien yang diberikan vendor kamu.', all:'Pilih tampilan sesuai perananmu.' }[mode];
   const app = document.getElementById('app');
-  const hideAdmin = isMarketingLocked() || clientOnlyMode;
   app.innerHTML = `
     <div class="gate-wrap">
       <div class="gate-card">
         <img src="${LOGO_SRC}" class="gate-logo" alt="ArtaJava"/>
-        <h2>${clientOnlyMode ? 'Login Klien' : 'Wedding Project Tracker'}</h2>
-        <p>${clientOnlyMode ? 'Masuk pakai Username &amp; Password klien yang diberikan vendor kamu.' : 'Pilih tampilan sesuai perananmu.'}</p>
-        <div class="gate-btns">
-          ${hideAdmin ? '' : `<button class="gate-btn vendor" id="gateAdminBtn"><span class="ge">🛡️</span> Saya Admin</button>`}
-          ${clientOnlyMode ? '' : `<button class="gate-btn vendor" id="gateMarketingBtn"><span class="ge">🤝</span> Saya Marketing</button>`}
-          ${clientOnlyMode ? '' : `<button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>`}
-          <button class="gate-btn" id="gateClientBtn"><span class="ge">💍</span> Saya Calon Pengantin (Klien)</button>
-        </div>
-        ${hideAdmin ? '' : `
-        <div class="pin-box" id="pinBox">
+        <h2>${heading}</h2>
+        <p>${sub}</p>
+        ${single ? '' : `<div class="gate-btns">
+          ${showAdminOpt ? `<button class="gate-btn vendor" id="gateAdminBtn"><span class="ge">🛡️</span> Saya Admin</button>` : ''}
+          ${showMktOpt ? `<button class="gate-btn vendor" id="gateMarketingBtn"><span class="ge">🤝</span> Saya Marketing</button>` : ''}
+          ${showVendOpt ? `<button class="gate-btn" id="gateVendorAccountBtn"><span class="ge">🧰</span> Saya Vendor (Akun)</button>` : ''}
+          ${showClientOpt ? `<button class="gate-btn" id="gateClientBtn"><span class="ge">💍</span> Saya Calon Pengantin (Klien)</button>` : ''}
+        </div>`}
+        ${showAdminOpt ? `
+        <div class="pin-box${single ? ' show' : ''}" id="pinBox">
           <input type="password" id="pinInput" inputmode="numeric" maxlength="8" placeholder="Masukkan PIN Admin"/>
           <button class="btn primary" id="pinSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="pinError"></div>
-        </div>`}
-        ${clientOnlyMode ? '' : `
-        <div class="pin-box" id="marketingPinBox">
+        </div>` : ''}
+        ${showMktOpt ? `
+        <div class="pin-box${single ? ' show' : ''}" id="marketingPinBox">
           <input type="password" id="marketingPinInput" inputmode="numeric" maxlength="8" placeholder="Masukkan PIN Marketing kamu"/>
           <button class="btn primary" id="marketingPinSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="marketingPinError"></div>
-        </div>
+        </div>` : ''}
+        ${showVendOpt ? `
         <div class="pin-box" id="vendorAccountBox">
           <input type="text" id="vendorAccountUserInput" placeholder="Username Vendor"/>
           <div class="pin-box-pw-wrap"><input type="password" id="vendorAccountPassInput" placeholder="Password Vendor"/><button type="button" class="pw-toggle" data-pw-toggle="vendorAccountPassInput">👁</button></div>
           <button class="btn primary" id="vendorAccountSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="vendorAccountError"></div>
-        </div>`}
-        <div class="pin-box${clientOnlyMode ? ' show' : ''}" id="clientCodeBox">
+        </div>` : ''}
+        ${showClientOpt ? `
+        <div class="pin-box${(mode==='client') ? ' show' : ''}" id="clientCodeBox">
           <input type="text" id="clientCodeInput" placeholder="Username Klien"/>
           <div class="pin-box-pw-wrap"><input type="password" id="clientCodePassInput" placeholder="Password Klien"/><button type="button" class="pw-toggle" data-pw-toggle="clientCodePassInput">👁</button></div>
           <button class="btn primary" id="clientCodeSubmit" style="width:100%;">Masuk</button>
           <div class="pin-error" id="clientCodeError"></div>
-        </div>
+        </div>` : ''}
+        ${mode==='admin' ? `<p style="font-size:11.5px;opacity:.7;margin-top:16px;line-height:1.5;">Bukan admin? Pakai link khusus yang dikirim ke kamu (Marketing, Klien, atau Vendor).</p>` : ''}
       </div>
     </div>
   `;
-  if(clientOnlyMode){ const f = document.getElementById('clientCodeInput'); if(f) f.focus(); }
-  const gateAdminBtn = document.getElementById('gateAdminBtn');
-  if(gateAdminBtn) gateAdminBtn.addEventListener('click', ()=>{
-    document.getElementById('pinBox').classList.add('show');
-    document.getElementById('pinInput').focus();
-  });
-  const tryPin = ()=>{
-    const val = document.getElementById('pinInput').value.trim();
-    if(val === masterSettings.vendorPin){ vendorAuthed = true; isAdmin = true; isVendor = true; currentMarketing = null; showProjectDashboard(); }
-    else document.getElementById('pinError').textContent = 'PIN salah, coba lagi.';
-  };
-  const pinSubmit = document.getElementById('pinSubmit');
-  if(pinSubmit){
-    pinSubmit.addEventListener('click', tryPin);
-    document.getElementById('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryPin(); });
+  const $ = id => document.getElementById(id);
+  if(mode==='client'){ $('clientCodeInput').focus(); }
+  else if(mode==='admin'){ $('pinInput').focus(); }
+  else if(mode==='marketing'){ $('marketingPinInput').focus(); }
+
+  // ---- Admin ----
+  if($('gateAdminBtn')) $('gateAdminBtn').addEventListener('click', ()=>{ $('pinBox').classList.add('show'); $('pinInput').focus(); });
+  if(showAdminOpt){
+    const tryPin = ()=>{
+      const val = $('pinInput').value.trim();
+      if(val === masterSettings.vendorPin){ vendorAuthed = true; isAdmin = true; isVendor = true; currentMarketing = null; showProjectDashboard(); }
+      else $('pinError').textContent = 'PIN salah, coba lagi.';
+    };
+    $('pinSubmit').addEventListener('click', tryPin);
+    $('pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryPin(); });
   }
 
-  if(!clientOnlyMode){
-  document.getElementById('gateMarketingBtn').addEventListener('click', ()=>{
-    document.getElementById('marketingPinBox').classList.add('show');
-    document.getElementById('marketingPinInput').focus();
-  });
-  const tryMarketingPin = async ()=>{
-    const val = document.getElementById('marketingPinInput').value.trim();
-    renderLoadingScreen('Memeriksa PIN...');
-    await loadMarketingListMeta();
-    const m = findMarketingByPin(val);
-    if(m){ isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; showProjectDashboard(); hydrateMarketingPhotosInBackground(); }
-    else {
-      showEntryGate();
-      document.getElementById('gateMarketingBtn').click();
-      showToast('PIN salah, atau akun marketing belum dibuat admin.', true);
-    }
-  };
-  document.getElementById('marketingPinSubmit').addEventListener('click', tryMarketingPin);
-  document.getElementById('marketingPinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryMarketingPin(); });
-
-  document.getElementById('gateVendorAccountBtn').addEventListener('click', ()=>{
-    document.getElementById('vendorAccountBox').classList.add('show');
-    document.getElementById('vendorAccountUserInput').focus();
-  });
-  const tryVendorAccountLogin = async ()=>{
-    const username = document.getElementById('vendorAccountUserInput').value.trim();
-    const password = document.getElementById('vendorAccountPassInput').value.trim();
-    if(!username || !password){ document.getElementById('vendorAccountError').textContent = 'Isi username dan password dulu.'; return; }
-    renderLoadingScreen('Memeriksa akun vendor...');
-    await Promise.all([loadVendorAccounts(), loadVendorSchedule()]);
-    const v = findVendorAccountByUsername(username);
-    if(v && v.password === password){
-      currentVendorAccountSession = v; isAdmin = false; isVendor = false; currentMarketing = null; roleDecided = false;
-      showVendorAccountDashboard();
-    } else {
-      showEntryGate();
-      document.getElementById('gateVendorAccountBtn').click();
-      showToast('Username atau password vendor salah, atau akun belum dibuat admin.', true);
-    }
-  };
-  document.getElementById('vendorAccountSubmit').addEventListener('click', tryVendorAccountLogin);
-  document.getElementById('vendorAccountPassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryVendorAccountLogin(); });
+  // ---- Marketing ----
+  if(showMktOpt){
+    if($('gateMarketingBtn')) $('gateMarketingBtn').addEventListener('click', ()=>{ $('marketingPinBox').classList.add('show'); $('marketingPinInput').focus(); });
+    const tryMarketingPin = async ()=>{
+      const val = $('marketingPinInput').value.trim();
+      renderLoadingScreen('Memeriksa PIN...');
+      await loadMarketingListMeta();
+      const m = findMarketingByPin(val);
+      if(m){
+        isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m;
+        saveRoleSession({ role:'marketing', id:m.id, sig:pwSig(m.pin) });
+        showProjectDashboard(); hydrateMarketingPhotosInBackground();
+      } else {
+        showEntryGate();
+        if($('gateMarketingBtn')) $('gateMarketingBtn').click();
+        $('marketingPinError').textContent = 'PIN salah, atau akun marketing belum dibuat admin.';
+        showToast('PIN salah, atau akun marketing belum dibuat admin.', true);
+      }
+    };
+    $('marketingPinSubmit').addEventListener('click', tryMarketingPin);
+    $('marketingPinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryMarketingPin(); });
   }
 
-  document.getElementById('gateClientBtn').addEventListener('click', ()=>{
-    document.getElementById('clientCodeBox').classList.add('show');
-    document.getElementById('clientCodeInput').focus();
-  });
-  const tryClientCode = async ()=>{
-    const username = document.getElementById('clientCodeInput').value.trim();
-    const pass = document.getElementById('clientCodePassInput').value.trim();
-    if(!username || !pass){ document.getElementById('clientCodeError').textContent = 'Isi username dan password dulu.'; return; }
-    renderLoadingScreen('Memeriksa akun klien...');
-    try{
-      const mapping = await tryClientAccountLogin(username, pass);
-      const proj = await loadProjectById(mapping.projectId);
-      if(!proj) throw new Error('Project untuk akun ini tidak ditemukan (mungkin sudah dihapus). Hubungi admin.');
-      currentProjectId = mapping.projectId; state = proj; isVendor = false; isAdmin = false; roleDecided = true;
-      attachmentsHydrated = false;
-      history.replaceState(null, '', location.pathname + '?p=' + mapping.projectId + '#client');
-      render();
-      hydrateAttachmentsInBackground();
-    } catch(e){
-      showEntryGate();
-      document.getElementById('gateClientBtn').click();
-      showToast(e.message || 'Username atau password salah.', true);
-    }
-  };
-  document.getElementById('clientCodeSubmit').addEventListener('click', tryClientCode);
-  document.getElementById('clientCodePassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryClientCode(); });
+  // ---- Vendor (hanya kalau ADMIN_LINK_ONLY=false) ----
+  if(showVendOpt){
+    $('gateVendorAccountBtn').addEventListener('click', ()=>{ $('vendorAccountBox').classList.add('show'); $('vendorAccountUserInput').focus(); });
+    const tryVendorAccountLogin = async ()=>{
+      const username = $('vendorAccountUserInput').value.trim();
+      const password = $('vendorAccountPassInput').value.trim();
+      if(!username || !password){ $('vendorAccountError').textContent = 'Isi username dan password dulu.'; return; }
+      renderLoadingScreen('Memeriksa akun vendor...');
+      await Promise.all([loadVendorAccounts(), loadVendorSchedule()]);
+      const v = findVendorAccountByUsername(username);
+      if(v && v.password === password){
+        currentVendorAccountSession = v; isAdmin = false; isVendor = false; currentMarketing = null; roleDecided = false;
+        saveRoleSession({ role:'vendor', accountId:v.id, sig:pwSig(v.password) });
+        showVendorAccountDashboard();
+      } else {
+        showEntryGate();
+        $('gateVendorAccountBtn').click();
+        showToast('Username atau password vendor salah, atau akun belum dibuat admin.', true);
+      }
+    };
+    $('vendorAccountSubmit').addEventListener('click', tryVendorAccountLogin);
+    $('vendorAccountPassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryVendorAccountLogin(); });
+  }
+
+  // ---- Klien ----
+  if(showClientOpt){
+    if($('gateClientBtn')) $('gateClientBtn').addEventListener('click', ()=>{ $('clientCodeBox').classList.add('show'); $('clientCodeInput').focus(); });
+    const tryClientCode = async ()=>{
+      const username = $('clientCodeInput').value.trim();
+      const pass = $('clientCodePassInput').value.trim();
+      if(!username || !pass){ $('clientCodeError').textContent = 'Isi username dan password dulu.'; return; }
+      renderLoadingScreen('Memeriksa akun klien...');
+      try{
+        const mapping = await tryClientAccountLogin(username, pass);
+        const proj = await loadProjectById(mapping.projectId);
+        if(!proj) throw new Error('Project untuk akun ini tidak ditemukan (mungkin sudah dihapus). Hubungi admin.');
+        currentProjectId = mapping.projectId; state = proj; isVendor = false; isAdmin = false; roleDecided = true;
+        attachmentsHydrated = false;
+        saveRoleSession({ role:'client', projectId:mapping.projectId, uid:mapping.uid, username:mapping.username });
+        history.replaceState(null, '', location.pathname + '?p=' + mapping.projectId + '#client');
+        render();
+        hydrateAttachmentsInBackground();
+      } catch(e){
+        showEntryGate();
+        if($('gateClientBtn')) $('gateClientBtn').click();
+        showToast(e.message || 'Username atau password salah.', true);
+      }
+    };
+    $('clientCodeSubmit').addEventListener('click', tryClientCode);
+    $('clientCodePassInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryClientCode(); });
+  }
   bindPwToggles();
 }
 
@@ -4187,6 +4351,7 @@ function showVendorAccountDashboard(){
       <div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava Wedding Organizer"/></div>
       <div class="topbar-right">
         <div class="pic-chip">${acc.photoUrl ? `<img class="pic-avatar" src="${escapeAttr(acc.photoUrl)}" alt="${escapeHtml(acc.name)}"/>` : ''}<div class="pic-info"><div class="pic-name">${acc.photoUrl ? '' : '🧰 '}${escapeHtml(acc.name)}</div><div class="pic-role">Akun Vendor · ${escapeHtml(acc.category||'-')}</div></div></div>
+        ${pushButtonHtml()}
         <button class="btn tiny ghost" id="logoutVendorAccountBtn">Keluar</button>
       </div>
     </div>
@@ -4206,7 +4371,9 @@ function showVendorAccountDashboard(){
       `).join('') : `<div class="empty-mini">Belum ada project yang menjadwalkan kamu. Hubungi admin/marketing kalau menurut kamu ini keliru.</div>`}
     </div>
   `;
+  bindPushButtons();
   document.getElementById('logoutVendorAccountBtn').addEventListener('click', ()=>{
+    clearRoleSession();
     isVendorAccountSession = false; currentVendorAccountSession = null; roleDecided = false;
     currentProjectId = null; state = null; isSupplier = false; supplierVendorKey = null;
     if(vendorLinkMode){
@@ -4308,7 +4475,9 @@ function showProjectGate(){
       showToast('Project ini bukan link klien kamu.', true);
       return;
     }
-    isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; roleDecided = true; render();
+    isAdmin = false; isVendor = true; vendorAuthed = true; currentMarketing = m; roleDecided = true;
+    saveRoleSession({ role:'marketing', id:m.id, sig:pwSig(m.pin) });
+    render();
     hydrateMarketingPhotosInBackground();
   };
   document.getElementById('marketingPinSubmit').addEventListener('click', tryMarketingPin);
@@ -4320,7 +4489,7 @@ function showProjectGate(){
   });
   const tryClientPass = ()=>{
     const val = document.getElementById('clientPassInput').value.trim();
-    if(val === state.clientPassword){ isVendor = false; isAdmin = false; roleDecided = true; render(); }
+    if(val === state.clientPassword){ isVendor = false; isAdmin = false; roleDecided = true; saveRoleSession({ role:'client', projectId:state.id, sig:pwSig(state.clientPassword) }); render(); }
     else document.getElementById('clientPassError').textContent = 'Password salah, coba lagi.';
   };
   document.getElementById('clientPassSubmit').addEventListener('click', tryClientPass);
@@ -4366,6 +4535,7 @@ async function showVendorLinkProjectPicker(){
     const v = findVendorAccountByUsername(username);
     if(v && v.password === password){
       currentVendorAccountSession = v; isAdmin = false; isVendor = false; currentMarketing = null; roleDecided = false;
+      saveRoleSession({ role:'vendor', accountId:v.id, sig:pwSig(v.password) });
       showVendorAccountDashboard();
     } else {
       showVendorLinkProjectPicker();
@@ -4424,7 +4594,7 @@ function showClientPasswordGate(){
   `;
   const tryClientPass = ()=>{
     const val = document.getElementById('clientPassInput').value.trim();
-    if(val === state.clientPassword){ isVendor = false; isAdmin = false; roleDecided = true; render(); }
+    if(val === state.clientPassword){ isVendor = false; isAdmin = false; roleDecided = true; saveRoleSession({ role:'client', projectId:state.id, sig:pwSig(state.clientPassword) }); render(); }
     else document.getElementById('clientPassError').textContent = 'Password salah, coba lagi.';
   };
   document.getElementById('clientPassSubmit').addEventListener('click', tryClientPass);
@@ -4739,25 +4909,12 @@ function renderProjectDashboard(){
   if(copyGlobalVendorLinkBtn) copyGlobalVendorLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalVendorLinkBox').value));
   const copyGlobalClientLinkBtn = document.getElementById('copyGlobalClientLink');
   if(copyGlobalClientLinkBtn) copyGlobalClientLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalClientLinkBox').value));
-  const testPushBtn = document.getElementById('testPushBtn');
-  if(testPushBtn) testPushBtn.addEventListener('click', sendLocalTestNotification);
-  const enablePushBtn = document.getElementById('enablePushBtn');
-  if(enablePushBtn){
-    enablePushBtn.addEventListener('click', async ()=>{
-      enablePushBtn.disabled = true;
-      const ok = await enablePushNotifications(false);
-      enablePushBtn.disabled = false;
-      if(ok) enablePushBtn.textContent = '🔔 Notifikasi aktif';
-    });
-    if(!pushSessionRefreshed && pushIsOn()){
-      pushSessionRefreshed = true; // perbarui token diam-diam sekali per sesi (token bisa berganti)
-      enablePushNotifications(true).then(ok=>{ if(ok && enablePushBtn.isConnected) enablePushBtn.textContent = '🔔 Notifikasi aktif'; });
-    }
-  }
+  bindPushButtons();
   document.getElementById('logoutRoleBtn').addEventListener('click', ()=>{
     // Kalau tadi masuk lewat link khusus marketing (#marketing), pertahankan hash itu
     // supaya setelah keluar, opsi "Saya Admin" tetap tidak ditampilkan di layar ini.
-    const keepHash = isMarketingLocked() ? '#marketing' : '';
+    const keepHash = isMarketingLocked() ? '#marketing' : (location.hash==='#admin' ? '#admin' : '');
+    clearRoleSession();
     isVendor=false; isAdmin=false; vendorAuthed=false; currentMarketing=null; viewingDashboard=false; roleDecided=false;
     isVendorAccountSession=false; currentVendorAccountSession=null; isSupplier=false; supplierVendorKey=null;
     currentProjectId = null; state = null;
@@ -5519,6 +5676,7 @@ function render(){
         ${isVendor ? `<button class="btn tiny ghost" id="backToDashboardBtn">📁 Semua Project</button>` : ''}
         ${(isSupplier && isVendorAccountSession) ? `<button class="btn tiny ghost" id="backToVendorScheduleBtn">📅 Jadwal Saya</button>` : ''}
         ${(!isAdmin && currentMarketing) ? `<button class="btn tiny ghost" id="changeMyPin">🔑 Ganti PIN Saya</button>` : ''}
+        ${(!isVendor && !isDemoMode) ? pushButtonHtml() : ''}
         ${!isVendor ? `<button class="btn tiny ghost" id="clientLogoutBtn">Keluar</button>` : ''}
       </div>
     </div>
@@ -6609,12 +6767,14 @@ function attachHandlers(){
     else { me.pin = oldPin; await customAlert('Gagal menyimpan PIN baru ke storage. PIN belum berubah.\n\nDetail: ' + (lastStorageError || 'tidak diketahui')); }
   });
 
+  bindPushButtons();
   const exitDemoBtn = document.getElementById('exitDemoBtn');
   if(exitDemoBtn) exitDemoBtn.addEventListener('click', ()=> exitDemoMode());
 
   const clientLogoutBtn = document.getElementById('clientLogoutBtn');
   if(clientLogoutBtn) clientLogoutBtn.addEventListener('click', ()=>{
     if(isDemoMode){ exitDemoMode(); return; }
+    clearRoleSession();
     if(isVendorAccountSession){
       // Keluar total dari akun vendor (bukan cuma balik ke pilih kategori project ini).
       isVendorAccountSession = false; currentVendorAccountSession = null;

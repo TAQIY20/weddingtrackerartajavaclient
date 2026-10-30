@@ -3296,32 +3296,36 @@ function notifySnapshot(s){
   const mb = Object.assign({}, s.moodboard||{}); delete mb.notes;
   const invoices = {}, payLabels = {};
   (s.payments||[]).forEach(p=>{ if(p && p.invoice){ invoices[p.id] = (p.invoice.url||'') + '|' + (p.invoice.name||''); payLabels[p.id] = p.label||''; } });
+  const reqMap = {}, mnMap = {};
+  (s.requests||[]).forEach(r=>{ if(r && r.id) reqMap[r.id] = { t: r.by === 'supplier' ? '' : (r.vendorKey || ''), x: String(r.text||'').slice(0,60) }; });
+  ((s.moodboard && s.moodboard.notes)||[]).forEach(n=>{ if(n && n.id) mnMap[n.id] = { t: n.vendorKey || 'Umum', x: String(n.text||'').slice(0,60) }; });
   const tl = {};
-  (s.timeline||[]).forEach(t=>{ if(t && t.id) tl[t.id] = { title:t.title||'', date:t.date||'', time:t.time||'', location:t.location||'', desc:pwSig(t.desc||''), status:t.status||'', cc:!!t.clientConfirmed }; });
+  (s.timeline||[]).forEach(t=>{ if(t && t.id) tl[t.id] = { title:t.title||'', date:t.date||'', time:t.time||'', location:t.location||'', desc:pwSig(t.desc||''), status:t.status||'', cc:!!t.clientConfirmed, vk:(t.vendorKeys||[]).join(',') }; });
   return {
-    reqs: (s.requests||[]).map(r=>r.id).join(','),
+    reqs: reqMap,
     timeline: tl,
     payLabels,
     vend,
     docs: { MOU: s.documents && s.documents.mou ? (s.documents.mou.url||s.documents.mou.name||'1') : '', Rundown: s.documents && s.documents.rundown ? (s.documents.rundown.url||s.documents.rundown.name||'1') : '' },
     invoices,
-    mbNotes: ((s.moodboard && s.moodboard.notes)||[]).map(n=>n.id).join(','),
+    mbNotes: mnMap,
     mb: pwSig(JSON.stringify(mb))
   };
 }
 function notifyDiff(a, b){
   const ev = [];
   const newIds = (x, y)=>{ const old = new Set((x||'').split(',')); return (y||'').split(',').filter(i=> i && !old.has(i)); };
-  if(newIds(a.reqs, b.reqs).length) ev.push({ kind:'note' });
-  const TL_FIELDS = ['title','date','time','location','desc','status','cc'];
+  const ar = (a.reqs && typeof a.reqs === 'object') ? a.reqs : {};
+  Object.keys(b.reqs||{}).forEach(id=>{ if(!ar[id]) ev.push({ kind:'note', key:'req:'+id, target:b.reqs[id].t, detail:b.reqs[id].x }); });
+  const TL_FIELDS = ['title','date','time','location','desc','status','cc','vk'];
   const ta = a.timeline || {}, tb = b.timeline || {};
   Object.keys(tb).forEach(id=>{
     const n = tb[id], o = ta[id];
-    if(!o){ ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:['new'] }); return; }
+    if(!o){ ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:['new'], refs:n.vk ? n.vk.split(',') : [] }); return; }
     const ch = TL_FIELDS.filter(k=> o[k] !== n[k]);
-    if(ch.length) ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:ch });
+    if(ch.length) ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:ch, refs:n.vk ? n.vk.split(',') : [] });
   });
-  Object.keys(ta).forEach(id=>{ if(!tb[id]) ev.push({ kind:'timeline', key:'tl:'+id, title:ta[id].title, changes:['deleted'] }); });
+  Object.keys(ta).forEach(id=>{ if(!tb[id]) ev.push({ kind:'timeline', key:'tl:'+id, title:ta[id].title, changes:['deleted'], refs:ta[id].vk ? ta[id].vk.split(',') : [] }); });
   Object.keys(b.vend).forEach(k=>{
     const o = a.vend[k], n = b.vend[k]; if(!o) return;
     const label = k.replace(/^x:/,'');
@@ -3330,7 +3334,8 @@ function notifyDiff(a, b){
   });
   ['MOU','Rundown'].forEach(d=>{ if(b.docs[d] && b.docs[d] !== a.docs[d]) ev.push({ kind:'attachment', what:d }); });
   Object.keys(b.invoices).forEach(id=>{ if(b.invoices[id] !== a.invoices[id]) ev.push({ kind:'attachment', what:'Invoice', key:'inv:'+id, detail:(b.payLabels||{})[id] || '' }); });
-  if(newIds(a.mbNotes, b.mbNotes).length) ev.push({ kind:'moodboard_note' });
+  const am = (a.mbNotes && typeof a.mbNotes === 'object') ? a.mbNotes : {};
+  Object.keys(b.mbNotes||{}).forEach(id=>{ if(!am[id]) ev.push({ kind:'moodboard_note', key:'mn:'+id, target:b.mbNotes[id].t, detail:b.mbNotes[id].x }); });
   if(a.mb !== b.mb) ev.push({ kind:'moodboard' });
   return ev;
 }
@@ -6078,6 +6083,11 @@ function renderBeranda(dLeft, allVendorList){
             `).join('') : `<div class="empty-mini">Belum ada catatan/request.</div>`}
           </div>
           <div class="add-inline">
+            ${isVendor ? `<select id="requestVendorSelect" style="flex:1;min-width:150px;padding:8px 10px;border-radius:10px;font-size:13px;">
+              <option value="Umum">🗒️ Semua vendor</option>
+              ${activeVendorCats().map(c=>`<option value="${escapeAttr(c.key)}">${escapeAttr(c.emoji||'')} ${escapeAttr(c.key)}</option>`).join('')}
+              <option value="-">🚫 Tanpa vendor (klien saja)</option>
+            </select>` : ''}
             <input id="requestInput" placeholder="${isVendor?'Tulis catatan/update buat klien...':(isSupplier?'Tulis catatan/update dari vendor kamu buat klien & marketing...':'Tulis request atau pertanyaan buat marketing...')}"/>
             <button class="mini-add-btn" id="addRequest" title="Kirim">+</button>
           </div>
@@ -7185,7 +7195,8 @@ function attachHandlers(){
   const doAddRequest = ()=>{
     const inp = document.getElementById('requestInput');
     const val = inp.value.trim();
-    if(val){ state.requests.push({id:uid('r'), text:val, by: isSupplier?'supplier':(isVendor?'vendor':'client'), supplierKey: isSupplier ? supplierVendorKey : undefined, date:new Date().toISOString(), status:'open'}); scheduleSave(); render(); }
+    const vsel = document.getElementById('requestVendorSelect');
+    if(val){ state.requests.push({id:uid('r'), text:val, by: isSupplier?'supplier':(isVendor?'vendor':'client'), supplierKey: isSupplier ? supplierVendorKey : undefined, vendorKey: vsel ? vsel.value : undefined, date:new Date().toISOString(), status:'open'}); scheduleSave(); render(); }
   };
   if(addRequest) addRequest.addEventListener('click', doAddRequest);
   const requestInputEl = document.getElementById('requestInput');

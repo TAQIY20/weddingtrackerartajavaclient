@@ -3668,13 +3668,31 @@ const PUSH_TOKEN_PREFIX = 'push_token_';
 let pushSessionRefreshed = false;
 function pushPermission(){ return ('Notification' in window) ? Notification.permission : 'unsupported'; }
 function pushIsOn(){ let f=false; try{ f = localStorage.getItem('aj_push_on')==='1'; }catch(e){} return f && pushPermission()==='granted'; }
-function pushButtonHtml(){ return `<button class="btn tiny ghost" id="enablePushBtn">${pushIsOn() ? '🔔 Notifikasi aktif' : '🔔 Aktifkan Notifikasi'}</button>`; }
+function pushButtonHtml(){ return `<button class="btn tiny ghost" id="enablePushBtn">${pushIsOn() ? '🔔 Notifikasi aktif' : '🔔 Aktifkan Notifikasi'}</button><button class="btn tiny ghost" id="testPushBtn" title="Munculkan 1 notif contoh di perangkat ini">🧪 Tes Notif</button>`; }
 function pushSupported(){
   try{ return ('Notification' in window) && ('serviceWorker' in navigator) && !!window.firebase && !!firebase.messaging && firebase.messaging.isSupported(); }catch(e){ return false; }
 }
 function pushNotifOptions(d, reg){
   const base = reg.scope;
   return { body: d.body||'', icon: base+'icons/icon-192.png', badge: base+'icons/badge-96.png', tag: d.tag||undefined, data: { url: d.url||base } };
+}
+/* Tes dari dalam app: munculkan 1 notif contoh lewat service worker (cek izin, ikon, badge, sw.js).
+   Ini TIDAK mengetes pengiriman dari server; untuk itu pakai "Run workflow" test_notif di GitHub. */
+async function sendLocalTestNotification(){
+  try{
+    if(!('Notification' in window) || !('serviceWorker' in navigator)){ showToast('Browser ini belum mendukung notifikasi. Di iPhone: Add to Home Screen dulu.', true); return; }
+    if(Notification.permission === 'default'){ showToast('Klik "Aktifkan Notifikasi" dulu, lalu Allow.', true); return; }
+    if(Notification.permission === 'denied'){ showToast('Notifikasi diblokir. Buka pengaturan situs di browser (ikon gembok di address bar) lalu izinkan.', true); return; }
+    const reg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_,rej)=> setTimeout(()=>rej(new Error('sw.js belum aktif di hosting')), 6000))
+    ]);
+    await reg.showNotification('Tes Notifikasi ArtaJava', pushNotifOptions({ body: 'Kalau kamu lihat ini, tampilan notif dan ikonnya sudah benar ✓', tag: 'tes-lokal' }, reg));
+    showToast('Notif tes dikirim. Cek pojok layar / panel notifikasi.');
+  }catch(e){
+    console.error('tes notif gagal', e);
+    showToast('Gagal menampilkan notif tes: ' + (e && e.message ? e.message : e), true);
+  }
 }
 async function enablePushNotifications(silent){
   try{
@@ -4721,6 +4739,8 @@ function renderProjectDashboard(){
   if(copyGlobalVendorLinkBtn) copyGlobalVendorLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalVendorLinkBox').value));
   const copyGlobalClientLinkBtn = document.getElementById('copyGlobalClientLink');
   if(copyGlobalClientLinkBtn) copyGlobalClientLinkBtn.addEventListener('click', ()=> copyText(document.getElementById('globalClientLinkBox').value));
+  const testPushBtn = document.getElementById('testPushBtn');
+  if(testPushBtn) testPushBtn.addEventListener('click', sendLocalTestNotification);
   const enablePushBtn = document.getElementById('enablePushBtn');
   if(enablePushBtn){
     enablePushBtn.addEventListener('click', async ()=>{

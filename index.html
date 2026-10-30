@@ -3280,6 +3280,84 @@ async function storageDeleteChunked(baseKey, shared){
   await window.storage.delete(baseKey, shared).catch(()=>{}); // hapus juga kalau ada sisa format lama
 }
 
+/* ---------- NOTIF REAL-TIME (catatan, timeline, vendor, lampiran, moodboard) ----------
+   Setelah tiap simpan berhasil, app membandingkan data sekarang dengan snapshot sebelumnya, lalu
+   mengirim daftar perubahan ke endpoint /api/notify (Vercel). Server yang menentukan siapa yang
+   menerima. Perubahan dikumpulkan dulu NOTIFY_QUIET_MS supaya mengetik catatan tidak mengirim
+   puluhan notif; kalau halaman ditutup, sisanya langsung dikirim. */
+const NOTIFY_ENDPOINT = '/api/notify';
+const NOTIFY_QUIET_MS = 45000;
+let notifyBaseRef = null, notifyBase = null, notifyPending = null, notifyTimer = null;
+function notifySnapshot(s){
+  const vend = {};
+  const addV = (key, v)=>{ if(v) vend[key] = { status:v.status||'', note:v.note||'', prog:(v.progress||[]).length }; };
+  Object.keys(s.vendors||{}).forEach(k=> addV(k, s.vendors[k]));
+  (s.extraVendors||[]).forEach((v,i)=> addV('x:' + (v.category||v.name||('Vendor '+(i+1))), v));
+  const mb = Object.assign({}, s.moodboard||{}); delete mb.notes;
+  const invoices = {};
+  (s.payments||[]).forEach(p=>{ if(p && p.invoice) invoices[p.id] = (p.invoice.url||'') + '|' + (p.invoice.name||''); });
+  return {
+    reqs: (s.requests||[]).map(r=>r.id).join(','),
+    timeline: pwSig(JSON.stringify((s.timeline||[]).map(t=>[t.id,t.title,t.date,t.time,t.location,t.desc,t.status,t.clientConfirmed]))),
+    vend,
+    docs: { MOU: s.documents && s.documents.mou ? (s.documents.mou.url||s.documents.mou.name||'1') : '', Rundown: s.documents && s.documents.rundown ? (s.documents.rundown.url||s.documents.rundown.name||'1') : '' },
+    invoices,
+    mbNotes: ((s.moodboard && s.moodboard.notes)||[]).map(n=>n.id).join(','),
+    mb: pwSig(JSON.stringify(mb))
+  };
+}
+function notifyDiff(a, b){
+  const ev = [];
+  const newIds = (x, y)=>{ const old = new Set((x||'').split(',')); return (y||'').split(',').filter(i=> i && !old.has(i)); };
+  if(newIds(a.reqs, b.reqs).length) ev.push({ kind:'note' });
+  if(a.timeline !== b.timeline) ev.push({ kind:'timeline' });
+  Object.keys(b.vend).forEach(k=>{
+    const o = a.vend[k], n = b.vend[k]; if(!o) return;
+    const label = k.replace(/^x:/,'');
+    if(o.status !== n.status) ev.push({ kind:'vendor_status', vendorKey:label, status: (typeof statusLabel==='function' ? statusLabel(n.status) : n.status) });
+    else if(o.note !== n.note || o.prog !== n.prog) ev.push({ kind:'vendor_update', vendorKey:label });
+  });
+  ['MOU','Rundown'].forEach(d=>{ if(b.docs[d] && b.docs[d] !== a.docs[d]) ev.push({ kind:'attachment', what:d }); });
+  if(Object.keys(b.invoices).some(id=> b.invoices[id] !== a.invoices[id])) ev.push({ kind:'attachment', what:'Invoice' });
+  if(newIds(a.mbNotes, b.mbNotes).length) ev.push({ kind:'moodboard_note' });
+  if(a.mb !== b.mb) ev.push({ kind:'moodboard' });
+  return ev;
+}
+function notifyActorRole(){ return isAdmin ? 'admin' : (currentMarketing ? 'marketing' : (isSupplier ? 'vendor' : 'client')); }
+function notifyEnsureBase(){
+  if(!state || isDemoMode || notifyBaseRef === state) return;
+  notifyBaseRef = state; notifyBase = notifySnapshot(state);
+}
+function notifyAfterPersist(){
+  try{
+    if(!/^https?:$/.test(location.protocol) || isDemoMode || !state) return;
+    const cur = notifySnapshot(state);
+    const evs = (notifyBaseRef === state && notifyBase) ? notifyDiff(notifyBase, cur) : [];
+    notifyBaseRef = state; notifyBase = cur;
+    if(!evs.length) return;
+    if(notifyPending && notifyPending.projectId !== state.id) flushNotify(false);
+    if(!notifyPending) notifyPending = { projectId: state.id, actorRole: notifyActorRole(), actorVendorKey: supplierVendorKey || '', events: {} };
+    evs.forEach(e=>{ notifyPending.events[[e.kind, e.vendorKey||'', e.what||''].join('|')] = e; });
+    clearTimeout(notifyTimer);
+    notifyTimer = setTimeout(()=> flushNotify(false), NOTIFY_QUIET_MS);
+  }catch(e){ console.warn('notif: gagal menyusun perubahan', e); }
+}
+function flushNotify(useBeacon){
+  clearTimeout(notifyTimer);
+  const p = notifyPending; notifyPending = null;
+  if(!p) return;
+  const events = Object.keys(p.events).map(k=>p.events[k]);
+  if(!events.length) return;
+  let tok = ''; try{ tok = localStorage.getItem('aj_push_token') || ''; }catch(e){}
+  const body = JSON.stringify({ projectId:p.projectId, actorRole:p.actorRole, actorVendorKey:p.actorVendorKey, actorToken:tok, events });
+  try{
+    if(useBeacon && navigator.sendBeacon){ navigator.sendBeacon(NOTIFY_ENDPOINT, new Blob([body], {type:'application/json'})); }
+    else fetch(NOTIFY_ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true }).catch(()=>{});
+  }catch(e){}
+}
+window.addEventListener('pagehide', ()=> flushNotify(true));
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') flushNotify(true); });
+
 async function persist(){
   if(isDemoMode){ showToast('📌 Mode Demo — perubahan tidak disimpan'); return; }
   if(!state || !state.id) return;
@@ -3308,6 +3386,7 @@ async function persist(){
       customVendorCatsExtra: VENDOR_CATS.filter(c=> !BUILTIN_VENDOR_CAT_KEYS.has(c.key)).map(c=>({key:c.key, emoji:c.emoji})),
     });
     if(isVendor){ syncVendorScheduleForProject(state).catch(()=>{}); }
+    notifyAfterPersist();
   } else {
     showToast('⚠️ Gagal menyimpan — cek koneksi & coba edit lagi', true);
   }
@@ -5605,6 +5684,7 @@ function setTab(tab){ currentTab = tab; navDrawerOpen = false; render(); }
 /* ---------- MAIN RENDER ---------- */
 function render(){
   if(!roleDecided){ showProjectGate(); return; }
+  notifyEnsureBase();
   if(isSupplier && currentTab==='pembayaran'){ currentTab = 'beranda'; }
   if(!isVendor && currentTab==='notifikasi'){ currentTab = 'beranda'; }
   const app = document.getElementById('app');

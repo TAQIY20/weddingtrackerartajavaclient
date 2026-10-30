@@ -3299,6 +3299,13 @@ function notifySnapshot(s){
   const reqMap = {}, mnMap = {};
   (s.requests||[]).forEach(r=>{ if(r && r.id) reqMap[r.id] = { t: r.by === 'supplier' ? '' : (r.vendorKey || ''), x: String(r.text||'').slice(0,60) }; });
   ((s.moodboard && s.moodboard.notes)||[]).forEach(n=>{ if(n && n.id) mnMap[n.id] = { t: n.vendorKey || 'Umum', x: String(n.text||'').slice(0,60) }; });
+  const mbLinkMap = {};
+  ((s.moodboard && s.moodboard.links)||[]).forEach(l=>{
+    if(!l || !l.url) return;
+    let t = String(l.title||'').trim();
+    if(!t){ try{ t = new URL(l.url).hostname.replace(/^www\./,''); }catch(e){ t = String(l.url).slice(0,40); } }
+    mbLinkMap[l.url] = t;
+  });
   const tl = {};
   (s.timeline||[]).forEach(t=>{ if(t && t.id) tl[t.id] = { title:t.title||'', date:t.date||'', time:t.time||'', location:t.location||'', desc:pwSig(t.desc||''), status:t.status||'', cc:!!t.clientConfirmed, vk:(t.vendorKeys||[]).join(',') }; });
   return {
@@ -3309,6 +3316,7 @@ function notifySnapshot(s){
     docs: { MOU: s.documents && s.documents.mou ? (s.documents.mou.url||s.documents.mou.name||'1') : '', Rundown: s.documents && s.documents.rundown ? (s.documents.rundown.url||s.documents.rundown.name||'1') : '' },
     invoices,
     mbNotes: mnMap,
+    mbLinks: mbLinkMap,
     mb: pwSig(JSON.stringify(mb))
   };
 }
@@ -3336,7 +3344,11 @@ function notifyDiff(a, b){
   Object.keys(b.invoices).forEach(id=>{ if(b.invoices[id] !== a.invoices[id]) ev.push({ kind:'attachment', what:'Invoice', key:'inv:'+id, detail:(b.payLabels||{})[id] || '' }); });
   const am = (a.mbNotes && typeof a.mbNotes === 'object') ? a.mbNotes : {};
   Object.keys(b.mbNotes||{}).forEach(id=>{ if(!am[id]) ev.push({ kind:'moodboard_note', key:'mn:'+id, target:b.mbNotes[id].t, detail:b.mbNotes[id].x }); });
-  if(a.mb !== b.mb) ev.push({ kind:'moodboard' });
+  if(a.mb !== b.mb){
+    const al = (a.mbLinks && typeof a.mbLinks === 'object') ? a.mbLinks : {};
+    const fresh = Object.keys(b.mbLinks||{}).filter(u=> !(u in al)).map(u=> b.mbLinks[u]);
+    ev.push({ kind:'moodboard', detail: fresh.join(', ') });
+  }
   return ev;
 }
 function notifyActorRole(){ return isAdmin ? 'admin' : (currentMarketing ? 'marketing' : (isSupplier ? 'vendor' : 'client')); }
@@ -3357,6 +3369,7 @@ function notifyAfterPersist(){
       const k = e.key || [e.kind, e.vendorKey||'', e.what||''].join('|');
       const old = notifyPending.events[k];
       if(old && old.changes && e.changes) e.changes = Array.from(new Set(old.changes.concat(e.changes)));
+      if(old && e.kind === 'moodboard' && old.detail) e.detail = Array.from(new Set(old.detail.split(', ').concat(e.detail ? e.detail.split(', ') : []))).join(', ');
       notifyPending.events[k] = e;
     });
     clearTimeout(notifyTimer);

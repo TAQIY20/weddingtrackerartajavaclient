@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="manifest" href="manifest.webmanifest">
 <script>
 /* PERAN PER LINK + INSTALL TERKUNCI.
    Tiap link (#admin / #marketing / #clientlink / #vendorlink) = 1 peran. Manifest PWA dibuat ulang
@@ -70,6 +69,9 @@
   }catch(e){}
   try{
     var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
+    /* PENTING: iOS membaca <link rel=manifest> SEKALI, saat halaman dimuat. Mengganti href sesudahnya diabaikan dan iOS
+       memakai manifest statis (start_url ./ = Admin). Jadi link ditulis di sini, sinkron, dengan href final per peran. */
+    document.write('<link rel="manifest" href="api/manifest?role=' + key + '">');
     /* iOS tidak membaca manifest blob:. Coba manifest per peran dari URL asli (api/manifest?role=..., Vercel) dulu;
        kalau endpoint tidak ada (mis. github-pages) atau gagal, pakai manifest blob seperti biasa. */
     var link = document.querySelector('link[rel="manifest"]');

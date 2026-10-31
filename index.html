@@ -5800,7 +5800,7 @@ function render(){
   notifyEnsureBase();
   if(isSupplier && currentTab==='pembayaran'){ currentTab = 'beranda'; }
   if(!isVendor && currentTab==='notifikasi'){ currentTab = 'beranda'; }
-  if((isVendor || isSupplier) && currentTab==='album'){ currentTab = 'beranda'; }
+  if(isSupplier && currentTab==='album'){ currentTab = 'beranda'; } /* vendor (field/akun) tidak punya tab album; admin/marketing/klien punya */
   const app = document.getElementById('app');
   const totalItems = state.timeline.length;
   const doneItems = state.timeline.filter(t=>t.status==='done').length;
@@ -5888,7 +5888,7 @@ function render(){
         ${!isSupplier ? navItem('pembayaran','💳','Pembayaran') : ''}
         ${navItem('detail','📋','Detail Acara')}
         ${navItem('moodboard','🎨','Moodboard')}
-        ${(!isVendor && !isSupplier) ? navItem('album','📸','Album Tamu') : ''}
+        ${!isSupplier ? navItem('album','📸','Album Tamu') : ''}
         ${isVendor ? navItem('notifikasi','🔔','Notifikasi') : ''}
       </div>
     </nav>
@@ -5970,7 +5970,7 @@ function render(){
     ${!isSupplier ? `<section class="panel ${currentTab==='pembayaran'?'active':''}">${renderPayments()}</section>` : ''}
     <section class="panel ${currentTab==='detail'?'active':''}">${renderDetailAcara()}</section>
     <section class="panel ${currentTab==='moodboard'?'active':''}">${renderMoodboard()}</section>
-    ${(!isVendor && !isSupplier) ? `<section class="panel ${currentTab==='album'?'active':''}">${currentTab==='album' ? renderAlbum() : ''}</section>` : ''}
+    ${!isSupplier ? `<section class="panel ${currentTab==='album'?'active':''}">${currentTab==='album' ? renderAlbum() : ''}</section>` : ''}
     ${isVendor ? `<section class="panel ${currentTab==='notifikasi'?'active':''}">${renderNotifikasi()}</section>` : ''}
 
     <footer>

@@ -1840,17 +1840,21 @@ async function saveVendorSchedule(){
 }
 function scheduleEntriesForProject(proj){
   const entries = [];
+  // PIC project = marketing yang ditugaskan (kalau belum ada, PIC default WO) -> dibawa ke jadwal vendor
+  const picM = proj.marketingId ? findMarketingById(proj.marketingId) : null;
+  const picName = picM ? (picM.name || '') : PIC_NAME;
+  const picPhone = picM ? (picM.phone || '') : PIC_PHONE_DISPLAY;
   activeVendorCatsFor(proj).forEach(c=>{
     const v = proj.vendors[c.key];
     if(v && v.vendorAccountId){
       entries.push({ vendorAccountId: v.vendorAccountId, projectId: proj.id, catKey: c.key, catLabel: c.key,
-        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate, ...computeEventInfo(proj.couple) });
+        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate, picName, picPhone, ...computeEventInfo(proj.couple) });
     }
   });
   (proj.extraVendors||[]).forEach(v=>{
     if(v.vendorAccountId){
       entries.push({ vendorAccountId: v.vendorAccountId, projectId: proj.id, catKey: v.id, catLabel: v.category || 'Vendor Tambahan',
-        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate, ...computeEventInfo(proj.couple) });
+        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate, picName, picPhone, ...computeEventInfo(proj.couple) });
     }
   });
   return entries;
@@ -4515,6 +4519,7 @@ function showVendorAccountDashboard(){
           ${!e.weddingDate ? '<span class="stage-badge v-status-badge belum_ada_tanggal" title="Status: Belum Ada Tanggal">Belum Ada Tanggal</span>' : ''}
           <div class="v-cat"${!e.weddingDate ? ' style="padding-right:130px;"' : ''}><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(e.brideName)} &amp; ${escapeHtml(e.groomName)}</span></div></div>
           ${eventInfoBlockHtml(e)}
+          ${e.picName ? `<div class="v-field"><label>PIC</label><div>${escapeHtml(e.picName)}${e.picPhone ? ` · <a href="https://wa.me/62${escapeAttr(String(e.picPhone).replace(/\D/g,'').replace(/^(62|0)/,''))}" target="_blank" rel="noopener" style="color:inherit;font-weight:600;">${escapeHtml(e.picPhone)}</a>` : ''}</div></div>` : ''}
           <div class="v-field"><label>Kategori Kamu</label><div>${escapeHtml(e.catLabel)}</div></div>
           <div class="row-actions" style="margin-top:10px;">
             <button class="btn small primary" data-action="open-vendor-project" data-pid="${escapeAttr(e.projectId)}" data-catlabel="${escapeAttr(e.catLabel)}">Buka Project →</button>

@@ -7747,6 +7747,7 @@ const ALBUM_CSS = `
 .dc-st button{border:none;background:none;color:var(--dc-pink);font-weight:700;font-size:12px;text-decoration:underline;cursor:pointer;padding:0 2px}
 .dc-sheet{position:absolute;inset:0;z-index:5;background:var(--bg);overflow:auto;padding:max(16px,env(safe-area-inset-top)) 14px 30px}
 .dc-sheet-in{max-width:520px;margin:0 auto}
+.album-cover-prev{width:92px;aspect-ratio:4/5;border-radius:46px 46px 10px 10px;border:2px solid var(--card-border);background:var(--field-bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--cream-dim);text-align:center;flex:none}
 `;
 function albumInjectCss(){
   if(document.getElementById('albumCss')) return;
@@ -7760,6 +7761,7 @@ function albumNewCode(){
 const albumCfgKey = c => 'album_cfg_' + c;
 const albumThumbKey = (c, id) => 'album_t_' + c + '_' + id;
 const albumFullKey = (c, id) => 'album_f_' + c + '_' + id;
+const albumCoverKey = c => 'album_cover_' + c;
 function albumLink(code){ return location.href.split('?')[0].split('#')[0] + '#album/' + code; }
 function albumFmtDate(iso){
   try{ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }) : ''; }catch(e){ return ''; }
@@ -7775,7 +7777,7 @@ let albumCanDelete = false;
 
 function albumBuildCfg(){
   const a = state.album, c = state.couple || {};
-  return { code:a.code, enabled:a.enabled !== false, guestView:a.guestView !== false, bride:c.brideName || '', groom:c.groomName || '', date:c.weddingDate || '' };
+  return { code:a.code, enabled:a.enabled !== false, guestView:a.guestView !== false, bride:c.brideName || '', groom:c.groomName || '', date:c.weddingDate || '', cover:a.cover || 0 };
 }
 async function albumSyncCfg(force){
   if(!state || !state.album || !state.album.code || isDemoMode) return true;
@@ -7965,6 +7967,12 @@ function renderAlbum(){
       <label class="album-sw"><input type="checkbox" id="albumToggleOpen" ${a.enabled !== false ? 'checked' : ''}/><span><b>Album dibuka untuk tamu</b><small>Matikan setelah acara kalau tidak mau ada upload baru.</small></span></label>
       <label class="album-sw"><input type="checkbox" id="albumToggleView" ${a.guestView !== false ? 'checked' : ''}/><span><b>Tamu boleh melihat foto tamu lain</b><small>Kalau dimatikan, tamu hanya bisa upload tanpa melihat galeri.</small></span></label>
     </div>
+    <div class="mb-card"><h3 style="margin:0 0 6px">🖼️ Foto Sampul (Prewed)</h3>
+      <p style="font-size:13px;color:var(--cream-dim);line-height:1.55;margin:0 0 12px">Tampil di bingkai lengkung pada halaman depan album tamu. Pakai foto tegak (potret); otomatis dipotong rasio 4:5.</p>
+      <div class="album-row" style="gap:14px"><div class="album-cover-prev" id="albumCoverPrev">${a.cover ? 'Memuat…' : 'Belum ada'}</div>
+        <div class="album-row"><button type="button" class="album-btn" id="albumCoverBtn">${a.cover ? 'Ganti Foto' : 'Pilih Foto Prewed'}</button>${a.cover ? '<button type="button" class="album-btn ghost" id="albumCoverDel">Hapus</button>' : ''}</div></div>
+      <input type="file" id="albumCoverFile" accept="image/*" hidden/>
+    </div>
     <div class="mb-card">
       <div class="album-row" style="justify-content:space-between"><h3 style="margin:0">🖼️ Foto Tamu <span id="albumCount" style="font-size:12px;color:var(--cream-dim);font-weight:500"></span></h3>
         <div class="album-row"><button type="button" class="album-btn ghost" id="albumRefreshBtn">↻ Muat ulang</button><button type="button" class="album-btn gold" id="albumZipBtn">⬇️ Unduh Semua (ZIP)</button></div></div>
@@ -8010,6 +8018,27 @@ function albumAfterRender(){
   const t2 = $('albumToggleView'); if(t2) t2.onchange = e => { a.guestView = e.target.checked; scheduleSave(); albumSyncCfg(true); };
   on('albumRefreshBtn', () => albumLoadGrid(a.code, true));
   on('albumZipBtn', e => albumDownloadZip(e.currentTarget));
+  /* foto sampul */
+  const prev = $('albumCoverPrev');
+  if(prev && a.cover){ window.storage.get(albumCoverKey(a.code), true).then(r => { if(r && r.value){ prev.textContent = ''; prev.style.backgroundImage = 'url(' + r.value + ')'; } else prev.textContent = 'Belum ada'; }).catch(() => { prev.textContent = '—'; }); }
+  on('albumCoverBtn', () => $('albumCoverFile').click());
+  const cf = $('albumCoverFile');
+  if(cf) cf.onchange = async e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = ''; if(!f) return;
+    try{
+      showToast('Memproses foto sampul…');
+      const im = await dcLoadImage(f);
+      const cv = dcGrab(im, im.naturalWidth || im.width, im.naturalHeight || im.height, { aspect:4 / 5, zoom:1, maxDim:900 });
+      const url = dcToDataUrl(cv, 150000);
+      if(!await storageSetWithRetry(albumCoverKey(a.code), url, true, 2)) throw new Error('simpan gagal');
+      a.cover = Date.now(); scheduleSave(); await albumSyncCfg(true); showToast('Foto sampul tersimpan ✓'); render();
+    }catch(err){ showToast('Gagal: ' + (err && err.message || err), true); }
+  };
+  on('albumCoverDel', async () => {
+    if(!confirm('Hapus foto sampul?')) return;
+    try{ await window.storage.delete(albumCoverKey(a.code), true).catch(() => {}); a.cover = 0; scheduleSave(); await albumSyncCfg(true); render(); }
+    catch(err){ showToast('Gagal: ' + (err && err.message || err), true); }
+  });
   albumBindGrid(a.code, true);
   albumLoadGrid(a.code, false);
 }
@@ -8289,6 +8318,15 @@ async function initGuestAlbum(){
       setStatus(m);
     } else paintSend();
   };
+
+  if(cfg.cover){
+    window.storage.get(albumCoverKey(code), true).then(r => {
+      if(!r || !r.value) return;
+      const box = document.querySelector('.dc-arch-in'); if(!box) return;
+      box.style.cssText += ';background:url(' + r.value + ') center/cover no-repeat';
+      box.innerHTML = '';
+    }).catch(() => {});
+  }
 
   /* ---- event ---- */
   const toLand = () => { stopCam(); $('dcCam').hidden = true; $('dcLand').hidden = false; };

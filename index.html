@@ -18,6 +18,12 @@
   else if(hs==='#vendorlink'||hs==='#vendor') role='vendor';
   else if(hs==='#marketing') role='marketing';
   else if(hs==='#admin') role='admin';
+  /* FIX iOS: "Tambah ke Layar Utama" di iOS sering membuang #hash dan mengabaikan manifest dari blob:, sementara
+     localStorage app terinstall TERPISAH dari Safari. Akibatnya app terbuka tanpa peran -> jatuh ke Admin.
+     Query string (?r=) selalu ikut tersimpan di shortcut iOS, jadi peran juga dibawa lewat ?r=. */
+  var qr = '';
+  try{ qr = new URLSearchParams(location.search).get('r') || ''; }catch(e){}
+  if(!role && !hs && MAP[qr]) role = qr;
   var standalone = false;
   try{ standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }catch(e){}
   try{
@@ -38,13 +44,38 @@
   var key = role || 'admin', r = MAP[key];
   window.__AJ_ROLE = key;
   try{
+    if(key!=='admin'){
+      var u = new URL(location.href), needHash = !u.hash;
+      if(u.searchParams.get('r')!==key || needHash){
+        u.searchParams.set('r', key);
+        if(needHash) u.hash = r.h;
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
+      }
+      /* Aplikasi memanggil history.replaceState/pushState di banyak tempat (login, logout, buka project) dengan
+         URL tanpa query. Bungkus supaya ?r= tetap menempel -> shortcut iOS yang dibuat kapan pun tetap tahu perannya. */
+      ['replaceState','pushState'].forEach(function(fn){
+        var orig = history[fn];
+        history[fn] = function(st, ti, url){
+          try{
+            if(url != null){
+              var nu = new URL(url, location.href);
+              if(!nu.searchParams.has('r')) nu.searchParams.set('r', key);
+              url = nu.pathname + nu.search + nu.hash;
+            }
+          }catch(e){}
+          return orig.call(history, st, ti, url);
+        };
+      });
+    }
+  }catch(e){}
+  try{
     var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
     fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
       var base = new URL('./', location.href);
       m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
       m.id = base.href + '?app=' + key;
       m.scope = base.href;
-      m.start_url = new URL(location.pathname, location.origin).href + r.h;
+      m.start_url = new URL(location.pathname, location.origin).href + (key!=='admin' ? '?r=' + key : '') + r.h;
       if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
       if(m.shortcuts) delete m.shortcuts;
       var link = document.querySelector('link[rel="manifest"]');

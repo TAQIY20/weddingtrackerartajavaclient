@@ -480,6 +480,8 @@
 
   .stage-badge{font-size:11px;padding:5px 12px;border-radius:100px;font-weight:700;white-space:nowrap;border:1px solid transparent;}
   .stage-badge.belum_dp{background:rgba(122,31,46,.10);color:var(--cream-dim);}
+  .stage-badge.belum_ada_tanggal{background:rgba(90,90,90,.12);color:#5A5A5A;border:1px dashed rgba(90,90,90,.45);}
+  .no-date-hint{font-style:italic;color:var(--cream-dimmer);}
   .stage-badge.dp1{background:rgba(140,31,46,.16);color:#8C2438;}
   .stage-badge.on_progress{background:rgba(198,161,91,.28);color:#7A5B12;}
   .stage-badge.lunas{background:rgba(46,125,80,.20);color:#1F6B44;}
@@ -1119,6 +1121,7 @@ function computeAllAgendaDone(timeline){
   return list.length>0 && list.every(t=>t.status==='done');
 }
 const STAGE_LABELS = {
+  belum_ada_tanggal: 'Belum Ada Tanggal',
   belum_dp: 'Belum DP',
   dp1: 'Sudah DP 1jt',
   on_progress: 'On Progress',
@@ -1129,6 +1132,7 @@ const STAGE_LABELS = {
 function computeProjectStage(entry){
   entry = entry || {};
   if(entry.allAgendaDone) return {key:'final', label:STAGE_LABELS.final};
+  if(!entry.weddingDate) return {key:'belum_ada_tanggal', label:STAGE_LABELS.belum_ada_tanggal};
   if(entry.weddingDate && todayISO() > entry.weddingDate) return {key:'menunggu_album', label:STAGE_LABELS.menunggu_album};
   if(entry.pelunasanPaid) return {key:'lunas', label:STAGE_LABELS.lunas};
   if(entry.dp20Paid) return {key:'on_progress', label:STAGE_LABELS.on_progress};
@@ -1187,7 +1191,9 @@ function defaultTimeline(weddingDate, akadDate){
   return items.map(([title, offset, time, cat, desc, anchor]) => {
     const base = anchor === 'akad' ? akadDate : weddingDate;
     let dateStr;
-    if(offset === null){
+    if(!base){
+      dateStr = '';
+    } else if(offset === null){
       dateStr = base;
     } else {
       const d = new Date(base + 'T00:00:00');
@@ -1216,9 +1222,11 @@ function genProjectId(){
   return 'weddingtrackerartajava-' + out;
 }
 
-function defaultData(brideName, groomName, id, marketingId, pkg){
-  const wd = new Date(); wd.setMonth(wd.getMonth()+4);
-  const weddingDate = wd.toISOString().slice(0,10);
+function defaultData(brideName, groomName, id, marketingId, pkg, weddingDateOpt){
+  // weddingDateOpt === undefined -> tanggal contoh (+4 bulan, dipakai demo); '' -> klien belum punya tanggal.
+  let weddingDate;
+  if(weddingDateOpt === undefined){ const wd = new Date(); wd.setMonth(wd.getMonth()+4); weddingDate = wd.toISOString().slice(0,10); }
+  else weddingDate = weddingDateOpt || '';
   const budget = pkg ? (Number(pkg.price)||0) : 0;
   const dp1 = 1000000;
   const dp20 = pkg ? Math.round(budget*0.25) : 0;
@@ -1829,13 +1837,13 @@ function scheduleEntriesForProject(proj){
     const v = proj.vendors[c.key];
     if(v && v.vendorAccountId){
       entries.push({ vendorAccountId: v.vendorAccountId, projectId: proj.id, catKey: c.key, catLabel: c.key,
-        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate });
+        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate, ...computeEventInfo(proj.couple) });
     }
   });
   (proj.extraVendors||[]).forEach(v=>{
     if(v.vendorAccountId){
       entries.push({ vendorAccountId: v.vendorAccountId, projectId: proj.id, catKey: v.id, catLabel: v.category || 'Vendor Tambahan',
-        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate });
+        brideName: proj.couple.brideName, groomName: proj.couple.groomName, weddingDate: proj.couple.weddingDate, ...computeEventInfo(proj.couple) });
     }
   });
   return entries;
@@ -3008,9 +3016,9 @@ async function loadProjectById(id){
   }catch(e){ return null; }
 }
 
-async function createProject(brideName, groomName, marketingId, packageId){
+async function createProject(brideName, groomName, marketingId, packageId, weddingDate){
   const pkg = packageId ? findPackageById(packageId) : null;
-  const data = defaultData(brideName, groomName, null, marketingId || null, pkg);
+  const data = defaultData(brideName, groomName, null, marketingId || null, pkg, weddingDate || '');
   await window.storage.set(projectKey(data.id), JSON.stringify(data), true);
   projectsIndex.push({ id: data.id, brideName: data.couple.brideName, groomName: data.couple.groomName, weddingDate: data.couple.weddingDate, packageName: data.packageName || '', createdAt: data.createdAt, marketingId: data.marketingId || null, clientUsername: data.clientUsername || '', ...computePaymentFlags(data.payments), ...computeEventInfo(data.couple), allAgendaDone: computeAllAgendaDone(data.timeline) });
   await saveProjectsIndex();
@@ -3290,7 +3298,7 @@ const NOTIFY_QUIET_MS = 45000;
 let notifyBaseRef = null, notifyBase = null, notifyPending = null, notifyTimer = null;
 function notifySnapshot(s){
   const vend = {};
-  const addV = (key, v)=>{ if(v) vend[key] = { status:v.status||'', note:v.note||'', prog:(v.progress||[]).length }; };
+  const addV = (key, v)=>{ if(v) vend[key] = { status:v.status||'', note:v.note||'', prog:(v.progress||[]).length, acc:v.vendorAccountId||'' }; };
   Object.keys(s.vendors||{}).forEach(k=> addV(k, s.vendors[k]));
   (s.extraVendors||[]).forEach((v,i)=> addV('x:' + (v.category||v.name||('Vendor '+(i+1))), v));
   const mb = Object.assign({}, s.moodboard||{}); delete mb.notes;
@@ -3309,6 +3317,7 @@ function notifySnapshot(s){
   const tl = {};
   (s.timeline||[]).forEach(t=>{ if(t && t.id) tl[t.id] = { title:t.title||'', date:t.date||'', time:t.time||'', location:t.location||'', desc:pwSig(t.desc||''), status:t.status||'', cc:!!t.clientConfirmed, vk:(t.vendorKeys||[]).join(',') }; });
   return {
+    wd: (s.couple && s.couple.weddingDate) || '',
     reqs: reqMap,
     timeline: tl,
     payLabels,
@@ -3337,6 +3346,11 @@ function notifyDiff(a, b){
   Object.keys(b.vend).forEach(k=>{
     const o = a.vend[k], n = b.vend[k]; if(!o) return;
     const label = k.replace(/^x:/,'');
+    if(n.acc && o.acc !== n.acc){
+      // vendor baru saja dipasang/di-booking ke project ini -> kabari akun vendor tsb
+      ev.push({ kind:'vendor_booked', key:'vb:' + k + ':' + n.acc, vendorKey:label, vendorAccountId:n.acc, date:b.wd || '', status:(o.status !== n.status && typeof statusLabel==='function') ? statusLabel(n.status) : '' });
+      return;
+    }
     if(o.status !== n.status) ev.push({ kind:'vendor_status', vendorKey:label, status: (typeof statusLabel==='function' ? statusLabel(n.status) : n.status) });
     else if(o.note !== n.note || o.prog !== n.prog) ev.push({ kind:'vendor_update', vendorKey:label });
   });
@@ -3662,6 +3676,20 @@ function fmtIDR(n){ n = Number(n)||0; return 'Rp ' + n.toLocaleString('id-ID'); 
 // hasilnya jadi string tanggal ganda yang gak valid (makanya muncul "Invalid Date").
 function fmtDate(iso){ if(!iso) return '-'; const d = /T/.test(iso) ? new Date(iso) : new Date(iso+'T00:00:00'); if(isNaN(d.getTime())) return '-'; return d.toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}); }
 function fmtDateShort(iso){ if(!iso) return '-'; const d = /T/.test(iso) ? new Date(iso) : new Date(iso+'T00:00:00'); if(isNaN(d.getTime())) return '-'; return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'}); }
+/* Dipanggil saat tanggal akad/resepsi baru diisi: agenda & jatuh tempo yang masih kosong diisi otomatis
+   dari urutan default (dicocokkan lewat judul agenda), agenda yang sudah punya tanggal tidak disentuh. */
+function fillUndatedFromWedding(){
+  const c = state.couple;
+  if(c.weddingDate && !c.akadDate) c.akadDate = c.weddingDate;
+  const def = defaultTimeline(c.weddingDate, c.akadDate || c.weddingDate);
+  (state.timeline||[]).forEach(t=>{
+    if(t.date) return;
+    const m = def.find(d=> d.title === t.title);
+    if(m && m.date) t.date = m.date;
+  });
+  (state.payments||[]).forEach(p=>{ if(!p.dueDate && c.weddingDate) p.dueDate = c.weddingDate; });
+}
+function fmtDatePending(iso){ return iso ? fmtDate(iso) : 'Belum ada tanggal'; }
 function daysUntil(iso){ const now = new Date(); now.setHours(0,0,0,0); const d = new Date(iso+'T00:00:00'); return Math.round((d-now)/86400000); }
 
 /* ---------- REMINDER / NOTIFIKASI OTOMATIS (H-7 / H-1) ----------
@@ -3732,9 +3760,10 @@ function buildProjectReminders(){
   const coupleLabel = `${state.couple.brideName} & ${state.couple.groomName}`;
   const weddingDateFmt = fmtDate(state.couple.weddingDate);
   const dLeftEvent = daysUntil(state.couple.weddingDate);
-  const eventStatus = reminderStatus(dLeftEvent);
+  const hasEventDate = !!state.couple.weddingDate;
+  const eventStatus = hasEventDate ? reminderStatus(dLeftEvent) : { active:false, tone:'none', badge:'📅 Belum ada tanggal' };
   const cd = state.details.clientData;
-  [['cpwContact','CPW · ' + (cd.cpwName || 'Mempelai Wanita')], ['cppContact','CPP · ' + (cd.cppName || 'Mempelai Pria')]].forEach(([field,label])=>{
+  if(hasEventDate) [['cpwContact','CPW · ' + (cd.cpwName || 'Mempelai Wanita')], ['cppContact','CPP · ' + (cd.cppName || 'Mempelai Pria')]].forEach(([field,label])=>{
     const contact = cd[field];
     const recipientName = label.split(' · ')[1];
     const msg = buildEventReminderMessage(recipientName, coupleLabel, weddingDateFmt, dLeftEvent);
@@ -3742,7 +3771,7 @@ function buildProjectReminders(){
   });
   const allVendorListR = getReminderVendorOptions();
   allVendorListR.forEach(x=>{
-    if(!x.v) return;
+    if(!x.v || !hasEventDate) return;
     const vendorBooked = x.v.status && x.v.status!=='belum';
     const label = (x.v.name || x.label) + ' (' + x.label + ')';
     const msg = buildVendorEventReminderMessage(x.v.name||x.label, coupleLabel, weddingDateFmt, dLeftEvent);
@@ -4135,6 +4164,7 @@ ${gap}
 </div></body></html>`;
 }
 function openInvoice(payId){
+  if(!isAdmin){ showToast('Pembuatan invoice hanya bisa dilakukan oleh Admin.', true); return; }
   const html = buildInvoiceHtml(payId);
   if(!html){ showToast('Item pembayaran tidak ditemukan', true); return; }
   const w = window.open('', '_blank');
@@ -4454,7 +4484,7 @@ function vendorScheduleSorted(){
     if(isNaN(d)) return Infinity;
     return d >= todayMs ? (d - todayMs) : (Number.MAX_SAFE_INTEGER - (todayMs - d));
   };
-  return vendorSchedule.filter(e=> e.vendorAccountId === acc.id).sort((a,b)=> distance(a) - distance(b));
+  return vendorSchedule.filter(e=> e.vendorAccountId === acc.id).sort((a,b)=>{ const da = distance(a), db = distance(b); return da === db ? 0 : (da - db); });
 }
 function showVendorAccountDashboard(){
   const acc = currentVendorAccountSession;
@@ -4475,8 +4505,9 @@ function showVendorAccountDashboard(){
     <div id="vendorScheduleList" class="vendor-grid">
       ${myEntries.length ? myEntries.map(e=>`
         <div class="v-card">
-          <div class="v-cat"><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(e.brideName)} &amp; ${escapeHtml(e.groomName)}</span></div></div>
-          <div class="v-field"><label>Tanggal Nikah</label><div>${fmtDate(e.weddingDate)}</div></div>
+          ${!e.weddingDate ? '<span class="stage-badge v-status-badge belum_ada_tanggal" title="Status: Belum Ada Tanggal">Belum Ada Tanggal</span>' : ''}
+          <div class="v-cat"${!e.weddingDate ? ' style="padding-right:130px;"' : ''}><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(e.brideName)} &amp; ${escapeHtml(e.groomName)}</span></div></div>
+          ${eventInfoBlockHtml(e)}
           <div class="v-field"><label>Kategori Kamu</label><div>${escapeHtml(e.catLabel)}</div></div>
           <div class="row-actions" style="margin-top:10px;">
             <button class="btn small primary" data-action="open-vendor-project" data-pid="${escapeAttr(e.projectId)}" data-catlabel="${escapeAttr(e.catLabel)}">Buka Project →</button>
@@ -4841,7 +4872,7 @@ function myVisibleProjects(){
     if(isNaN(d)) return Infinity;
     return d >= todayMs ? (d - todayMs) : (Number.MAX_SAFE_INTEGER - (todayMs - d));
   };
-  const sorted = [...projectsIndex].sort((a,b)=> distance(a) - distance(b));
+  const sorted = [...projectsIndex].sort((a,b)=>{ const da = distance(a), db = distance(b); return da === db ? 0 : (da - db); });
   if(isAdmin) return sorted;
   if(currentMarketing) return sorted.filter(p => p.marketingId === currentMarketing.id);
   return sorted;
@@ -5614,6 +5645,10 @@ function showNewProjectForm(leadId){
         <div style="display:flex;flex-direction:column;gap:10px;text-align:left;">
           <input id="newBride" placeholder="Nama Mempelai Wanita" value="${fromLead?escapeHtml(fromLead.name):''}" style="padding:12px 14px;border-radius:12px;width:100%;"/>
           <input id="newGroom" placeholder="Nama Mempelai Pria" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          <div>
+            <label style="display:block;font-size:12px;color:rgba(255,255,255,.7);margin:0 0 4px;">Tanggal Resepsi <span style="opacity:.7;">(kosongkan kalau klien belum dapat tanggal)</span></label>
+            <input type="date" id="newWeddingDate" style="padding:12px 14px;border-radius:12px;width:100%;"/>
+          </div>
           <select id="newPackageSelect" required style="padding:12px 14px;border-radius:12px;width:100%;">
             <option value="" disabled selected>— Pilih Paket Vendor (wajib) —</option>
             ${packageList.map(pk=>`<option value="${pk.id}">${escapeHtml(pk.name)}</option>`).join('')}
@@ -5671,7 +5706,8 @@ function showNewProjectForm(leadId){
       // Tetap di halaman project setelah selesai dibuat (tidak reload/redirect ke
       // layar pilih peran admin/marketing/klien/vendor) — peran yang sudah login
       // (admin atau marketing) dipakai apa adanya untuk langsung masuk ke project baru.
-      const project = await createProject(bride, groom, marketingId, packageId);
+      const newDateEl = document.getElementById('newWeddingDate');
+      const project = await createProject(bride, groom, marketingId, packageId, newDateEl ? newDateEl.value : '');
       if(fromLead){
         try{
           const stillLead = findLeadById(fromLead.id);
@@ -5846,13 +5882,13 @@ function render(){
         <div class="hero-meta">
           <div class="item"><div class="label">Tanggal &amp; Lokasi Akad / Pemberkatan</div>
             <div class="val dt-stack">
-              <div class="val-row">${isVendor ? `<input type="date" id="akadDateInput" value="${state.couple.akadDate}">` : escapeHtml(fmtDate(state.couple.akadDate))}</div>
+              <div class="val-row">${isVendor ? `<input type="date" id="akadDateInput" value="${state.couple.akadDate}">` : (state.couple.akadDate ? escapeHtml(fmtDate(state.couple.akadDate)) : '<span class="no-date-hint">Belum ada tanggal</span>')}</div>
               <div class="val-row time-line">${isVendor ? `<div class="dt-row"><input type="time" id="akadTimeInput" value="${escapeAttr(state.couple.akadTime)}"><span class="tz-hint">WIB</span></div>` : (state.couple.akadTime ? `🕐 ${escapeHtml(state.couple.akadTime.replace(':','.'))} WIB` : '')}</div>
             </div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="akadLocationInput" placeholder="Lokasi akad/pemberkatan" value="${escapeAttr(state.couple.akadLocation)}">` : (state.couple.akadLocation || 'Lokasi belum diisi')}</div></div>
           <div class="item"><div class="label">Tanggal &amp; Lokasi Resepsi</div>
             <div class="val dt-stack">
-              <div class="val-row">${isVendor ? `<input type="date" id="weddingDateInput" value="${state.couple.weddingDate}">` : escapeHtml(fmtDate(state.couple.weddingDate))}</div>
+              <div class="val-row">${isVendor ? `<input type="date" id="weddingDateInput" value="${state.couple.weddingDate}">` : (state.couple.weddingDate ? escapeHtml(fmtDate(state.couple.weddingDate)) : '<span class="no-date-hint">Belum ada tanggal</span>')}</div>
               <div class="val-row time-line">${isVendor ? `<div class="dt-row"><input type="time" id="weddingTimeInput" value="${escapeAttr(state.couple.weddingTime)}"><span class="tz-hint">WIB</span></div>` : (state.couple.weddingTime ? `🕐 ${escapeHtml(state.couple.weddingTime.replace(':','.'))} WIB` : '')}</div>
             </div>
             <div class="val" style="margin-top:4px;">${isVendor ? `<input type="text" id="venueInput" placeholder="Lokasi resepsi" value="${escapeAttr(state.couple.venueName)}">` : (state.couple.venueName || 'Lokasi belum diisi')}</div></div>
@@ -5864,7 +5900,7 @@ function render(){
             <circle class="track" cx="75" cy="75" r="65"></circle>
             <circle class="prog" cx="75" cy="75" r="65" stroke="#C6A15B" stroke-dasharray="${circ}" stroke-dashoffset="${dashOffset}"></circle>
           </svg>
-          <div class="ring-num"><div class="n">${dLeft >= 0 ? dLeft : '🎉'}</div><div class="s">${dLeft >= 0 ? 'hari lagi' : 'sudah menikah'}</div></div>
+          <div class="ring-num">${!state.couple.weddingDate ? '<div class="n">—</div><div class="s">belum ada tanggal</div>' : `<div class="n">${dLeft >= 0 ? dLeft : '🎉'}</div><div class="s">${dLeft >= 0 ? 'hari lagi' : 'sudah menikah'}</div>`}</div>
         </div>
         <div class="ring-caption">${progressPct}% progress persiapan selesai</div>
       </div>
@@ -6080,7 +6116,7 @@ function renderBeranda(dLeft, allVendorList){
             <div class="t-cat">${escapeHtml(nextItem.cat)}</div>
             <div style="font-family:'Fraunces',serif;font-size:19px;font-weight:600;">${escapeHtml(nextItem.title)}</div>
             <div style="color:var(--cream-dim);font-size:13.5px;margin:6px 0;">${escapeHtml(nextItem.desc)}</div>
-            <div class="t-date" style="display:inline-block;">📅 ${fmtDate(nextItem.date)} · ${daysUntil(nextItem.date)>=0?daysUntil(nextItem.date)+' hari lagi':'sudah lewat'}</div>
+            <div class="t-date" style="display:inline-block;">📅 ${nextItem.date ? fmtDate(nextItem.date) + ' · ' + (daysUntil(nextItem.date)>=0?daysUntil(nextItem.date)+' hari lagi':'sudah lewat') : 'Belum ada tanggal'}</div>
           ` : `<div class="empty">Semua agenda sudah selesai 🎉</div>`}
         </div>
         <div class="mb-card">
@@ -6188,7 +6224,7 @@ function renderMilestoneStepper(sorted){
       <div class="ms-step-text">
         <div class="ms-cat-mini">${escapeHtml(s.cat)}</div>
         <div class="ms-label">${escapeHtml(s.label)}</div>
-        <div class="ms-date">${fmtDateShort(s.date)}</div>
+        <div class="ms-date">${s.date ? fmtDateShort(s.date) : 'Belum ada tanggal'}</div>
       </div>
     </div>
   `;
@@ -6227,13 +6263,13 @@ function renderMilestoneStepper(sorted){
         <span class="ms-pill">Tahap ${displayStage} dari ${stages.length} · ${doneCount}/${total} agenda selesai</span>
       </div>
       ${bodyHtml}
-      ${current ? `<div class="ms-note"><span>📍</span><div><b>Kamu ada di sini:</b> ${escapeHtml(current.label)} — target sekitar ${fmtDate(current.date)}.</div></div>` : `<div class="ms-note"><span>🎉</span><div><b>Semua tahap selesai!</b> Persiapan sudah lengkap.</div></div>`}
+      ${current ? `<div class="ms-note"><span>📍</span><div><b>Kamu ada di sini:</b> ${escapeHtml(current.label)}${current.date ? ' — target sekitar ' + fmtDate(current.date) : ' — tanggal belum ditentukan'}.</div></div>` : `<div class="ms-note"><span>🎉</span><div><b>Semua tahap selesai!</b> Persiapan sudah lengkap.</div></div>`}
     </div>
   `;
 }
 
 function renderTimeline(){
-  const sorted = [...state.timeline].sort((a,b)=> (a.date+' '+(a.time||'00:00')).localeCompare(b.date+' '+(b.time||'00:00')));
+  const sorted = [...state.timeline].sort((a,b)=>{ if(!a.date && !b.date) return 0; if(!a.date) return 1; if(!b.date) return -1; return (a.date+' '+(a.time||'00:00')).localeCompare(b.date+' '+(b.time||'00:00')); });
   const vendorOptions = isVendor ? getReminderVendorOptions() : [];
   return `
     <div class="section-head">
@@ -6469,7 +6505,7 @@ function renderPayments(){
       <h3>🏦 Info Rekening</h3>
       <div class="v-field"><label>Rekening BCA</label><div class="val">a.n. Sandra Amelia Puspita — 2582667749</div></div>
     </div>
-    ${isVendor ? `<div class="mb-card">
+    ${isAdmin ? `<div class="mb-card">
       <h3>🧾 Data Customer untuk Invoice</h3>
       <div class="v-field"><label>Nama Customer (otomatis dari Data Klien — CPW)</label><div class="val">${escapeHtml(((state.details.clientData||{}).cpwName||'').trim() || state.couple.brideName || '⚠️ Belum diisi')}</div></div>
       <div class="v-field"><label>Alamat (otomatis)</label><div class="val">${((state.details.clientData||{}).cpwAddress||'').trim() ? escapeHtml(state.details.clientData.cpwAddress) : '⚠️ Belum diisi di Data Klien'}</div></div>
@@ -6485,9 +6521,9 @@ function renderPayments(){
             <div class="p-invoice">
               ${p.invoice ? `
                 <a class="invoice-chip" href="${p.invoice.url || invoiceFileCache[p.id] || 'javascript:void(0)'}" download="${escapeAttr(p.invoice.name)}" data-action="download-invoice" data-payment-id="${p.id}" data-filename="${escapeAttr(p.invoice.name)}" rel="noopener">📎 ${escapeHtml(p.invoice.name)}</a>
-                ${isVendor ? `<button class="mi-del" data-action="check-invoice-status" data-payment-id="${p.id}" title="Cek status upload">🔍</button>` : ''}
-                ${isVendor ? `<button class="mi-del" data-action="delete-invoice" title="Hapus lampiran invoice">✕</button>` : ''}
-              ` : (isVendor ? `
+                ${isAdmin ? `<button class="mi-del" data-action="check-invoice-status" data-payment-id="${p.id}" title="Cek status upload">🔍</button>` : ''}
+                ${isAdmin ? `<button class="mi-del" data-action="delete-invoice" title="Hapus lampiran invoice">✕</button>` : ''}
+              ` : (isAdmin ? `
                 <label class="invoice-upload-btn" id="invoiceUploadLabel_${p.id}">📎 Lampirkan Invoice<input type="file" accept="image/*,application/pdf" data-action="upload-invoice" hidden/></label>
               ` : `
                 <span class="invoice-empty">Belum ada invoice dilampirkan.</span>
@@ -6496,7 +6532,7 @@ function renderPayments(){
           </div>
           <input class="amt" data-field="amount" value="${fmtIDR(p.amount)}" ${isVendor?'':'disabled'}/>
           <span class="p-status ${p.status}">${p.status==='paid'?'Sudah Dibayar':'Belum Dibayar'}</span>
-          ${isVendor ? `<button class="btn small" data-action="make-invoice">🧾 Invoice</button><button class="btn small" data-action="toggle-paid">${p.status==='paid'?'↺ Batal':'✓ Lunas'}</button><button class="btn small danger" data-action="delete-payment">🗑️</button>` : ''}
+          ${isAdmin ? `<button class="btn small" data-action="make-invoice">🧾 Invoice</button>` : ''}${isVendor ? `<button class="btn small" data-action="toggle-paid">${p.status==='paid'?'↺ Batal':'✓ Lunas'}</button><button class="btn small danger" data-action="delete-payment">🗑️</button>` : ''}
         </div>
       `).join('')}
       ${isVendor ? `<button class="btn ghost" id="addPayment">+ Tambah Item Pembayaran</button>` : ''}
@@ -7001,11 +7037,11 @@ function attachHandlers(){
     const groomInput = document.getElementById('groomInput');
     if(groomInput) groomInput.addEventListener('input', e=>{ state.couple.groomName = e.target.value; scheduleSave(); });
     const weddingDateInput = document.getElementById('weddingDateInput');
-    if(weddingDateInput) weddingDateInput.addEventListener('change', e=>{ state.couple.weddingDate = e.target.value; scheduleSave(); render(); });
+    if(weddingDateInput) weddingDateInput.addEventListener('change', e=>{ const hadDate = !!state.couple.weddingDate; state.couple.weddingDate = e.target.value; if(!hadDate && e.target.value) fillUndatedFromWedding(); scheduleSave(); render(); });
     const venueInput = document.getElementById('venueInput');
     if(venueInput) venueInput.addEventListener('input', e=>{ state.couple.venueName = e.target.value; scheduleSave(); });
     const akadDateInput = document.getElementById('akadDateInput');
-    if(akadDateInput) akadDateInput.addEventListener('change', e=>{ state.couple.akadDate = e.target.value; scheduleSave(); render(); });
+    if(akadDateInput) akadDateInput.addEventListener('change', e=>{ const hadDate = !!state.couple.akadDate; state.couple.akadDate = e.target.value; if(!hadDate && e.target.value) fillUndatedFromWedding(); scheduleSave(); render(); });
     const akadTimeInput = document.getElementById('akadTimeInput');
     if(akadTimeInput) akadTimeInput.addEventListener('change', e=>{ state.couple.akadTime = e.target.value; scheduleSave(); render(); });
     const akadLocationInput = document.getElementById('akadLocationInput');

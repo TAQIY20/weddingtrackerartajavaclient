@@ -7671,7 +7671,7 @@ const ALBUM_CSS = `
 .album-thumb span{position:absolute;left:0;right:0;bottom:0;padding:14px 6px 4px;font-size:10.5px;color:#fff;text-align:left;background:linear-gradient(transparent,rgba(0,0,0,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .album-empty{padding:26px 10px;text-align:center;color:var(--cream-dim);font-size:13.5px;grid-column:1/-1}
 .album-lb{position:fixed;inset:0;z-index:99999;background:rgba(20,6,8,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;gap:12px}
-.album-lb img{max-width:100%;max-height:78vh;border-radius:10px;object-fit:contain}
+.album-lb img{max-width:100%;max-height:66vh;border-radius:10px;object-fit:contain}
 .album-lb .cap{color:#fff;font-size:13px;opacity:.85;text-align:center}
 .album-guest{min-height:100vh;background:var(--bg);padding:18px 14px 40px}
 .ag-wrap{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
@@ -7711,7 +7711,7 @@ const ALBUM_CSS = `
 .dc-sub{margin-top:14px;font-size:12.5px;line-height:1.5;color:#8a7a72}
 .dc-links{margin-top:6px;display:flex;gap:8px;align-items:center;justify-content:center;color:#b3a79f;font-size:13px}
 .dc-link{border:none;background:none;padding:6px 4px;color:var(--dc-rose);font-weight:700;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-.dc-cam{position:absolute;inset:0;background:#0c0b0d;color:#ecebea;display:flex;flex-direction:column;align-items:center;padding:max(10px,env(safe-area-inset-top)) 16px max(14px,env(safe-area-inset-bottom));--dc-chrome:300px;overflow:hidden}
+.dc-cam{position:absolute;inset:0;background:#0c0b0d;color:#ecebea;display:flex;flex-direction:column;align-items:center;padding:max(10px,env(safe-area-inset-top)) 16px max(14px,env(safe-area-inset-bottom));--dc-chrome:350px;overflow:hidden}
 .dc-hd{width:100%;max-width:440px;display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:10px;padding:6px 0 12px}
 .dc-hd b{display:block;font-family:'Fraunces',Georgia,serif;font-size:17px;font-weight:600;line-height:1.2}
 .dc-hd small{display:block;color:#8d8890;font-size:11.5px;margin-top:2px}
@@ -7752,6 +7752,29 @@ const ALBUM_CSS = `
 .dc-sheet-in{max-width:520px;margin:0 auto}
 .album-cover-prev{width:92px;aspect-ratio:4/5;border-radius:46px 46px 10px 10px;border:2px solid var(--card-border);background:var(--field-bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--cream-dim);text-align:center;flex:none}
 .dc-demo{position:absolute;top:0;left:0;right:0;z-index:1;text-align:center;font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:7px 10px;background:#5C1220;color:#fff}
+.dc-fl{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.dc-fl button{border:1px solid rgba(42,33,30,.18);background:rgba(255,255,255,.55);color:var(--dc-ink);border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer}
+.dc-fl button.on{background:var(--dc-rose);border-color:var(--dc-rose);color:#fff}
+.dc-cam .dc-fl{margin-top:8px;flex-wrap:nowrap;max-width:440px;width:100%;overflow-x:auto;justify-content:flex-start}
+.dc-cam .dc-fl button{background:#151317;border-color:#2e2a31;color:#d9d5db;white-space:nowrap;flex:none}
+.dc-cam .dc-fl button.on{background:var(--dc-pink);border-color:var(--dc-pink);color:#fff}
+.dc-vf[data-f=bw] video{filter:grayscale(1) contrast(1.15) brightness(1.02)}
+.dc-vf[data-f=film] video{filter:sepia(.14) contrast(1.06) saturate(1.12) brightness(1.03)}
+.dc-vf[data-f=none] video{filter:none}
+.dc-vf:not([data-f=vintage]) .dc-leak,.dc-vf:not([data-f=vintage]) .dc-stamp{display:none}
+.dc-vf[data-f=none] .dc-grain,.dc-vf[data-f=none] .dc-vig{display:none}
+.dc-msg{width:100%;margin-top:10px;padding:11px 14px;border-radius:14px;border:1px solid rgba(42,33,30,.16);background:rgba(255,255,255,.55);font:inherit;font-size:16px;color:var(--dc-ink);text-align:center;box-sizing:border-box}
+.dc-msg::placeholder{color:#a39790}
+.dc-msgov{position:absolute;left:10px;right:10px;top:10px;z-index:3;display:flex}
+.dc-msgov input{flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:rgba(14,13,16,.72);color:#fff;font:inherit;font-size:16px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.dc-msgbtn{position:relative;font-size:17px}
+.dc-msgbtn.has:after{content:'';position:absolute;top:7px;right:7px;width:8px;height:8px;border-radius:50%;background:var(--dc-pink)}
+.album-thumb .bd{position:absolute;top:4px;left:4px;right:4px;display:flex;flex-wrap:wrap;gap:3px;pointer-events:none}
+.album-thumb .bd i{font-style:normal;font-size:10.5px;font-weight:700;color:#fff;background:rgba(0,0,0,.55);border-radius:99px;padding:2px 6px}
+.album-lb .quote{color:#fff;font-size:15px;font-style:italic;max-width:420px;text-align:center;line-height:1.5;padding:0 8px;word-break:break-word}
+.album-seg{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.album-seg button{border:1px solid var(--card-border);background:transparent;color:var(--pink);border-radius:99px;padding:6px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.album-seg button.on{background:var(--pink);color:#fff;border-color:var(--pink)}
 `;
 function albumInjectCss(){
   if(document.getElementById('albumCss')) return;
@@ -7869,6 +7892,7 @@ function albumDemoOpenGuest(){
   document.body.appendChild(ov);
   initGuestAlbum({ root:ov, code:'demo', onClose:() => {
     ov.remove(); ids.forEach(el => { if(el && el.id) el.id = el.id.replace(/Dash$/, ''); });
+    albumCanDelete = true; albumFavOnly = false;
     if(isDemoMode && currentTab === 'album') albumPaintGrid();
   } });
 }
@@ -7912,15 +7936,28 @@ async function albumFetchThumbs(code){
   })(), 30000, 'Penyimpanan tidak merespons');
   return sortOut();
 }
+let albumFavOnly = false;
 function albumGridHtml(){
   if(albumCache.loading && !albumCache.items.length) return '<div class="album-empty">Memuat foto…</div>';
   if(albumCache.err && !albumCache.items.length) return '<div class="album-empty">Gagal memuat foto (' + escapeHtml(albumCache.err) + '). Tekan Muat ulang.</div>';
   if(!albumCache.items.length) return '<div class="album-empty">Belum ada foto. Jadi yang pertama upload ya 📸</div>';
-  return albumCache.items.map(it => `<button type="button" class="album-thumb" data-id="${escapeAttr(it.id)}"><img src="${it.th}" alt="" loading="lazy"/>${it.n ? `<span>${escapeHtml(it.n)}</span>` : ''}</button>`).join('');
+  const list = albumFavOnly ? albumCache.items.filter(it => it.fv) : albumCache.items;
+  if(!list.length) return '<div class="album-empty">Belum ada foto favorit. Buka sebuah foto lalu tekan ☆ Jadikan favorit.</div>';
+  return list.map(it => {
+    const bd = [it.fv && albumCanDelete ? '⭐' : '', it.m ? '💬' : '', it.h > 0 ? '❤️ ' + it.h : ''].filter(Boolean).map(x => '<i>' + x + '</i>').join('');
+    return `<button type="button" class="album-thumb" data-id="${escapeAttr(it.id)}"><img src="${it.th}" alt="" loading="lazy"/>${bd ? '<div class="bd">' + bd + '</div>' : ''}${it.n ? `<span>${escapeHtml(it.n)}</span>` : ''}</button>`;
+  }).join('');
 }
 function albumPaintGrid(){
   const g = document.getElementById('albumGrid'); if(g) g.innerHTML = albumGridHtml();
-  const c = document.getElementById('albumCount'); if(c) c.textContent = albumCache.items.length ? albumCache.items.length + ' foto' : '';
+  const n = albumCache.items.length, fav = albumCache.items.filter(it => it.fv).length;
+  const c = document.getElementById('albumCount'); if(c) c.textContent = n ? n + ' foto' : '';
+  const seg = document.getElementById('albumSeg');
+  if(seg){
+    const bs = seg.querySelectorAll('button');
+    bs[0].classList.toggle('on', !albumFavOnly); bs[1].classList.toggle('on', albumFavOnly);
+    bs[1].textContent = '⭐ Favorit' + (fav ? ' (' + fav + ')' : '');
+  }
 }
 let albumLoadSeq = 0;
 async function albumLoadGrid(code, force){
@@ -7936,19 +7973,53 @@ async function albumLoadGrid(code, force){
 function albumDownloadDataUrl(dataUrl, name){
   const a = document.createElement('a'); a.href = dataUrl; a.download = name; document.body.appendChild(a); a.click(); a.remove();
 }
+/* Ubah metadata satu foto (reaksi ❤️, favorit) tanpa menyentuh data fotonya. */
+async function albumPatchMeta(code, id, fn){
+  const r = await window.storage.get(albumThumbKey(code, id), true);
+  if(!r || !r.value) throw new Error('foto tidak ditemukan');
+  const m = JSON.parse(r.value); fn(m);
+  if(!await storageSetWithRetry(albumThumbKey(code, id), JSON.stringify(m), true, 2)) throw new Error('simpan gagal');
+  return m;
+}
 async function albumOpenLightbox(code, id, canDelete){
   const item = albumCache.items.find(x => x.id === id); if(!item) return;
+  const likedKey = 'aj_album_liked_' + code;
+  const getLiked = () => { try{ const a = JSON.parse(localStorage.getItem(likedKey) || '[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } };
+  const setLiked = a => { try{ localStorage.setItem(likedKey, JSON.stringify(a.slice(-500))); }catch(e){} };
   const lb = document.createElement('div'); lb.className = 'album-lb';
-  lb.innerHTML = `<img src="${item.th}" alt="" style="filter:blur(2px)"/><div class="cap">${item.n ? escapeHtml(item.n) + ' · ' : ''}${escapeHtml(albumFmtTime(item.t))}</div>
-    <div class="album-row" style="justify-content:center"><button type="button" class="album-btn gold" data-a="dl">⬇️ Unduh</button>${canDelete ? '<button type="button" class="album-btn danger" data-a="del">🗑️ Hapus</button>' : ''}<button type="button" class="album-btn ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" data-a="x">Tutup</button></div>`;
+  lb.innerHTML = `<img src="${item.th}" alt="" style="filter:blur(2px)"/>${item.m ? '<div class="quote">“' + escapeHtml(item.m) + '”</div>' : ''}<div class="cap">${item.n ? escapeHtml(item.n) + ' · ' : ''}${escapeHtml(albumFmtTime(item.t))}</div>
+    <div class="album-row" style="justify-content:center"><button type="button" class="album-btn" data-a="like"></button>${canDelete ? '<button type="button" class="album-btn gold" data-a="fav"></button>' : ''}<button type="button" class="album-btn gold" data-a="dl">⬇️ Unduh</button>${canDelete ? '<button type="button" class="album-btn danger" data-a="del">🗑️ Hapus</button>' : ''}<button type="button" class="album-btn ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" data-a="x">Tutup</button></div>`;
   document.body.appendChild(lb);
-  let full = '';
+  const likeBtn = lb.querySelector('[data-a="like"]'), favBtn = lb.querySelector('[data-a="fav"]');
+  const paint = () => {
+    const liked = getLiked().indexOf(id) >= 0;
+    likeBtn.textContent = (liked ? '❤️' : '🤍') + (item.h > 0 ? ' ' + item.h : '');
+    likeBtn.className = 'album-btn' + (liked ? '' : ' ghost'); likeBtn.style.cssText = liked ? '' : 'color:#fff;border-color:rgba(255,255,255,.4)';
+    if(favBtn) favBtn.textContent = item.fv ? '⭐ Favorit' : '☆ Jadikan favorit';
+  };
+  paint();
+  let full = '', busy = false;
   const img = lb.querySelector('img');
   window.storage.get(albumFullKey(code, id), true).then(r => { if(r && r.value){ full = r.value; img.src = full; img.style.filter = ''; } }).catch(() => {});
   lb.addEventListener('click', async e => {
     const a = e.target.closest('[data-a]');
     if(e.target === lb || (a && a.dataset.a === 'x')){ lb.remove(); return; }
     if(!a) return;
+    if(a.dataset.a === 'like' || a.dataset.a === 'fav'){
+      if(busy) return; busy = true;
+      try{
+        if(a.dataset.a === 'like'){
+          const liked = getLiked(), was = liked.indexOf(id) >= 0;
+          const m = await albumPatchMeta(code, id, m => { m.h = Math.max(0, (m.h || 0) + (was ? -1 : 1)); });
+          item.h = m.h; setLiked(was ? liked.filter(x => x !== id) : liked.concat(id));
+        } else {
+          const m = await albumPatchMeta(code, id, m => { if(m.fv) delete m.fv; else m.fv = 1; });
+          item.fv = m.fv || 0;
+        }
+        paint(); albumPaintGrid();
+      }catch(err){ showToast('Gagal menyimpan: ' + (err && err.message || err), true); }
+      busy = false; return;
+    }
     if(a.dataset.a === 'dl'){
       if(!full){ showToast('Foto masih dimuat, coba sebentar lagi', true); return; }
       albumDownloadDataUrl(full, 'foto-' + (item.n ? item.n.replace(/[^\w-]+/g, '_') + '-' : '') + id + '.jpg');
@@ -8021,9 +8092,9 @@ async function albumDownloadQrCard(){
   const name = 'kartu-qr-album-' + (c.brideName || 'tamu').replace(/\W+/g, '_') + '.png';
   await new Promise(res => cv.toBlob(b => { if(b) albumSaveBlob(b, name); else albumDownloadDataUrl(cv.toDataURL('image/png'), name); res(); }, 'image/png'));
 }
-async function albumDownloadZip(btn){
-  const code = state.album.code, items = albumCache.items.slice().reverse();
-  if(!items.length){ showToast('Belum ada foto untuk diunduh', true); return; }
+async function albumDownloadZip(btn, favOnly){
+  const code = state.album.code, items = albumCache.items.filter(it => !favOnly || it.fv).reverse();
+  if(!items.length){ showToast(favOnly ? 'Belum ada foto favorit. Tandai dulu dengan ☆ di lightbox.' : 'Belum ada foto untuk diunduh', true); return; }
   const label = btn.textContent; btn.disabled = true;
   try{
     if(!window.JSZip) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
@@ -8038,7 +8109,7 @@ async function albumDownloadZip(btn){
     btn.textContent = 'Membuat ZIP…';
     const blob = await zip.generateAsync({ type:'blob' });
     const url = URL.createObjectURL(blob);
-    albumDownloadDataUrl(url, 'album-tamu-' + ((state.couple && state.couple.brideName) || 'wedding').replace(/\W+/g, '_') + '.zip');
+    albumDownloadDataUrl(url, 'album-tamu-' + ((state.couple && state.couple.brideName) || 'wedding').replace(/\W+/g, '_') + (favOnly ? '-favorit' : '') + '.zip');
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }catch(e){ showToast('Gagal membuat ZIP: ' + (e && e.message || e), true); }
   btn.textContent = label; btn.disabled = false;
@@ -8080,7 +8151,8 @@ function renderAlbum(){
     </div>
     <div class="mb-card">
       <div class="album-row" style="justify-content:space-between"><h3 style="margin:0">🖼️ Foto Tamu <span id="albumCount" style="font-size:12px;color:var(--cream-dim);font-weight:500"></span></h3>
-        <div class="album-row"><button type="button" class="album-btn ghost" id="albumRefreshBtn">↻ Muat ulang</button><button type="button" class="album-btn gold" id="albumZipBtn">⬇️ Unduh Semua (ZIP)</button></div></div>
+        <div class="album-row"><button type="button" class="album-btn ghost" id="albumRefreshBtn">↻ Muat ulang</button><button type="button" class="album-btn gold" id="albumZipBtn">⬇️ Unduh Semua (ZIP)</button><button type="button" class="album-btn gold" id="albumZipFavBtn">⭐ Unduh Favorit</button></div></div>
+      <div class="album-seg" id="albumSeg"><button type="button" data-s="all" class="${albumFavOnly ? '' : 'on'}">Semua</button><button type="button" data-s="fav" class="${albumFavOnly ? 'on' : ''}">⭐ Favorit</button></div>
       <div class="album-grid" id="albumGrid">${albumCache.code === a.code ? albumGridHtml() : '<div class="album-empty">Memuat foto…</div>'}</div>
     </div>`;
 }
@@ -8121,7 +8193,9 @@ function albumAfterRender(){
   const t1 = $('albumToggleOpen'); if(t1) t1.onchange = e => { a.enabled = e.target.checked; albumPersist(); albumSyncCfg(true); };
   const t2 = $('albumToggleView'); if(t2) t2.onchange = e => { a.guestView = e.target.checked; albumPersist(); albumSyncCfg(true); };
   on('albumRefreshBtn', () => albumLoadGrid(a.code, true));
-  on('albumZipBtn', e => albumDownloadZip(e.currentTarget));
+  on('albumZipBtn', e => albumDownloadZip(e.currentTarget, false));
+  on('albumZipFavBtn', e => albumDownloadZip(e.currentTarget, true));
+  const seg = $('albumSeg'); if(seg){ seg.onclick = e => { const b = e.target.closest('button[data-s]'); if(!b) return; albumFavOnly = b.dataset.s === 'fav'; albumPaintGrid(); }; albumPaintGrid(); }
   on('albumDemoGuestBtn', albumDemoOpenGuest);
   /* foto sampul */
   const prev = $('albumCoverPrev');
@@ -8171,7 +8245,8 @@ function dcGrab(src, sw, sh, opt){
   return c;
 }
 /* Filter vintage dikerjakan per-pixel (bukan ctx.filter) supaya jalan juga di Safari/iPhone lama. */
-function dcGrade(c, stamp){
+function dcGrade(c, stamp, mode){
+  mode = mode || 'vintage'; if(mode === 'none') return c;
   const w = c.width, h = c.height, g = c.getContext('2d', { willReadFrequently:true });
   const id = g.getImageData(0, 0, w, h), d = id.data, cx = w / 2, cy = h / 2, inv = 1 / (cx * cx + cy * cy);
   for(let y = 0; y < h; y++){
@@ -8180,6 +8255,18 @@ function dcGrade(c, stamp){
       const i = (y * w + x) * 4, dx = x - cx;
       let r = d[i], gr = d[i + 1], b = d[i + 2];
       const l = .299 * r + .587 * gr + .114 * b;
+      if(mode === 'bw'){                                                                  /* hitam putih: kontras + grain halus */
+        const v = ((l - 128) * 1.18 + 128) * .96 + 6, vg = 1 - .3 * ((dx * dx + dy2) * inv), nz = (Math.random() - .5) * 14;
+        d[i] = d[i + 1] = d[i + 2] = v * vg + nz; continue;
+      }
+      if(mode === 'film'){                                                                /* film hangat: lebih lembut dari vintage */
+        r = l + (r - l) * 1.1; gr = l + (gr - l) * 1.1; b = l + (b - l) * 1.1;
+        r = (r - 128) * 1.06 + 128; gr = (gr - 128) * 1.06 + 128; b = (b - 128) * 1.06 + 128;
+        r = r * 1.05 + 3; gr = gr * 1.01 + 1; b = b * .9;
+        r = r * .95 + 8; gr = gr * .95 + 7; b = b * .95 + 6;
+        const vg = 1 - .2 * ((dx * dx + dy2) * inv), nz = (Math.random() - .5) * 10;
+        d[i] = r * vg + nz; d[i + 1] = gr * vg + nz; d[i + 2] = b * vg + nz; continue;
+      }
       r = l + (r - l) * 1.15; gr = l + (gr - l) * 1.15; b = l + (b - l) * 1.15;          /* saturasi */
       r = (r - 128) * 1.1 + 128; gr = (gr - 128) * 1.1 + 128; b = (b - 128) * 1.1 + 128;  /* kontras */
       r = r * 1.07 + 4; gr = gr * 1.01 + 2; b = b * .86;                                  /* nuansa hangat */
@@ -8189,6 +8276,7 @@ function dcGrade(c, stamp){
     }
   }
   g.putImageData(id, 0, 0);
+  if(mode !== 'vintage') return c;
   /* light leak oranye di salah satu sisi */
   const gx = Math.random() < .5 ? 0 : w, gy = h * (.12 + Math.random() * .3), rad = Math.max(w, h) * .55;
   const lk = g.createRadialGradient(gx, gy, 0, gx, gy, rad);
@@ -8231,6 +8319,7 @@ const DC_ICON_FLIP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 
 async function initGuestAlbum(opt){
   opt = opt || {};
+  albumCanDelete = false; albumFavOnly = false;
   albumInjectCss();
   const code = opt.code || ((location.hash.split('/')[1] || '').toLowerCase()).replace(/[^a-z0-9]/g, '');
   const demo = code === 'demo';
@@ -8252,6 +8341,9 @@ async function initGuestAlbum(opt){
   const CAP = demo ? 99 : 40, capKey = 'aj_album_cnt_' + code;
   let used = 0; if(!demo){ try{ used = parseInt(localStorage.getItem(capKey) || '0', 10) || 0; }catch(e){} }
   let savedName = ''; try{ savedName = localStorage.getItem('aj_album_name') || ''; }catch(e){}
+  const FILTERS = [['vintage', 'Vintage'], ['film', 'Film hangat'], ['bw', 'Hitam putih'], ['none', 'Tanpa filter']];
+  let filter = 'vintage', msg = '';
+  try{ const f = localStorage.getItem('aj_album_filter'); if(FILTERS.some(x => x[0] === f)) filter = f; }catch(e){}
 
   app.innerHTML = `<div class="dc">
     <section class="dc-land" id="dcLand">${demo ? '<div class="dc-demo">🎬 MODE DEMO · foto hanya disimpan sementara di perangkat ini</div>' : ''}<div class="dc-land-in">
@@ -8259,6 +8351,8 @@ async function initGuestAlbum(opt){
       <h1 class="dc-title">${escapeHtml(title)}</h1>
       ${dateLabel ? `<div class="dc-date">${escapeHtml(dateLabel)}</div>` : ''}
       <input type="text" class="dc-name" id="dcName" maxlength="30" placeholder="Nama kamu (boleh dikosongkan)" value="${escapeAttr(savedName)}"/>
+      <input type="text" class="dc-msg" id="dcMsg" maxlength="120" placeholder="Ucapan untuk mempelai, mis. Selamat ya! (opsional)"/>
+      <div class="dc-fl" id="dcFlLand"></div>
       <button type="button" class="dc-go" id="dcGo">Mulai motret &nbsp;→</button>
       <div class="dc-sub" id="dcLandInfo"></div>
       <div class="dc-links"><button type="button" class="dc-link" id="dcPickBtn">Upload dari galeri</button>${showGallery ? '<span>·</span><button type="button" class="dc-link" id="dcSeeBtn">Lihat foto tamu</button>' : ''}</div>
@@ -8276,8 +8370,10 @@ async function initGuestAlbum(opt){
         <div class="dc-stamp">${escapeHtml(dcStamp(new Date()))}</div>
         <div class="dc-flash" id="dcFlash"></div>
         <div class="dc-err" id="dcErr" hidden></div>
+        <div class="dc-msgov" id="dcMsgOv" hidden><input type="text" id="dcMsg2" maxlength="120" placeholder="Tulis ucapan untuk mempelai…"/></div>
       </div>
-      <div class="dc-lab"><span></span><span id="dcFacing">KAMERA BELAKANG</span><button type="button" class="dc-ic" id="dcFlip" aria-label="Putar kamera">${DC_ICON_FLIP}</button></div>
+      <div class="dc-lab"><button type="button" class="dc-ic dc-msgbtn" id="dcMsgBtn" aria-label="Tulis ucapan">💬</button><span id="dcFacing">KAMERA BELAKANG</span><button type="button" class="dc-ic" id="dcFlip" aria-label="Putar kamera">${DC_ICON_FLIP}</button></div>
+      <div class="dc-fl" id="dcFlCam"></div>
       <div class="dc-ctl">
         <div class="dc-left"><b id="dcCount">00</b><small>SISA</small></div>
         <button type="button" class="dc-shutter" id="dcShutter" aria-label="Jepret"><i></i></button>
@@ -8300,7 +8396,7 @@ async function initGuestAlbum(opt){
   const paintCounter = () => {
     $('dcCount').textContent = dcPad(remaining());
     $('dcShutter').disabled = remaining() <= 0;
-    $('dcLandInfo').textContent = demo ? 'Coba jepret dengan kamera atau foto contoh · hasilnya otomatis bergaya vintage' : remaining() > 0 ? 'Rol kamu: ' + remaining() + ' foto · hasilnya otomatis bergaya vintage' : 'Rol kamu sudah habis 💗 Terima kasih sudah ikut mengabadikan momen ini!';
+    $('dcLandInfo').textContent = demo ? 'Coba jepret dengan kamera atau foto contoh · pilih filter favoritmu' : remaining() > 0 ? 'Rol kamu: ' + remaining() + ' foto · pilih filter favoritmu' : 'Rol kamu sudah habis 💗 Terima kasih sudah ikut mengabadikan momen ini!';
   };
   const paintSend = () => {
     if(queue.length || sending) setStatus('Mengirim ' + queue.length + ' foto…');
@@ -8363,7 +8459,7 @@ async function initGuestAlbum(opt){
   const sendJob = async j => {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     if(!await storageSetWithRetry(albumFullKey(code, id), j.full, true, 2)) throw new Error('simpan gagal');
-    const meta = { id, n:j.n, t:j.t, th:j.th };
+    const meta = { id, n:j.n, t:j.t, th:j.th }; if(j.m) meta.m = j.m;
     if(!await storageSetWithRetry(albumThumbKey(code, id), JSON.stringify(meta), true, 2)){
       await window.storage.delete(albumFullKey(code, id), true).catch(() => {}); throw new Error('simpan gagal');
     }
@@ -8384,9 +8480,12 @@ async function initGuestAlbum(opt){
     paintCounter();
     const full = dcToDataUrl(cv, 650000), th = dcThumbUrl(cv);
     $('dcThumb').style.backgroundImage = 'url(' + th + ')';
-    queue.push({ full, th, n:name, t:Date.now() }); pump();
+    queue.push({ full, th, n:name, m:takeMsg(), t:Date.now() }); pump();
   };
   const guestName = () => { const n = ($('dcName').value || '').trim().slice(0, 30); try{ localStorage.setItem('aj_album_name', n); }catch(e){} return n; };
+  /* ucapan: menempel pada foto berikutnya yang dikirim, lalu dikosongkan */
+  const paintMsg = () => { $('dcMsg').value = msg; $('dcMsg2').value = msg; $('dcMsgBtn').classList.toggle('has', !!msg); };
+  const takeMsg = () => { const m = msg.trim().slice(0, 120); msg = ''; paintMsg(); return m; };
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
 
   /* ---- jepret ---- */
@@ -8399,7 +8498,7 @@ async function initGuestAlbum(opt){
     const fl = $('dcFlash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
     try{
       await nextFrame();
-      enqueue(dcGrade(raw, dcStamp(new Date())), guestName());
+      enqueue(dcGrade(raw, dcStamp(new Date()), filter), guestName());
     }catch(e){ setStatus('⚠️ Gagal memproses foto: ' + escapeHtml(String(e && e.message || e))); }
     shooting = false;
   };
@@ -8407,7 +8506,7 @@ async function initGuestAlbum(opt){
     if(shooting || processing) return;
     if(remaining() <= 0){ setStatus('Rol kamu sudah habis 💗 Terima kasih!'); return; }
     shooting = true;
-    try{ const raw = albumDemoScene(Math.floor(Math.random() * 60), 540, 720); await nextFrame(); enqueue(dcGrade(raw, dcStamp(new Date())), guestName()); }
+    try{ const raw = albumDemoScene(Math.floor(Math.random() * 60), 540, 720); await nextFrame(); enqueue(dcGrade(raw, dcStamp(new Date()), filter), guestName()); }
     catch(e){ setStatus('⚠️ Gagal memproses foto: ' + escapeHtml(String(e && e.message || e))); }
     shooting = false;
   };
@@ -8424,7 +8523,7 @@ async function initGuestAlbum(opt){
         const im = await dcLoadImage(files[i]);
         const raw = dcGrab(im, im.naturalWidth || im.width, im.naturalHeight || im.height, { aspect:0, zoom:1, maxDim:1440 });
         await nextFrame();
-        enqueue(dcGrade(raw, dcStamp(files[i].lastModified ? new Date(files[i].lastModified) : new Date())), name);
+        enqueue(dcGrade(raw, dcStamp(files[i].lastModified ? new Date(files[i].lastModified) : new Date()), filter), name);
       }catch(e){ bad++; }
     }
     processing = false;
@@ -8446,9 +8545,18 @@ async function initGuestAlbum(opt){
   }
 
   /* ---- event ---- */
-  const toLand = () => { stopCam(); $('dcCam').hidden = true; $('dcLand').hidden = false; };
+  const toLand = () => { stopCam(); $('dcMsgOv').hidden = true; $('dcCam').hidden = true; $('dcLand').hidden = false; };
   const toCam = () => { guestName(); $('dcLand').hidden = true; $('dcCam').hidden = false; paintCounter(); startCam(); };
   $('dcGo').onclick = toCam;
+  const paintFilters = () => {
+    const h = FILTERS.map(x => `<button type="button" data-fl="${x[0]}" class="${x[0] === filter ? 'on' : ''}">${x[1]}</button>`).join('');
+    $('dcFlLand').innerHTML = h; $('dcFlCam').innerHTML = h; $('dcVf').dataset.f = filter;
+  };
+  const onFilter = e => { const b = e.target.closest('button[data-fl]'); if(!b) return; filter = b.dataset.fl; try{ localStorage.setItem('aj_album_filter', filter); }catch(e2){} paintFilters(); };
+  $('dcFlLand').addEventListener('click', onFilter); $('dcFlCam').addEventListener('click', onFilter);
+  paintFilters();
+  ['dcMsg', 'dcMsg2'].forEach(id => $(id).addEventListener('input', e => { msg = e.target.value.slice(0, 120); $('dcMsg' === id ? 'dcMsg2' : 'dcMsg').value = msg; $('dcMsgBtn').classList.toggle('has', !!msg); }));
+  $('dcMsgBtn').onclick = () => { const o = $('dcMsgOv'); o.hidden = !o.hidden; if(!o.hidden) $('dcMsg2').focus(); };
   $('dcBack').onclick = toLand;
   $('dcFlip').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; startCam(); };
   $('dcShutter').onclick = shoot;

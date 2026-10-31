@@ -13,20 +13,21 @@
 (function(){
   if(/^#(album|layar)\//.test(location.hash)){ window.__AJ_ALBUM = true; return; } /* halaman publik album tamu: bukan peran apa pun */
   var MAP = { admin:{h:'#admin',n:'Admin'}, marketing:{h:'#marketing',n:'Marketing'}, client:{h:'#clientlink',n:'Klien'}, vendor:{h:'#vendorlink',n:'Vendor'} };
+  /* iOS membuang #hash saat "Add to Home Screen", tapi query string (?r=...) tetap disimpan.
+     Jadi link bisa ditulis ...?r=marketing ; di sini diubah jadi hash supaya semua kode lain
+     yang membaca location.hash tetap jalan. Kalau hash sudah ada, hash yang menang. */
+  try{
+    if(!location.hash){
+      var rq = new URLSearchParams(location.search).get('r');
+      var RQ = { admin:'#admin', marketing:'#marketing', client:'#clientlink', vendor:'#vendorlink' };
+      if(rq && RQ[rq]) history.replaceState(null, '', location.pathname + location.search + RQ[rq]);
+    }
+  }catch(e){}
   var hs = location.hash, role = '';
   if(hs==='#clientlink'||hs==='#client') role='client';
   else if(hs==='#vendorlink'||hs==='#vendor') role='vendor';
   else if(hs==='#marketing') role='marketing';
   else if(hs==='#admin') role='admin';
-  /* iOS: ikon Home Screen sering terbuka TANPA hash (#marketing dll). Karena itu peran juga ditulis di
-     alamat sebagai ?peran=... (query tidak hilang di iOS, hash bisa hilang) dan dibaca di sini kalau hash kosong. */
-  var fromQuery = false;
-  if(!role && !hs){
-    try{
-      var qr = new URLSearchParams(location.search).get('peran') || '';
-      if(qr==='marketing' || qr==='client' || qr==='vendor'){ role = qr; fromQuery = true; }
-    }catch(e){}
-  }
   var standalone = false;
   try{ standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }catch(e){}
   try{
@@ -46,31 +47,6 @@
   }catch(e){}
   var key = role || 'admin', r = MAP[key];
   window.__AJ_ROLE = key;
-  /* Peran non-admin ikut ditempel di SETIAP perubahan alamat (replaceState/pushState) supaya ?peran=...
-     tidak hilang waktu app mengganti alamat sendiri. Admin = tanpa perubahan apa pun (perilaku lama). */
-  try{
-    var _rs = history.replaceState.bind(history), _ps = history.pushState.bind(history);
-    var withRole = function(u){
-      try{
-        if(u == null || key === 'admin') return u;
-        var x = new URL(String(u), location.href);
-        if(x.origin !== location.origin) return u;
-        x.searchParams.set('peran', key);
-        return x.pathname + x.search + x.hash;
-      }catch(e){ return u; }
-    };
-    history.replaceState = function(st, ti, u){ return _rs(st, ti, withRole(u)); };
-    history.pushState = function(st, ti, u){ return _ps(st, ti, withRole(u)); };
-    if(key !== 'admin'){
-      /* hash dipulihkan kalau hilang (iOS), lalu ?peran= ditulis ke alamat sekarang —
-         inilah alamat yang disimpan iPhone saat "Add to Home Screen". */
-      history.replaceState(null, '', location.pathname + location.search + (fromQuery ? r.h : location.hash));
-    } else {
-      /* link Admin yang masih membawa ?peran= basi: dibersihkan supaya tidak salah peran kalau hash hilang */
-      var sp = new URLSearchParams(location.search);
-      if(sp.has('peran')){ sp.delete('peran'); var qs = sp.toString(); _rs(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); }
-    }
-  }catch(e){}
   try{
     var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
     fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
@@ -78,7 +54,10 @@
       m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
       m.id = base.href + '?app=' + key;
       m.scope = base.href;
-      m.start_url = new URL(location.pathname, location.origin).href + (key !== 'admin' ? '?peran=' + key : '') + r.h;
+      var sp = new URLSearchParams(location.search);
+      if(key !== 'admin') sp.set('r', key); else sp.delete('r');
+      var sq = sp.toString();
+      m.start_url = new URL(location.pathname, location.origin).href + (sq ? '?' + sq : '') + r.h;
       if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
       if(m.shortcuts) delete m.shortcuts;
       var link = document.querySelector('link[rel="manifest"]');
@@ -5066,7 +5045,7 @@ function renderProjectDashboard(){
       <div class="lp-title">Link Khusus Tim Marketing</div>
       <div class="lp-row">
         <span class="lp-label">Link Marketing</span>
-        <input class="lp-input" id="marketingLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '#marketing')}"/>
+        <input class="lp-input" id="marketingLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '?r=marketing')}"/>
         <button class="btn small" id="copyMarketingLink">📋 Salin</button>
       </div>
       <div class="lp-note">Kirim link ini ke tim marketing kamu — halaman login lewat link ini <b>tidak menampilkan opsi "Saya Admin"</b>, jadi mereka cuma bisa masuk lewat PIN Marketing atau sebagai Klien.</div>
@@ -5075,7 +5054,7 @@ function renderProjectDashboard(){
       <div class="lp-title">Login Khusus Akun Klien</div>
       <div class="lp-row">
         <span class="lp-label">Link Klien Umum</span>
-        <input class="lp-input" id="globalClientLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '#clientlink')}"/>
+        <input class="lp-input" id="globalClientLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '?r=client')}"/>
         <button class="btn small" id="copyGlobalClientLink">📋 Salin</button>
       </div>
       <div class="lp-note">Bagikan <b>satu link ini</b> ke klien mana pun — halaman yang kebuka cuma nampilin login klien saja (tidak ada opsi Admin, Marketing, atau Vendor sama sekali). Klien login pakai <b>Username &amp; Password</b> dari Akun Klien yang kamu buat di masing-masing project (lihat panel "Link Klien" di halaman project, tombol "➕ Buat Akun" / "🔁 Ganti Akun"), lalu otomatis masuk ke project miliknya sendiri — tidak perlu Kode Project sama sekali.<br>Kalau kliennya belum punya Akun Klien (project lama), pakai dulu <b>Link Klien</b> per-project (Kode Project + Password) di halaman project itu, sambil kamu buatkan Akun Klien-nya.</div>
@@ -5084,7 +5063,7 @@ function renderProjectDashboard(){
       <div class="lp-title">Login Khusus Akun Vendor</div>
       <div class="lp-row">
         <span class="lp-label">Link Vendor</span>
-        <input class="lp-input" id="globalVendorLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '#vendorlink')}"/>
+        <input class="lp-input" id="globalVendorLinkBox" readonly value="${escapeAttr(location.href.split('?')[0].split('#')[0] + '?r=vendor')}"/>
         <button class="btn small" id="copyGlobalVendorLink">📋 Salin</button>
       </div>
       <div class="lp-note">Bagikan <b>satu link ini</b> ke semua vendor lapangan (MUA, katering, dekorasi, dll) di semua project — tidak perlu password. Vendor tinggal buka link ini, pilih project (nama pengantin), lalu pilih kategori vendornya sendiri. Link ini <b>hanya bisa dipakai buat akses vendor</b> — tidak ada opsi masuk sebagai Admin, Marketing, atau Klien sama sekali.<br>Vendor login pakai username &amp; password dari akun yang kamu buat di bawah ini (bukan link project). Setelah login, vendor otomatis lihat SEMUA project tempat dia dijadwalkan (tab "Jadwal Saya"), lalu tinggal klik "Buka Project" — bukan cuma bisa akses 1 project seperti Link Vendor biasa.</div>
@@ -5292,7 +5271,7 @@ function renderProjectDashboard(){
     roleDecided = true;
     const baseUrl = location.href.split('?')[0].split('#')[0];
     const hash = isMarketingLocked() ? '#marketing' : '';
-    history.pushState({}, '', baseUrl + '?p=' + id + hash);
+    history.pushState({}, '', baseUrl + '?p=' + id + (hash ? '&r=marketing' : '') + hash);
     render();
     hydrateAttachmentsInBackground();
   }));
@@ -5816,7 +5795,7 @@ function showNewProjectForm(leadId){
       roleDecided = true;
       currentTab = 'beranda';
       const hash = isMarketingLocked() ? '#marketing' : '';
-      history.pushState({}, '', baseUrl + '?p=' + project.id + hash);
+      history.pushState({}, '', baseUrl + '?p=' + project.id + (hash ? '&r=marketing' : '') + hash);
       hideLoadingOverlay();
       render();
       hydrateAttachmentsInBackground();

@@ -4497,6 +4497,28 @@ function vendorScheduleSorted(){
   };
   return vendorSchedule.filter(e=> e.vendorAccountId === acc.id).sort((a,b)=>{ const da = distance(a), db = distance(b); return da === db ? 0 : (da - db); });
 }
+function vendorPicHtml(name, phone){
+  const digits = String(phone||'').replace(/\D/g,'').replace(/^(62|0)/,'');
+  return `<label>Marketing</label><div>${escapeHtml(name)}</div>${phone ? `<div style="margin-top:2px;">📞 <a href="https://wa.me/62${escapeAttr(digits)}" target="_blank" rel="noopener" style="color:inherit;font-weight:600;">${escapeHtml(phone)}</a></div>` : ''}`;
+}
+/* Jadwal lama belum membawa data PIC (baru terisi saat admin/marketing menyimpan project). Supaya vendor tidak
+   perlu menunggu itu, PIC project yang kosong diambil langsung dari data project + daftar marketing. */
+async function hydrateVendorPics(){
+  const slots = Array.from(document.querySelectorAll('[data-pic-slot]:not([data-pic-slot=""])'));
+  const pids = [...new Set(slots.map(el=> el.dataset.picSlot))];
+  if(!pids.length) return;
+  try{ await loadMarketingListMeta(); }catch(e){}
+  await Promise.all(pids.map(async pid=>{
+    try{
+      const proj = await loadProjectById(pid);
+      if(!proj) return;
+      const m = proj.marketingId ? findMarketingById(proj.marketingId) : null;
+      const name = m ? (m.name||'') : PIC_NAME, phone = m ? (m.phone||'') : PIC_PHONE_DISPLAY;
+      if(!name) return;
+      document.querySelectorAll('[data-pic-slot="' + (window.CSS && CSS.escape ? CSS.escape(pid) : pid) + '"]').forEach(el=>{ el.innerHTML = vendorPicHtml(name, phone); el.style.display = ''; });
+    }catch(e){ /* biarkan kosong */ }
+  }));
+}
 function showVendorAccountDashboard(){
   const acc = currentVendorAccountSession;
   const app = document.getElementById('app');
@@ -4519,7 +4541,7 @@ function showVendorAccountDashboard(){
           ${!e.weddingDate ? '<span class="stage-badge v-status-badge belum_ada_tanggal" title="Status: Belum Ada Tanggal">Belum Ada Tanggal</span>' : ''}
           <div class="v-cat"${!e.weddingDate ? ' style="padding-right:130px;"' : ''}><div class="catleft"><span class="emoji">💍</span><span>${escapeHtml(e.brideName)} &amp; ${escapeHtml(e.groomName)}</span></div></div>
           ${eventInfoBlockHtml(e)}
-          ${e.picName ? `<div class="v-field"><label>PIC</label><div>${escapeHtml(e.picName)}${e.picPhone ? ` · <a href="https://wa.me/62${escapeAttr(String(e.picPhone).replace(/\D/g,'').replace(/^(62|0)/,''))}" target="_blank" rel="noopener" style="color:inherit;font-weight:600;">${escapeHtml(e.picPhone)}</a>` : ''}</div></div>` : ''}
+          <div class="v-field" data-pic-slot="${e.picName ? '' : escapeAttr(e.projectId)}" ${e.picName ? '' : 'style="display:none;"'}>${e.picName ? vendorPicHtml(e.picName, e.picPhone) : ''}</div>
           <div class="v-field"><label>Kategori Kamu</label><div>${escapeHtml(e.catLabel)}</div></div>
           <div class="row-actions" style="margin-top:10px;">
             <button class="btn small primary" data-action="open-vendor-project" data-pid="${escapeAttr(e.projectId)}" data-catlabel="${escapeAttr(e.catLabel)}">Buka Project →</button>
@@ -4529,6 +4551,7 @@ function showVendorAccountDashboard(){
     </div>
   `;
   bindPushButtons();
+  hydrateVendorPics();
   document.getElementById('logoutVendorAccountBtn').addEventListener('click', ()=>{
     clearRoleSession();
     isVendorAccountSession = false; currentVendorAccountSession = null; roleDecided = false;

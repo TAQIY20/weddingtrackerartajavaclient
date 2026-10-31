@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="manifest" href="manifest.webmanifest">
 <script>
 /* PERAN PER LINK + INSTALL TERKUNCI.
    Tiap link (#admin / #marketing / #clientlink / #vendorlink) = 1 peran. Manifest PWA dibuat ulang
@@ -16,6 +15,13 @@
   /* iOS membuang #hash saat "Add to Home Screen", tapi query string (?r=...) tetap disimpan.
      Jadi link bisa ditulis ...?r=marketing ; di sini diubah jadi hash supaya semua kode lain
      yang membaca location.hash tetap jalan. Kalau hash sudah ada, hash yang menang. */
+  try{
+    /* PATH PERAN: /marketing, /vendor, /klien. Path adalah satu-satunya bagian URL yang pasti dibawa iOS
+       ke ikon Home Screen (query/hash bisa hilang). Butuh vercel.json (rewrites) supaya path ini membuka index.html. */
+    var pm = location.pathname.replace(/\/+$/,'').split('/').pop().toLowerCase();
+    var PM = { marketing:'#marketing', vendor:'#vendorlink', klien:'#clientlink', client:'#clientlink' };
+    if(!location.hash && PM[pm]) history.replaceState(null, '', location.pathname + location.search + PM[pm]);
+  }catch(e){}
   try{
     if(!location.hash){
       var rq = new URLSearchParams(location.search).get('r');
@@ -48,21 +54,8 @@
   var key = role || 'admin', r = MAP[key];
   window.__AJ_ROLE = key;
   try{
-    var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
-    fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
-      var base = new URL('./', location.href);
-      m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
-      m.id = base.href + '?app=' + key;
-      m.scope = base.href;
-      var sp = new URLSearchParams(location.search);
-      if(key !== 'admin') sp.set('r', key); else sp.delete('r');
-      var sq = sp.toString();
-      m.start_url = new URL(location.pathname, location.origin).href + (sq ? '?' + sq : '') + r.h;
-      if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
-      if(m.shortcuts) delete m.shortcuts;
-      var link = document.querySelector('link[rel="manifest"]');
-      link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], {type:'application/manifest+json'}));
-    }).catch(function(){});
+    var setTitle = function(){ var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n); };
+    setTitle(); document.addEventListener('DOMContentLoaded', setTitle);
   }catch(e){}
 })();
 </script>

@@ -3356,7 +3356,7 @@ function notifyDiff(a, b){
     if(n.acc && o.acc !== n.acc){
       // vendor baru saja dipasang/di-booking ke project ini -> kabari akun vendor tsb
       ev.push({ kind:'vendor_booked', key:'vb:' + k + ':' + n.acc, vendorKey:label, vendorAccountId:n.acc, date:b.wd || '', status:(o.status !== n.status && typeof statusLabel==='function') ? statusLabel(n.status) : '' });
-      return;
+      // jangan return: perubahan status tetap dikirim (klien tetap perlu tahu); vendor yang di-booking tidak dapat dobel (disaring di notify.mjs)
     }
     if(o.status !== n.status) ev.push({ kind:'vendor_status', vendorKey:label, status: (typeof statusLabel==='function' ? statusLabel(n.status) : n.status) });
     else if(o.note !== n.note || o.prog !== n.prog) ev.push({ kind:'vendor_update', vendorKey:label });

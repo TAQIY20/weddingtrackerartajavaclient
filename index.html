@@ -70,17 +70,28 @@
   }catch(e){}
   try{
     var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
-    fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
-      var base = new URL('./', location.href);
-      m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
-      m.id = base.href + '?app=' + key;
-      m.scope = base.href;
-      m.start_url = new URL(location.pathname, location.origin).href + (key!=='admin' ? '?r=' + key : '') + r.h;
-      if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
-      if(m.shortcuts) delete m.shortcuts;
-      var link = document.querySelector('link[rel="manifest"]');
-      link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], {type:'application/manifest+json'}));
-    }).catch(function(){});
+    /* iOS tidak membaca manifest blob:. Coba manifest per peran dari URL asli (api/manifest?role=..., Vercel) dulu;
+       kalau endpoint tidak ada (mis. github-pages) atau gagal, pakai manifest blob seperti biasa. */
+    var link = document.querySelector('link[rel="manifest"]');
+    var apiUrl = new URL('api/manifest?role=' + key, location.href).href;
+    fetch(apiUrl, {cache:'no-store'}).then(function(x){
+      if(!x.ok) throw new Error('no api');
+      return x.json();
+    }).then(function(m){
+      if(!m || !m.start_url) throw new Error('bad manifest');
+      link.href = apiUrl;
+    }).catch(function(){
+      fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
+        var base = new URL('./', location.href);
+        m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
+        m.id = base.href + '?app=' + key;
+        m.scope = base.href;
+        m.start_url = new URL(location.pathname, location.origin).href + (key!=='admin' ? '?r=' + key : '') + r.h;
+        if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
+        if(m.shortcuts) delete m.shortcuts;
+        link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], {type:'application/manifest+json'}));
+      }).catch(function(){});
+    });
   }catch(e){}
 })();
 </script>

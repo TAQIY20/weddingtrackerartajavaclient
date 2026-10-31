@@ -8539,5 +8539,47 @@ if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
   window.addEventListener('load',function(){ try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){} });
 }
 </script>
+<script>
+/* Tombol "✕ hapus tanggal" untuk semua input tanggal di HP (picker tanggal HP tidak punya tombol Clear; laptop sudah punya). */
+(function(){
+  var touch = false; try{ touch = window.matchMedia('(pointer:coarse)').matches; }catch(e){}
+  if(!touch) return;
+  var css = document.createElement('style');
+  css.textContent = '.date-clr{margin-left:6px;width:26px;height:26px;flex:none;border-radius:50%;border:1px solid rgba(92,18,32,.3);background:rgba(255,255,255,.7);color:#5C1220;font:700 13px/1 sans-serif;cursor:pointer;padding:0;vertical-align:middle}.date-clr[hidden]{display:none}';
+  document.head.appendChild(css);
+  function sync(inp, btn){
+    var show = !!inp.value && !inp.disabled && inp.offsetParent !== null;
+    if(btn.hidden === show) btn.hidden = !show;
+  }
+  function decorate(){
+    var list = document.querySelectorAll('input[type="date"]:not([data-clr])');
+    for(var i = 0; i < list.length; i++){
+      var inp = list[i]; inp.setAttribute('data-clr', '1');
+      if(inp.disabled) continue;
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'date-clr'; btn.textContent = '✕'; btn.title = 'Hapus tanggal'; btn.setAttribute('aria-label', 'Hapus tanggal'); btn.hidden = true;
+      (function(inp, btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation();
+          inp.value = '';
+          inp.dispatchEvent(new Event('input', { bubbles:true }));
+          inp.dispatchEvent(new Event('change', { bubbles:true }));
+          sync(inp, btn);
+        });
+        inp.addEventListener('input', function(){ sync(inp, btn); });
+        inp.addEventListener('change', function(){ sync(inp, btn); });
+        inp._clrBtn = btn;
+      })(inp, btn);
+      inp.insertAdjacentElement('afterend', btn); sync(inp, btn);
+    }
+    var all = document.querySelectorAll('input[type="date"][data-clr]');
+    for(var j = 0; j < all.length; j++){ if(all[j]._clrBtn) sync(all[j], all[j]._clrBtn); }
+  }
+  var t = null;
+  function later(){ if(t) return; t = requestAnimationFrame(function(){ t = null; decorate(); }); }
+  new MutationObserver(later).observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['style','class','disabled'] });
+  later();
+})();
+</script>
 </body>
 </html>

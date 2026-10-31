@@ -9,7 +9,7 @@
    Tiap link (#admin / #marketing / #clientlink / #vendorlink) = 1 peran. Manifest PWA dibuat ulang
    per peran (nama, id, start_url) supaya "Install" dari link Klien benar-benar terbuka sebagai Klien,
    bukan balik ke halaman Admin. iOS kadang mengabaikan start_url, jadi peran juga dikunci di
-   localStorage (aj_role_lock) dan dipakai saat app dibuka dari ikon tanpa hash. */
+   localStorage (aj_role_lock_v2, hanya dari app terinstall) dan dipakai saat app dibuka dari ikon tanpa hash. */
 (function(){
   var MAP = { admin:{h:'#admin',n:'Admin'}, marketing:{h:'#marketing',n:'Marketing'}, client:{h:'#clientlink',n:'Klien'}, vendor:{h:'#vendorlink',n:'Vendor'} };
   var hs = location.hash, role = '';
@@ -20,12 +20,19 @@
   var standalone = false;
   try{ standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }catch(e){}
   try{
-    if(!role && !location.search && standalone){
-      var lk = localStorage.getItem('aj_role_lock');
-      if(lk && MAP[lk] && lk!=='admin'){ role = lk; history.replaceState(null,'',location.pathname + MAP[lk].h); }
+    /* localStorage dipakai bersama oleh app terinstall DAN tab Chrome di alamat yang sama, jadi kunci peran
+       hanya boleh ditulis/dibaca saat berjalan sebagai app terinstall (standalone). Kalau tab Chrome ikut
+       menulisnya, membuka link marketing di Chrome mengubah app Admin menjadi Marketing. Key lama
+       'aj_role_lock' (yang bisa tertulis dari Chrome) dibuang dan tidak dipakai lagi. */
+    localStorage.removeItem('aj_role_lock');
+    if(standalone){
+      if(!role && !location.search){
+        var lk = localStorage.getItem('aj_role_lock_v2');
+        if(lk && MAP[lk] && lk!=='admin'){ role = lk; history.replaceState(null,'',location.pathname + MAP[lk].h); }
+      }
+      if(role && role!=='admin') localStorage.setItem('aj_role_lock_v2', role);
+      else if(role==='admin') localStorage.removeItem('aj_role_lock_v2');
     }
-    if(role && role!=='admin') localStorage.setItem('aj_role_lock', role);
-    else if(role==='admin') localStorage.removeItem('aj_role_lock');
   }catch(e){}
   var key = role || 'admin', r = MAP[key];
   window.__AJ_ROLE = key;

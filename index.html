@@ -11,7 +11,7 @@
    bukan balik ke halaman Admin. iOS kadang mengabaikan start_url, jadi peran juga dikunci di
    localStorage (aj_role_lock_v2, hanya dari app terinstall) dan dipakai saat app dibuka dari ikon tanpa hash. */
 (function(){
-  if(/^#album\//.test(location.hash)){ window.__AJ_ALBUM = true; return; } /* halaman publik album tamu: bukan peran apa pun */
+  if(/^#(album|layar)\//.test(location.hash)){ window.__AJ_ALBUM = true; return; } /* halaman publik album tamu: bukan peran apa pun */
   var MAP = { admin:{h:'#admin',n:'Admin'}, marketing:{h:'#marketing',n:'Marketing'}, client:{h:'#clientlink',n:'Klien'}, vendor:{h:'#vendorlink',n:'Vendor'} };
   var hs = location.hash, role = '';
   if(hs==='#clientlink'||hs==='#client') role='client';
@@ -8092,27 +8092,47 @@ async function albumDownloadQrCard(){
   const name = 'kartu-qr-album-' + (c.brideName || 'tamu').replace(/\W+/g, '_') + '.png';
   await new Promise(res => cv.toBlob(b => { if(b) albumSaveBlob(b, name); else albumDownloadDataUrl(cv.toDataURL('image/png'), name); res(); }, 'image/png'));
 }
+/* Pemuat skrip eksternal (dipakai ZIP). loadJs yang lama hanya ada di popup invoice, bukan di app utama. */
+function albumLoadJs(u){
+  return new Promise((ok, no) => {
+    const x = document.createElement('script'); x.src = u;
+    x.onload = ok;
+    x.onerror = () => no(new Error('Gagal memuat pustaka ZIP. Cek koneksi internet lalu coba lagi.'));
+    document.head.appendChild(x);
+  });
+}
 async function albumDownloadZip(btn, favOnly){
+  const PART = 100; /* foto per file ZIP: dipecah supaya memori HP tidak habis */
   const code = state.album.code, items = albumCache.items.filter(it => !favOnly || it.fv).reverse();
   if(!items.length){ showToast(favOnly ? 'Belum ada foto favorit. Tandai dulu dengan ☆ di lightbox.' : 'Belum ada foto untuk diunduh', true); return; }
-  const label = btn.textContent; btn.disabled = true;
+  const label = btn.textContent, parts = Math.ceil(items.length / PART);
+  const base = 'album-tamu-' + ((state.couple && state.couple.brideName) || 'wedding').replace(/\W+/g, '_') + (favOnly ? '-favorit' : '');
+  document.querySelectorAll('#albumZipBtn,#albumZipFavBtn').forEach(x => x.disabled = true);
+  let n = 0, skipped = 0, files = 0;
   try{
-    if(!window.JSZip) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
-    const zip = new JSZip(); let n = 0;
-    for(let i = 0; i < items.length; i++){
-      btn.textContent = 'Menyiapkan ' + (i + 1) + '/' + items.length + '…';
-      const r = await window.storage.get(albumFullKey(code, items[i].id), true).catch(() => null);
-      if(!r || !r.value) continue;
-      n++;
-      zip.file('foto-' + String(n).padStart(3, '0') + (items[i].n ? '-' + items[i].n.replace(/[^\w-]+/g, '_') : '') + '.jpg', r.value.split(',')[1], { base64:true });
+    if(!window.JSZip) await albumLoadJs('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    for(let p = 0; p < parts; p++){
+      const zip = new JSZip(), chunk = items.slice(p * PART, (p + 1) * PART), tag = parts > 1 ? 'Bagian ' + (p + 1) + '/' + parts + ' · ' : '';
+      let added = 0;
+      for(let i = 0; i < chunk.length; i++){
+        btn.textContent = tag + 'foto ' + (i + 1) + '/' + chunk.length + '…';
+        const r = await window.storage.get(albumFullKey(code, chunk[i].id), true).catch(() => null);
+        if(!r || !r.value){ skipped++; continue; }
+        n++; added++;
+        zip.file('foto-' + String(n).padStart(3, '0') + (chunk[i].n ? '-' + chunk[i].n.replace(/[^\w-]+/g, '_') : '') + '.jpg', r.value.split(',')[1], { base64:true });
+      }
+      if(!added) continue;
+      btn.textContent = tag + 'membuat ZIP…';
+      const blob = await zip.generateAsync({ type:'blob', compression:'STORE' }); /* JPG sudah terkompres: tanpa kompres = cepat & hemat memori */
+      const url = URL.createObjectURL(blob);
+      albumDownloadDataUrl(url, base + (parts > 1 ? '-bagian-' + (p + 1) + '-dari-' + parts : '') + '.zip'); files++;
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      if(p < parts - 1) await new Promise(res => setTimeout(res, 1200)); /* jeda agar browser tidak memblokir unduhan beruntun */
     }
-    btn.textContent = 'Membuat ZIP…';
-    const blob = await zip.generateAsync({ type:'blob' });
-    const url = URL.createObjectURL(blob);
-    albumDownloadDataUrl(url, 'album-tamu-' + ((state.couple && state.couple.brideName) || 'wedding').replace(/\W+/g, '_') + (favOnly ? '-favorit' : '') + '.zip');
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  }catch(e){ showToast('Gagal membuat ZIP: ' + (e && e.message || e), true); }
-  btn.textContent = label; btn.disabled = false;
+    showToast(n ? n + ' foto diunduh dalam ' + files + ' ZIP' + (skipped ? ' (' + skipped + ' gagal diambil)' : '') + (files > 1 ? '. Kalau ada yang tidak terunduh, izinkan unduhan berganda di browser.' : '') : 'Tidak ada foto yang berhasil diambil', !n);
+  }catch(e){ showToast('Gagal membuat ZIP: ' + (e && e.message || e) + (n ? ' (sudah ' + files + ' ZIP terunduh)' : ''), true); }
+  btn.textContent = label;
+  document.querySelectorAll('#albumZipBtn,#albumZipFavBtn').forEach(x => x.disabled = false);
 }
 
 /* ---------- Tab "Album Tamu" di dashboard (klien / admin / marketing) ---------- */
@@ -8138,6 +8158,8 @@ function renderAlbum(){
         <div class="album-row" style="margin-top:10px;justify-content:inherit">
           <button type="button" class="album-btn ghost" id="albumCopyBtn">🔗 Salin Link</button>
           <button type="button" class="album-btn" id="albumDlQrBtn">🖨️ Unduh Kartu QR</button>
+          <button type="button" class="album-btn gold" id="albumScreenBtn">📺 Mode Layar</button>
+          <button type="button" class="album-btn ghost" id="albumScreenLinkBtn">🖥️ Salin Link Layar</button>
         </div>
       </div></div>
       <label class="album-sw"><input type="checkbox" id="albumToggleOpen" ${a.enabled !== false ? 'checked' : ''}/><span><b>Album dibuka untuk tamu</b><small>Matikan setelah acara kalau tidak mau ada upload baru.</small></span></label>
@@ -8193,6 +8215,11 @@ function albumAfterRender(){
   const t1 = $('albumToggleOpen'); if(t1) t1.onchange = e => { a.enabled = e.target.checked; albumPersist(); albumSyncCfg(true); };
   const t2 = $('albumToggleView'); if(t2) t2.onchange = e => { a.guestView = e.target.checked; albumPersist(); albumSyncCfg(true); };
   on('albumRefreshBtn', () => albumLoadGrid(a.code, true));
+  on('albumScreenBtn', () => { const ov = document.createElement('div'); document.body.appendChild(ov); albumRunScreenShow({ root:ov, code:a.code, onClose:() => ov.remove() }); });
+  on('albumScreenLinkBtn', async () => {
+    const l = albumScreenLink(a.code), ok = await albumCopyText(l);
+    if(ok) showToast('Link layar disalin ✓'); else window.prompt('Salin link layar ini:', l);
+  });
   on('albumZipBtn', e => albumDownloadZip(e.currentTarget, false));
   on('albumZipFavBtn', e => albumDownloadZip(e.currentTarget, true));
   const seg = $('albumSeg'); if(seg){ seg.onclick = e => { const b = e.target.closest('button[data-s]'); if(!b) return; albumFavOnly = b.dataset.s === 'fav'; albumPaintGrid(); }; albumPaintGrid(); }
@@ -8221,6 +8248,139 @@ function albumAfterRender(){
   albumBindGrid(a.code, true);
   albumLoadGrid(a.code, false);
 }
+/* ---------- Slideshow layar venue: #layar/<kode> (publik, tanpa login) + tombol "Mode Layar" di dashboard ----------
+   Foto baru masuk lewat listener Firestore (onSnapshot: hanya foto baru/berubah yang ditagih, bukan baca ulang semua).
+   Kalau Firestore tidak tersedia -> cek ulang tiap 30 dtk. Foto baru tampil di giliran berikutnya, lalu sisanya diacak. */
+function albumScreenLink(code){ return location.href.split('?')[0].split('#')[0] + '#layar/' + code; }
+const ALBUM_SCREEN_CSS = `
+.asl{position:fixed;inset:0;z-index:99999;background:#0e0d10;color:#fff;overflow:hidden;font-family:'Plus Jakarta Sans',sans-serif;user-select:none}
+.asl.idle{cursor:none}
+.asl .ly{position:absolute;inset:0;background:center/contain no-repeat;opacity:0;transition:opacity 1.2s ease}
+.asl .ly.on{opacity:1}
+.asl .cp{position:absolute;left:0;right:0;bottom:0;padding:90px 6vw 4vh;text-align:center;background:linear-gradient(transparent,rgba(0,0,0,.8))}
+.asl .q{font:italic 700 clamp(22px,3.6vw,52px)/1.25 Georgia,serif;margin-bottom:10px;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.asl .w{font-size:clamp(14px,1.7vw,24px);opacity:.88;letter-spacing:.04em}
+.asl .nw{position:absolute;top:14px;left:14px;padding:8px 16px;border-radius:100px;background:#C6A15B;color:#3B1015;font-weight:800;font-size:clamp(13px,1.5vw,20px)}
+.asl .em{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px}
+.asl .em img{width:min(46vh,70vw);background:#fff;padding:14px;border-radius:18px}
+.asl .em h2{margin:0;font-size:clamp(24px,3.4vw,46px)}.asl .em p{margin:0;opacity:.75;font-size:clamp(14px,1.8vw,24px)}
+.asl .ct{position:absolute;top:12px;right:12px;display:flex;gap:8px;transition:opacity .4s}
+.asl.idle .ct{opacity:0;pointer-events:none}
+.asl .ct button{width:44px;height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:rgba(14,13,16,.6);color:#fff;font-size:18px;cursor:pointer}`;
+function albumRunScreenShow(o){
+  const root = o.root, code = o.code, link = albumLink(code);
+  if(!document.getElementById('albumScreenCss')){ const st = document.createElement('style'); st.id = 'albumScreenCss'; st.textContent = ALBUM_SCREEN_CSS; document.head.appendChild(st); }
+  root.innerHTML = `<div class="asl"><div class="ly"></div><div class="ly"></div><div class="nw" hidden>✨ Foto baru</div>
+    <div class="cp" hidden><div class="q"></div><div class="w"></div></div><div class="em" hidden></div>
+    <div class="ct"><button type="button" data-a="prev">⏮</button><button type="button" data-a="play">⏸</button><button type="button" data-a="next">⏭</button><button type="button" data-a="fs">⛶</button>${o.onClose ? '<button type="button" data-a="x">✕</button>' : ''}</div></div>`;
+  const R = root.querySelector('.asl'), lys = R.querySelectorAll('.ly'), cp = R.querySelector('.cp'), nw = R.querySelector('.nw'), em = R.querySelector('.em');
+  const items = new Map(), queue = [], hist = [], fullCache = new Map(), DWELL = 8000;
+  let order = [], front = 0, timer = 0, idleT = 0, poll = 0, paused = false, dead = false, started = false, loaded = false, polled = false, unsub = null, wl = null;
+  const shuffle = a => { for(let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const ingest = (m, isNew) => { if(!m || !m.id || !m.th) return; const had = items.has(m.id); items.set(m.id, m); if(!had) (isNew ? queue : order).push(m.id); };
+  const getFull = async id => {
+    if(fullCache.has(id)) return fullCache.get(id);
+    try{ const r = await window.storage.get(albumFullKey(code, id), true);
+      if(r && r.value){ fullCache.set(id, r.value); if(fullCache.size > 6) fullCache.delete(fullCache.keys().next().value); return r.value; } }catch(e){}
+    return null;
+  };
+  const show = async (id, isNew) => {
+    const m = items.get(id); if(!m) return;
+    const src = (await getFull(id)) || m.th; if(dead) return;
+    const nx = lys[1 - front]; nx.style.backgroundImage = 'url("' + src + '")';
+    nx.classList.add('on'); lys[front].classList.remove('on'); front = 1 - front;
+    cp.querySelector('.q').textContent = m.m ? '“' + m.m + '”' : '';
+    cp.querySelector('.w').textContent = (m.n ? m.n + ' · ' : '') + albumFmtTime(m.t) + (m.h > 0 ? '   ❤️ ' + m.h : '');
+    cp.hidden = !(m.m || m.n); nw.hidden = !isNew;
+    hist.push(id); if(hist.length > 50) hist.shift();
+  };
+  const pick = () => {
+    while(queue.length){ const id = queue.shift(); if(items.has(id)) return { id, nw:true }; }
+    for(let t = 0; t < 2; t++){
+      while(order.length){ const id = order.shift(); if(items.has(id)) return { id, nw:false }; }
+      order = shuffle([...items.keys()]);
+    }
+    return null;
+  };
+  const schedule = () => { clearTimeout(timer); if(!paused && !dead) timer = setTimeout(() => step(1), DWELL); };
+  const step = async dir => {
+    if(dir < 0){ if(hist.length > 1){ hist.pop(); await show(hist.pop(), false); } }
+    else { const p = pick(); if(p) await show(p.id, p.nw); }
+    schedule();
+  };
+  const afterItems = () => {
+    if(loaded && !items.size && !em.firstChild){
+      let qr = ''; try{ qr = '<img src="' + albumQrCanvas(link, 360).toDataURL('image/png') + '" alt=""/>'; }catch(e){}
+      em.innerHTML = qr + '<h2>Scan lalu upload fotomu</h2><p>Foto tamu akan muncul di layar ini secara langsung 📸</p>';
+    }
+    em.hidden = !!items.size || !loaded;
+    if(!started && items.size){ started = true; step(1); }
+  };
+  const poll1 = async () => {
+    try{
+      const list = await albumFetchThumbs(code), ids = new Set(list.map(x => x.id));
+      list.forEach(m => ingest(m, polled));
+      items.forEach((v, id) => { if(!ids.has(id)) items.delete(id); });
+      if(!polled){ polled = true; order = shuffle(order); loaded = true; }
+      afterItems();
+    }catch(e){ console.warn('layar: gagal memuat', e); }
+  };
+  const startPolling = () => { poll1(); poll = setInterval(poll1, 30000); };
+  const startLive = () => {
+    if(albumDemoReal || !(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore)){ startPolling(); return; }
+    const prefix = 'album_t_' + code + '_', fid = firebase.firestore.FieldPath.documentId(); let first = true;
+    try{
+      unsub = firebase.firestore().collection(FIREBASE_KV_COLLECTION).where(fid, '>=', prefix).where(fid, '<', prefix + '\uf8ff').onSnapshot(snap => {
+        snap.docChanges().forEach(ch => {
+          if(ch.type === 'removed'){ items.delete(ch.doc.id.slice(prefix.length)); return; }
+          let m = null; try{ m = JSON.parse(ch.doc.data().value); }catch(e){}
+          ingest(m, !first);
+        });
+        if(first){ first = false; order = shuffle(order); loaded = true; }
+        afterItems();
+      }, err => { console.warn('layar: listener berhenti, pakai cek berkala', err); try{ unsub && unsub(); }catch(e){} unsub = null; startPolling(); });
+    }catch(e){ startPolling(); }
+  };
+  const wake = () => { R.classList.remove('idle'); clearTimeout(idleT); idleT = setTimeout(() => R.classList.add('idle'), 3000); };
+  const lockScreen = async () => { try{ if(navigator.wakeLock) wl = await navigator.wakeLock.request('screen'); }catch(e){} };
+  const onVis = () => { if(!document.hidden && !dead) lockScreen(); };
+  const toggleFs = () => { if(document.fullscreenElement) document.exitFullscreen(); else if(R.requestFullscreen) R.requestFullscreen(); else if(R.webkitRequestFullscreen) R.webkitRequestFullscreen(); };
+  const close = () => {
+    dead = true; clearTimeout(timer); clearTimeout(idleT); clearInterval(poll);
+    try{ unsub && unsub(); }catch(e){} try{ wl && wl.release(); }catch(e){}
+    document.removeEventListener('keydown', onKey); document.removeEventListener('visibilitychange', onVis);
+    try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+    root.innerHTML = ''; if(o.onClose) o.onClose();
+  };
+  const onKey = e => {
+    wake();
+    if(e.key === 'ArrowRight') step(1); else if(e.key === 'ArrowLeft') step(-1);
+    else if(e.key === ' '){ e.preventDefault(); R.querySelector('[data-a="play"]').click(); }
+    else if(e.key === 'f' || e.key === 'F') toggleFs();
+    else if(e.key === 'Escape' && o.onClose && !document.fullscreenElement) close();
+  };
+  R.addEventListener('click', e => {
+    wake(); const b = e.target.closest('[data-a]'); if(!b) return; const a = b.dataset.a;
+    if(a === 'next') step(1); else if(a === 'prev') step(-1);
+    else if(a === 'play'){ paused = !paused; b.textContent = paused ? '▶' : '⏸'; schedule(); }
+    else if(a === 'fs') toggleFs(); else if(a === 'x') close();
+  });
+  ['mousemove', 'touchstart'].forEach(ev => R.addEventListener(ev, wake, { passive:true }));
+  document.addEventListener('keydown', onKey); document.addEventListener('visibilitychange', onVis);
+  wake(); lockScreen(); startLive();
+}
+async function initScreenShow(){
+  albumInjectCss();
+  const code = ((location.hash.split('/')[1] || '').toLowerCase()).replace(/[^a-z0-9]/g, '');
+  if(code === 'demo'){ albumDemoOn(); await albumDemoSeedOnce(); }
+  let cfg = null;
+  try{ const r = code ? await window.storage.get(albumCfgKey(code), true) : null; cfg = r && r.value ? JSON.parse(r.value) : null; }catch(e){}
+  if(!cfg){ albumGuestMsg('Album tidak ditemukan', 'Cek kembali link layar dari mempelai.'); return; }
+  if(cfg.guestView === false){ albumGuestMsg('Tampilan layar dimatikan', 'Aktifkan "Tamu boleh melihat foto tamu lain" di dashboard untuk memakai link layar ini.'); return; }
+  document.title = 'Layar ' + albumNames(cfg);
+  albumRunScreenShow({ root:document.getElementById('app'), code });
+}
+
 /* ---------- Halaman publik untuk tamu: #album/<kode> ----------
    Tampilan "kamera sekali pakai": landing -> viewfinder live (kamera belakang/depan, zoom) -> jepret ->
    hasil otomatis diberi filter vintage (warna hangat, pudar, grain, vignette, light leak, cap tanggal)
@@ -8590,7 +8750,7 @@ async function initGuestAlbum(opt){
   });
 }
 (async function init(){
-  if(window.__AJ_ALBUM){ await initGuestAlbum(); return; }
+  if(window.__AJ_ALBUM){ if(/^#layar\//.test(location.hash)) await initScreenShow(); else await initGuestAlbum(); return; }
   await initRoleFlow();
 })();
 

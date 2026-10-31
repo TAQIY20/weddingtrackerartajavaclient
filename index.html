@@ -18,6 +18,15 @@
   else if(hs==='#vendorlink'||hs==='#vendor') role='vendor';
   else if(hs==='#marketing') role='marketing';
   else if(hs==='#admin') role='admin';
+  /* iOS: ikon Home Screen sering terbuka TANPA hash (#marketing dll). Karena itu peran juga ditulis di
+     alamat sebagai ?peran=... (query tidak hilang di iOS, hash bisa hilang) dan dibaca di sini kalau hash kosong. */
+  var fromQuery = false;
+  if(!role && !hs){
+    try{
+      var qr = new URLSearchParams(location.search).get('peran') || '';
+      if(qr==='marketing' || qr==='client' || qr==='vendor'){ role = qr; fromQuery = true; }
+    }catch(e){}
+  }
   var standalone = false;
   try{ standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }catch(e){}
   try{
@@ -37,6 +46,31 @@
   }catch(e){}
   var key = role || 'admin', r = MAP[key];
   window.__AJ_ROLE = key;
+  /* Peran non-admin ikut ditempel di SETIAP perubahan alamat (replaceState/pushState) supaya ?peran=...
+     tidak hilang waktu app mengganti alamat sendiri. Admin = tanpa perubahan apa pun (perilaku lama). */
+  try{
+    var _rs = history.replaceState.bind(history), _ps = history.pushState.bind(history);
+    var withRole = function(u){
+      try{
+        if(u == null || key === 'admin') return u;
+        var x = new URL(String(u), location.href);
+        if(x.origin !== location.origin) return u;
+        x.searchParams.set('peran', key);
+        return x.pathname + x.search + x.hash;
+      }catch(e){ return u; }
+    };
+    history.replaceState = function(st, ti, u){ return _rs(st, ti, withRole(u)); };
+    history.pushState = function(st, ti, u){ return _ps(st, ti, withRole(u)); };
+    if(key !== 'admin'){
+      /* hash dipulihkan kalau hilang (iOS), lalu ?peran= ditulis ke alamat sekarang —
+         inilah alamat yang disimpan iPhone saat "Add to Home Screen". */
+      history.replaceState(null, '', location.pathname + location.search + (fromQuery ? r.h : location.hash));
+    } else {
+      /* link Admin yang masih membawa ?peran= basi: dibersihkan supaya tidak salah peran kalau hash hilang */
+      var sp = new URLSearchParams(location.search);
+      if(sp.has('peran')){ sp.delete('peran'); var qs = sp.toString(); _rs(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash); }
+    }
+  }catch(e){}
   try{
     var t = document.querySelector('meta[name="apple-mobile-web-app-title"]'); if(t) t.setAttribute('content','ArtaJava ' + r.n);
     fetch('manifest.webmanifest').then(function(x){ return x.json(); }).then(function(m){
@@ -44,7 +78,7 @@
       m.name = 'ArtaJava ' + r.n; m.short_name = 'ArtaJava ' + r.n;
       m.id = base.href + '?app=' + key;
       m.scope = base.href;
-      m.start_url = new URL(location.pathname, location.origin).href + r.h;
+      m.start_url = new URL(location.pathname, location.origin).href + (key !== 'admin' ? '?peran=' + key : '') + r.h;
       if(m.icons) m.icons.forEach(function(i){ i.src = new URL(i.src, base).href; });
       if(m.shortcuts) delete m.shortcuts;
       var link = document.querySelector('link[rel="manifest"]');

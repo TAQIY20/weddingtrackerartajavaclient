@@ -11,6 +11,7 @@
    bukan balik ke halaman Admin. iOS kadang mengabaikan start_url, jadi peran juga dikunci di
    localStorage (aj_role_lock_v2, hanya dari app terinstall) dan dipakai saat app dibuka dari ikon tanpa hash. */
 (function(){
+  if(/^#album\//.test(location.hash)){ window.__AJ_ALBUM = true; return; } /* halaman publik album tamu: bukan peran apa pun */
   var MAP = { admin:{h:'#admin',n:'Admin'}, marketing:{h:'#marketing',n:'Marketing'}, client:{h:'#clientlink',n:'Klien'}, vendor:{h:'#vendorlink',n:'Vendor'} };
   var hs = location.hash, role = '';
   if(hs==='#clientlink'||hs==='#client') role='client';
@@ -3345,6 +3346,8 @@ function notifyDiff(a, b){
   const newIds = (x, y)=>{ const old = new Set((x||'').split(',')); return (y||'').split(',').filter(i=> i && !old.has(i)); };
   const ar = (a.reqs && typeof a.reqs === 'object') ? a.reqs : {};
   Object.keys(b.reqs||{}).forEach(id=>{ if(!ar[id]) ev.push({ kind:'note', key:'req:'+id, target:b.reqs[id].t, detail:b.reqs[id].x }); });
+  // tanggal acara ditetapkan / diubah -> kabari klien & vendor di project ini
+  if(typeof a.wd === 'string' && b.wd && a.wd !== b.wd) ev.push({ kind:'wedding_date', key:'wd', date:b.wd, prev:a.wd });
   const TL_FIELDS = ['title','date','time','location','desc','status','cc','vk'];
   const ta = a.timeline || {}, tb = b.timeline || {};
   Object.keys(tb).forEach(id=>{
@@ -3394,6 +3397,10 @@ function notifyAfterPersist(){
       const k = e.key || [e.kind, e.vendorKey||'', e.what||''].join('|');
       const old = notifyPending.events[k];
       if(old && old.changes && e.changes) e.changes = Array.from(new Set(old.changes.concat(e.changes)));
+      if(old && e.kind === 'wedding_date'){
+        e.prev = old.prev; // tanggal awal sebelum rangkaian perubahan dalam jeda ini
+        if(e.prev === e.date){ delete notifyPending.events[k]; return; } // dikembalikan ke semula: tidak perlu notif
+      }
       if(old && e.kind === 'moodboard' && old.detail) e.detail = Array.from(new Set(old.detail.split(', ').concat(e.detail ? e.detail.split(', ') : []))).join(', ');
       notifyPending.events[k] = e;
     });
@@ -5793,6 +5800,7 @@ function render(){
   notifyEnsureBase();
   if(isSupplier && currentTab==='pembayaran'){ currentTab = 'beranda'; }
   if(!isVendor && currentTab==='notifikasi'){ currentTab = 'beranda'; }
+  if((isVendor || isSupplier) && currentTab==='album'){ currentTab = 'beranda'; }
   const app = document.getElementById('app');
   const totalItems = state.timeline.length;
   const doneItems = state.timeline.filter(t=>t.status==='done').length;
@@ -5880,6 +5888,7 @@ function render(){
         ${!isSupplier ? navItem('pembayaran','💳','Pembayaran') : ''}
         ${navItem('detail','📋','Detail Acara')}
         ${navItem('moodboard','🎨','Moodboard')}
+        ${(!isVendor && !isSupplier) ? navItem('album','📸','Album Tamu') : ''}
         ${isVendor ? navItem('notifikasi','🔔','Notifikasi') : ''}
       </div>
     </nav>
@@ -5961,6 +5970,7 @@ function render(){
     ${!isSupplier ? `<section class="panel ${currentTab==='pembayaran'?'active':''}">${renderPayments()}</section>` : ''}
     <section class="panel ${currentTab==='detail'?'active':''}">${renderDetailAcara()}</section>
     <section class="panel ${currentTab==='moodboard'?'active':''}">${renderMoodboard()}</section>
+    ${(!isVendor && !isSupplier) ? `<section class="panel ${currentTab==='album'?'active':''}">${currentTab==='album' ? renderAlbum() : ''}</section>` : ''}
     ${isVendor ? `<section class="panel ${currentTab==='notifikasi'?'active':''}">${renderNotifikasi()}</section>` : ''}
 
     <footer>
@@ -5998,6 +6008,7 @@ const TAB_META = {
   detail:{emoji:'📋', label:'Detail Acara'},
   moodboard:{emoji:'🎨', label:'Moodboard'},
   notifikasi:{emoji:'🔔', label:'Notifikasi'},
+  album:{emoji:'📸', label:'Album Tamu'},
 };
 function currentTabIcon(tab){ return (TAB_META[tab]||TAB_META.beranda).emoji; }
 function currentTabLabel(tab){ return (TAB_META[tab]||TAB_META.beranda).label; }
@@ -7627,7 +7638,361 @@ function attachHandlers(){
   });
 }
 
+/* ================= ALBUM TAMU (QR) =================
+   Tamu scan QR -> halaman publik #album/<kode> -> upload foto tanpa login. Foto dikompres di HP tamu
+   lalu disimpan di backend yang sama (window.storage / Firestore wedding_kv), terpisah dari data project:
+   - album_cfg_<kode>   : info publik ringan (nama mempelai, tanggal, buka/tutup). Halaman tamu HANYA membaca ini,
+                          jadi data project (pembayaran dll) tidak pernah ikut terbuka ke tamu.
+   - album_t_<kode>_<id>: metadata + thumbnail kecil (dibaca untuk galeri)
+   - album_f_<kode>_<id>: foto penuh (dataURL, dibaca hanya saat dibuka / diunduh)
+   Data album di project cuma {code, enabled, guestView} di state.album. */
+const ALBUM_CSS = `
+.album-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 20px;border-radius:100px;border:none;background:var(--pink);color:#fff;font:inherit;font-weight:700;font-size:13.5px;cursor:pointer;transition:transform .15s,opacity .15s}
+.album-btn:hover{transform:translateY(-1px)}.album-btn:disabled{opacity:.55;cursor:default;transform:none}
+.album-btn.ghost{background:transparent;color:var(--pink);border:1px solid var(--card-border)}
+.album-btn.gold{background:var(--gold);color:var(--ink)}
+.album-btn.danger{background:var(--danger)}
+.album-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.album-top{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
+@media(max-width:560px){.album-top{grid-template-columns:1fr;justify-items:center;text-align:center}}
+.album-qrbox{background:#fff;padding:12px;border-radius:16px;border:1px solid var(--card-border);line-height:0}
+.album-qrbox img,.album-qrbox canvas{max-width:100%;height:auto}
+.album-link{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--card-border);background:var(--field-bg);color:var(--ink);font:inherit;font-size:12.5px}
+.album-sw{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--card-border);font-size:13.5px}
+.album-sw input{margin-top:3px;width:18px;height:18px;accent-color:var(--pink)}
+.album-sw small{display:block;color:var(--cream-dim);font-size:12px;margin-top:2px}
+.album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px}
+.album-thumb{position:relative;aspect-ratio:1/1;border:none;padding:0;border-radius:12px;overflow:hidden;background:var(--card);cursor:pointer}
+.album-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.album-thumb span{position:absolute;left:0;right:0;bottom:0;padding:14px 6px 4px;font-size:10.5px;color:#fff;text-align:left;background:linear-gradient(transparent,rgba(0,0,0,.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.album-empty{padding:26px 10px;text-align:center;color:var(--cream-dim);font-size:13.5px;grid-column:1/-1}
+.album-lb{position:fixed;inset:0;z-index:99999;background:rgba(20,6,8,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;gap:12px}
+.album-lb img{max-width:100%;max-height:78vh;border-radius:10px;object-fit:contain}
+.album-lb .cap{color:#fff;font-size:13px;opacity:.85;text-align:center}
+.album-guest{min-height:100vh;background:var(--bg);padding:18px 14px 40px}
+.ag-wrap{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.ag-hero{text-align:center;padding:26px 8px 6px}
+.ag-kicker{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold-deep);font-weight:700}
+.ag-hero h1{font-family:'Fraunces',Georgia,serif;font-size:34px;line-height:1.15;margin:8px 0 4px;color:var(--ink)}
+.ag-date{color:var(--cream-dim);font-size:14px}
+.ag-hero p{color:var(--cream-dim);font-size:14px;line-height:1.55;margin:12px 6px 0}
+.ag-card{background:#fff;border:1px solid var(--card-border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-card)}
+.ag-card label{display:block;font-size:12px;font-weight:700;color:var(--cream-dim);margin-bottom:6px}
+.ag-card input[type=text]{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--card-border);background:var(--field-bg);font:inherit;color:var(--ink);margin-bottom:12px}
+.ag-big{width:100%;padding:15px;font-size:15px}
+.ag-status{margin-top:12px;font-size:13.5px;line-height:1.5;color:var(--cream)}
+.ag-bar{height:6px;border-radius:6px;background:var(--card-border);overflow:hidden;margin-top:8px}.ag-bar i{display:block;height:100%;background:var(--gold);width:0;transition:width .25s}
+.ag-gh{display:flex;justify-content:space-between;align-items:center;font-size:14px}
+.ag-gh span{color:var(--cream-dim);font-size:12px}
+.ag-foot{text-align:center;font-size:12px;color:var(--cream-dimmer);padding-top:6px}
+.ag-msg{max-width:420px;margin:18vh auto 0;text-align:center;color:var(--ink)}
+.ag-msg h2{font-family:'Fraunces',Georgia,serif;font-size:26px;margin:0 0 8px}
+`;
+function albumInjectCss(){
+  if(document.getElementById('albumCss')) return;
+  const s = document.createElement('style'); s.id = 'albumCss'; s.textContent = ALBUM_CSS; document.head.appendChild(s);
+}
+function albumNewCode(){
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789', b = new Uint8Array(10);
+  crypto.getRandomValues(b);
+  return Array.from(b, x => abc[x % abc.length]).join('');
+}
+const albumCfgKey = c => 'album_cfg_' + c;
+const albumThumbKey = (c, id) => 'album_t_' + c + '_' + id;
+const albumFullKey = (c, id) => 'album_f_' + c + '_' + id;
+function albumLink(code){ return location.href.split('?')[0].split('#')[0] + '#album/' + code; }
+function albumFmtDate(iso){
+  try{ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }) : ''; }catch(e){ return ''; }
+}
+function albumFmtTime(ts){
+  try{ return new Date(ts).toLocaleString('id-ID', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); }catch(e){ return ''; }
+}
+function albumNames(c){ return [c.bride, c.groom].filter(Boolean).join(' & ') || 'Pernikahan Kami'; }
+
+let albumCache = { code:'', items:[], at:0, loading:false, err:'' };
+let albumLastCfg = '';
+let albumCanDelete = false;
+
+function albumBuildCfg(){
+  const a = state.album, c = state.couple || {};
+  return { code:a.code, enabled:a.enabled !== false, guestView:a.guestView !== false, bride:c.brideName || '', groom:c.groomName || '', date:c.weddingDate || '' };
+}
+async function albumSyncCfg(force){
+  if(!state || !state.album || !state.album.code || isDemoMode) return true;
+  const cfg = JSON.stringify(albumBuildCfg());
+  if(!force && albumLastCfg === cfg) return true;
+  const ok = await storageSetWithRetry(albumCfgKey(state.album.code), cfg, true, 2);
+  if(ok) albumLastCfg = cfg;
+  return ok;
+}
+/* Ambil metadata + thumbnail semua foto album (satu query kalau Firestore tersedia). */
+async function albumFetchThumbs(code){
+  const prefix = 'album_t_' + code + '_', out = [];
+  if(window.firebase && firebase.apps && firebase.apps.length && firebase.firestore){
+    const snap = await firebase.firestore().collection(FIREBASE_KV_COLLECTION)
+      .where(firebase.firestore.FieldPath.documentId(), '>=', prefix)
+      .where(firebase.firestore.FieldPath.documentId(), '<', prefix + '\uf8ff').get();
+    snap.forEach(d => { try{ const m = JSON.parse(d.data().value); if(m && m.id && m.th) out.push(m); }catch(e){} });
+  } else {
+    const r = await window.storage.list(prefix, true);
+    for(const k of ((r && r.keys) || [])){
+      try{ const g = await window.storage.get(prefix + k, true); const m = g && g.value ? JSON.parse(g.value) : null; if(m && m.id && m.th) out.push(m); }catch(e){}
+    }
+  }
+  return out.sort((a, b) => (b.t || 0) - (a.t || 0));
+}
+function albumGridHtml(){
+  if(albumCache.loading && !albumCache.items.length) return '<div class="album-empty">Memuat foto…</div>';
+  if(albumCache.err && !albumCache.items.length) return '<div class="album-empty">Gagal memuat foto. Coba muat ulang.</div>';
+  if(!albumCache.items.length) return '<div class="album-empty">Belum ada foto. Jadi yang pertama upload ya 📸</div>';
+  return albumCache.items.map(it => `<button type="button" class="album-thumb" data-id="${escapeAttr(it.id)}"><img src="${it.th}" alt="" loading="lazy"/>${it.n ? `<span>${escapeHtml(it.n)}</span>` : ''}</button>`).join('');
+}
+function albumPaintGrid(){
+  const g = document.getElementById('albumGrid'); if(g) g.innerHTML = albumGridHtml();
+  const c = document.getElementById('albumCount'); if(c) c.textContent = albumCache.items.length ? albumCache.items.length + ' foto' : '';
+}
+async function albumLoadGrid(code, force){
+  if(albumCache.loading) return;
+  if(!force && albumCache.code === code && Date.now() - albumCache.at < 15000){ albumPaintGrid(); return; }
+  if(albumCache.code !== code){ albumCache = { code, items:[], at:0, loading:false, err:'' }; }
+  albumCache.loading = true; albumCache.err = ''; albumPaintGrid();
+  try{ albumCache.items = await albumFetchThumbs(code); albumCache.at = Date.now(); }
+  catch(e){ albumCache.err = String(e && e.message || e); }
+  albumCache.loading = false; albumPaintGrid();
+}
+function albumDownloadDataUrl(dataUrl, name){
+  const a = document.createElement('a'); a.href = dataUrl; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+async function albumOpenLightbox(code, id, canDelete){
+  const item = albumCache.items.find(x => x.id === id); if(!item) return;
+  const lb = document.createElement('div'); lb.className = 'album-lb';
+  lb.innerHTML = `<img src="${item.th}" alt="" style="filter:blur(2px)"/><div class="cap">${item.n ? escapeHtml(item.n) + ' · ' : ''}${escapeHtml(albumFmtTime(item.t))}</div>
+    <div class="album-row" style="justify-content:center"><button type="button" class="album-btn gold" data-a="dl">⬇️ Unduh</button>${canDelete ? '<button type="button" class="album-btn danger" data-a="del">🗑️ Hapus</button>' : ''}<button type="button" class="album-btn ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" data-a="x">Tutup</button></div>`;
+  document.body.appendChild(lb);
+  let full = '';
+  const img = lb.querySelector('img');
+  window.storage.get(albumFullKey(code, id), true).then(r => { if(r && r.value){ full = r.value; img.src = full; img.style.filter = ''; } }).catch(() => {});
+  lb.addEventListener('click', async e => {
+    const a = e.target.closest('[data-a]');
+    if(e.target === lb || (a && a.dataset.a === 'x')){ lb.remove(); return; }
+    if(!a) return;
+    if(a.dataset.a === 'dl'){
+      if(!full){ showToast('Foto masih dimuat, coba sebentar lagi', true); return; }
+      albumDownloadDataUrl(full, 'foto-' + (item.n ? item.n.replace(/[^\w-]+/g, '_') + '-' : '') + id + '.jpg');
+    } else if(a.dataset.a === 'del'){
+      if(!confirm('Hapus foto ini dari album?')) return;
+      try{
+        await window.storage.delete(albumThumbKey(code, id), true);
+        await window.storage.delete(albumFullKey(code, id), true).catch(() => {});
+        albumCache.items = albumCache.items.filter(x => x.id !== id); albumPaintGrid(); lb.remove(); showToast('Foto dihapus');
+      }catch(err){ showToast('Gagal menghapus foto', true); }
+    }
+  });
+}
+function albumBindGrid(code, canDelete){
+  const g = document.getElementById('albumGrid'); if(!g || g.dataset.bound) return;
+  g.dataset.bound = '1';
+  g.addEventListener('click', e => { const b = e.target.closest('.album-thumb'); if(b) albumOpenLightbox(code, b.dataset.id, canDelete); });
+}
+let albumQrLoading = null;
+function albumEnsureQrLib(){
+  if(window.QRCode) return Promise.resolve();
+  if(!albumQrLoading) albumQrLoading = loadJs('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js');
+  return albumQrLoading;
+}
+async function albumDownloadQrCard(){
+  const a = state.album, c = state.couple || {};
+  await albumEnsureQrLib();
+  const tmp = document.createElement('div'); tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(tmp);
+  new QRCode(tmp, { text:albumLink(a.code), width:640, height:640, correctLevel:QRCode.CorrectLevel.M });
+  await new Promise(r => setTimeout(r, 120));
+  const qc = tmp.querySelector('canvas');
+  const W = 1080, H = 1500, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#F7EEDA'; x.fillRect(0, 0, W, H);
+  x.strokeStyle = '#C6A15B'; x.lineWidth = 6; x.strokeRect(40, 40, W - 80, H - 80);
+  x.lineWidth = 2; x.strokeRect(62, 62, W - 124, H - 124);
+  x.textAlign = 'center'; x.fillStyle = '#9C7A34'; x.font = '700 30px Arial, sans-serif';
+  x.fillText('B A G I K A N   M O M E N M U', W / 2, 200);
+  x.fillStyle = '#3B1015'; x.font = 'italic 86px Georgia, serif';
+  x.fillText(c.brideName || 'Mempelai', W / 2, 330);
+  x.fillStyle = '#C6A15B'; x.font = '60px Georgia, serif'; x.fillText('&', W / 2, 405);
+  x.fillStyle = '#3B1015'; x.font = 'italic 86px Georgia, serif'; x.fillText(c.groomName || 'Mempelai', W / 2, 500);
+  const d = albumFmtDate(c.weddingDate);
+  if(d){ x.fillStyle = 'rgba(59,16,21,.66)'; x.font = '34px Georgia, serif'; x.fillText(d, W / 2, 565); }
+  const qs = 640, qx = (W - qs) / 2, qy = 640;
+  x.fillStyle = '#fff'; x.fillRect(qx - 30, qy - 30, qs + 60, qs + 60);
+  x.imageSmoothingEnabled = false;
+  if(qc) x.drawImage(qc, qx, qy, qs, qs);
+  x.fillStyle = '#3B1015'; x.font = '700 40px Arial, sans-serif';
+  x.fillText('Scan, lalu upload fotomu 📸', W / 2, 1400 - 280);
+  x.fillStyle = 'rgba(59,16,21,.66)'; x.font = '30px Arial, sans-serif';
+  x.fillText('Tanpa login · tanpa install aplikasi', W / 2, 1400 - 225);
+  x.fillStyle = '#9C7A34'; x.font = '700 26px Arial, sans-serif';
+  x.fillText('ArtaJava Wedding Organizer', W / 2, 1400 - 120);
+  tmp.remove();
+  albumDownloadDataUrl(cv.toDataURL('image/png'), 'kartu-qr-album-' + (c.brideName || 'tamu').replace(/\W+/g, '_') + '.png');
+}
+async function albumDownloadZip(btn){
+  const code = state.album.code, items = albumCache.items.slice().reverse();
+  if(!items.length){ showToast('Belum ada foto untuk diunduh', true); return; }
+  const label = btn.textContent; btn.disabled = true;
+  try{
+    if(!window.JSZip) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    const zip = new JSZip(); let n = 0;
+    for(let i = 0; i < items.length; i++){
+      btn.textContent = 'Menyiapkan ' + (i + 1) + '/' + items.length + '…';
+      const r = await window.storage.get(albumFullKey(code, items[i].id), true).catch(() => null);
+      if(!r || !r.value) continue;
+      n++;
+      zip.file('foto-' + String(n).padStart(3, '0') + (items[i].n ? '-' + items[i].n.replace(/[^\w-]+/g, '_') : '') + '.jpg', r.value.split(',')[1], { base64:true });
+    }
+    btn.textContent = 'Membuat ZIP…';
+    const blob = await zip.generateAsync({ type:'blob' });
+    const url = URL.createObjectURL(blob);
+    albumDownloadDataUrl(url, 'album-tamu-' + ((state.couple && state.couple.brideName) || 'wedding').replace(/\W+/g, '_') + '.zip');
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }catch(e){ showToast('Gagal membuat ZIP: ' + (e && e.message || e), true); }
+  btn.textContent = label; btn.disabled = false;
+}
+
+/* ---------- Tab "Album Tamu" di dashboard (klien / admin / marketing) ---------- */
+function renderAlbum(){
+  albumInjectCss();
+  const a = state.album;
+  const head = `<div class="section-head"><div><h2>Album Tamu</h2><p>Tamu scan QR di meja, upload foto dari HP tanpa login, dan semuanya terkumpul rapi di sini.</p></div></div>`;
+  if(isDemoMode) return head + `<div class="mb-card"><h3>📌 Mode Demo</h3><p style="font-size:13.5px;color:var(--cream-dim);line-height:1.6">Album Tamu tidak aktif di Mode Demo. Fitur ini bisa dipakai di project asli.</p></div>`;
+  if(!a || !a.code){
+    return head + `<div class="mb-card"><h3>📸 Kumpulkan foto dari sudut pandang tamu</h3>
+      <p style="font-size:13.5px;color:var(--cream-dim);line-height:1.65;margin:6px 0 14px">Aktifkan album, lalu cetak kartu QR untuk ditaruh di meja tamu. Tamu cukup scan, pilih foto, dan selesai. Kamu bisa melihat, mengunduh, atau menghapus foto kapan saja.</p>
+      <button type="button" class="album-btn" id="albumEnableBtn">📸 Aktifkan Album Tamu</button></div>`;
+  }
+  albumCanDelete = true;
+  return head + `
+    <div class="mb-card"><div class="album-top">
+      <div class="album-qrbox" id="albumQr" style="width:204px;height:204px"></div>
+      <div style="min-width:0;width:100%">
+        <h3 style="margin:0 0 6px">QR Album Tamu</h3>
+        <input class="album-link" id="albumLinkBox" readonly value="${escapeAttr(albumLink(a.code))}"/>
+        <div class="album-row" style="margin-top:10px;justify-content:inherit">
+          <button type="button" class="album-btn ghost" id="albumCopyBtn">🔗 Salin Link</button>
+          <button type="button" class="album-btn" id="albumDlQrBtn">🖨️ Unduh Kartu QR</button>
+        </div>
+      </div></div>
+      <label class="album-sw"><input type="checkbox" id="albumToggleOpen" ${a.enabled !== false ? 'checked' : ''}/><span><b>Album dibuka untuk tamu</b><small>Matikan setelah acara kalau tidak mau ada upload baru.</small></span></label>
+      <label class="album-sw"><input type="checkbox" id="albumToggleView" ${a.guestView !== false ? 'checked' : ''}/><span><b>Tamu boleh melihat foto tamu lain</b><small>Kalau dimatikan, tamu hanya bisa upload tanpa melihat galeri.</small></span></label>
+    </div>
+    <div class="mb-card">
+      <div class="album-row" style="justify-content:space-between"><h3 style="margin:0">🖼️ Foto Tamu <span id="albumCount" style="font-size:12px;color:var(--cream-dim);font-weight:500"></span></h3>
+        <div class="album-row"><button type="button" class="album-btn ghost" id="albumRefreshBtn">↻ Muat ulang</button><button type="button" class="album-btn gold" id="albumZipBtn">⬇️ Unduh Semua (ZIP)</button></div></div>
+      <div class="album-grid" id="albumGrid">${albumCache.code === a.code ? albumGridHtml() : '<div class="album-empty">Memuat foto…</div>'}</div>
+    </div>`;
+}
+function albumAfterRender(){
+  albumInjectCss();
+  const a = state && state.album;
+  const en = document.getElementById('albumEnableBtn');
+  if(en) en.onclick = async () => {
+    if(isDemoMode) return;
+    state.album = { code:albumNewCode(), enabled:true, guestView:true };
+    scheduleSave(); await albumSyncCfg(true); render();
+  };
+  if(!a || !a.code || isDemoMode) return;
+  albumSyncCfg(false);
+  const $ = id => document.getElementById(id);
+  albumEnsureQrLib().then(() => {
+    const box = $('albumQr'); if(!box) return; box.innerHTML = '';
+    new QRCode(box, { text:albumLink(a.code), width:180, height:180, correctLevel:QRCode.CorrectLevel.M });
+  }).catch(() => { const box = $('albumQr'); if(box) box.innerHTML = '<div style="font-size:12px;line-height:1.4;padding:20px;color:#333">QR gagal dimuat. Gunakan link di samping.</div>'; });
+  $('albumCopyBtn').onclick = async () => {
+    try{ await navigator.clipboard.writeText(albumLink(a.code)); showToast('Link album disalin ✓'); }
+    catch(e){ const b = $('albumLinkBox'); b.select(); document.execCommand('copy'); showToast('Link album disalin ✓'); }
+  };
+  $('albumDlQrBtn').onclick = () => albumDownloadQrCard().catch(() => showToast('Gagal membuat kartu QR', true));
+  $('albumToggleOpen').onchange = e => { a.enabled = e.target.checked; scheduleSave(); albumSyncCfg(true); };
+  $('albumToggleView').onchange = e => { a.guestView = e.target.checked; scheduleSave(); albumSyncCfg(true); };
+  $('albumRefreshBtn').onclick = () => albumLoadGrid(a.code, true);
+  $('albumZipBtn').onclick = e => albumDownloadZip(e.currentTarget);
+  albumBindGrid(a.code, true);
+  albumLoadGrid(a.code, false);
+}
+(function(){
+  const _render = render;
+  render = function(){ const r = _render.apply(this, arguments); try{ if(currentTab === 'album') albumAfterRender(); }catch(e){ console.warn('album', e); } return r; };
+})();
+
+/* ---------- Halaman publik untuk tamu: #album/<kode> ---------- */
+function albumGuestMsg(title, text){
+  document.getElementById('app').innerHTML = `<div class="album-guest"><div class="ag-msg"><h2>${escapeHtml(title)}</h2><p style="color:var(--cream-dim);line-height:1.6">${escapeHtml(text)}</p></div></div>`;
+}
+async function initGuestAlbum(){
+  albumInjectCss();
+  const code = ((location.hash.split('/')[1] || '').toLowerCase()).replace(/[^a-z0-9]/g, '');
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="album-guest"><div class="ag-msg"><p style="color:var(--cream-dim)">Membuka album…</p></div></div>';
+  let cfg = null;
+  try{ const r = code ? await window.storage.get(albumCfgKey(code), true) : null; cfg = r && r.value ? JSON.parse(r.value) : null; }catch(e){}
+  if(!cfg){ albumGuestMsg('Album tidak ditemukan', 'Pastikan kamu scan QR yang benar, atau minta link terbaru ke mempelai.'); return; }
+  if(!cfg.enabled){ albumGuestMsg('Album sudah ditutup', 'Terima kasih sudah hadir dan ikut merayakan 💗'); return; }
+  document.title = 'Album ' + albumNames(cfg);
+  const showGallery = cfg.guestView !== false;
+  const d = albumFmtDate(cfg.date);
+  const CAP = 40, capKey = 'aj_album_cnt_' + code;
+  let savedName = ''; try{ savedName = localStorage.getItem('aj_album_name') || ''; }catch(e){}
+  app.innerHTML = `<div class="album-guest"><div class="ag-wrap">
+    <div class="ag-hero"><div class="ag-kicker">Bagikan Momenmu</div><h1>${escapeHtml(albumNames(cfg))}</h1>${d ? `<div class="ag-date">${escapeHtml(d)}</div>` : ''}
+      <p>Terima kasih sudah hadir 💗 Upload foto-foto terbaikmu hari ini, supaya kami bisa mengenang momen ini dari sudut pandangmu.</p></div>
+    <div class="ag-card">
+      <label for="agName">Nama kamu (boleh dikosongkan)</label>
+      <input type="text" id="agName" maxlength="30" placeholder="mis. Tante Rina" value="${escapeAttr(savedName)}"/>
+      <button type="button" class="album-btn ag-big" id="agPick">📷 Pilih / Ambil Foto</button>
+      <input type="file" id="agFile" accept="image/*" multiple hidden/>
+      <div class="ag-status" id="agStatus"></div>
+    </div>
+    ${showGallery ? `<div class="ag-card"><div class="ag-gh"><b>Foto dari para tamu</b><span id="albumCount"></span></div><div class="album-grid" id="albumGrid"></div></div>` : ''}
+    <div class="ag-foot">ArtaJava Wedding Organizer</div></div></div>`;
+  const $ = id => document.getElementById(id);
+  const status = $('agStatus');
+  if(showGallery){ albumBindGrid(code, false); albumLoadGrid(code, true); }
+  $('agPick').onclick = () => $('agFile').click();
+  $('agFile').onchange = async e => {
+    const files = Array.from(e.target.files || []).slice(0, 15); e.target.value = '';
+    if(!files.length) return;
+    const name = $('agName').value.trim().slice(0, 30);
+    try{ localStorage.setItem('aj_album_name', name); }catch(err){}
+    let used = 0; try{ used = parseInt(localStorage.getItem(capKey) || '0', 10) || 0; }catch(err){}
+    const room = Math.max(0, CAP - used);
+    if(!room){ status.innerHTML = 'Kamu sudah mengunggah batas maksimal foto dari HP ini 💗 Terima kasih!'; return; }
+    const todo = files.slice(0, room);
+    $('agPick').disabled = true;
+    let ok = 0, fail = 0;
+    for(let i = 0; i < todo.length; i++){
+      status.innerHTML = `Mengunggah foto ${i + 1} dari ${todo.length}…<div class="ag-bar"><i style="width:${Math.round(i / todo.length * 100)}%"></i></div>`;
+      try{
+        const full = await compressImageFile(todo[i], { maxChars:650000, maxDim:1600 });
+        const th = await compressImageFile(todo[i], { maxChars:22000, maxDim:320 });
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        if(!await storageSetWithRetry(albumFullKey(code, id), full, true, 2)) throw new Error('simpan gagal');
+        const meta = { id, n:name, t:Date.now(), th };
+        if(!await storageSetWithRetry(albumThumbKey(code, id), JSON.stringify(meta), true, 2)){
+          await window.storage.delete(albumFullKey(code, id), true).catch(() => {}); throw new Error('simpan gagal');
+        }
+        ok++; used++;
+        if(showGallery && albumCache.code === code){ albumCache.items.unshift(meta); albumPaintGrid(); }
+      }catch(err){ fail++; }
+    }
+    try{ localStorage.setItem(capKey, String(used)); }catch(err){}
+    $('agPick').disabled = false;
+    let msg = ok ? `✅ ${ok} foto terkirim. Terima kasih 💗 Kamu bisa menambah foto lagi kapan saja.` : '';
+    if(fail) msg += `${msg ? '<br>' : ''}⚠️ ${fail} foto gagal diunggah (cek koneksi lalu coba lagi).`;
+    if(files.length > todo.length) msg += `<br>Sebagian foto dilewati karena batas per HP sudah tercapai.`;
+    status.innerHTML = msg;
+  };
+}
+
 (async function init(){
+  if(window.__AJ_ALBUM){ await initGuestAlbum(); return; }
   await initRoleFlow();
 })();
 

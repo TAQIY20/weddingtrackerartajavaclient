@@ -6345,14 +6345,40 @@ function printBriefing(innerHtml){
 @page{size:A4;margin:12mm}
 body{margin:0;background:#eee;font-family:Arial,Helvetica,sans-serif}
 .bar{position:sticky;top:0;background:#7A1F2E;padding:10px;text-align:center;z-index:5}
-.bar button{background:#C6A15B;border:0;border-radius:8px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer}
+.bar button{background:#C6A15B;border:0;border-radius:8px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer}.bar button:disabled{opacity:.6;cursor:wait}
 .page{max-width:820px;margin:12px auto;background:#fff;padding:0}
 .brand{text-align:center;padding:14px 0 0}.brand img{height:54px}
 ${BRIEFING_CSS}
 .bf-sheet{border:0;border-radius:0}
 @media print{body{background:#fff}.noprint{display:none!important}.page{margin:0;max-width:none}.bf-sheet{padding:0}}
 </style></head><body>
-<div class="bar noprint"><button onclick="window.print()">🖨️ Cetak / Simpan PDF</button></div>
+<div class="bar noprint"><button id="btnDl" onclick="dlPdf()">⬇️ Unduh PDF</button> <button onclick="window.print()">🖨️ Cetak</button></div>
+<script>
+const FN=${JSON.stringify(title).replace(/</g,'\\u003c')};
+function loadJs(u){return new Promise((ok,no)=>{const x=document.createElement('script');x.src=u;x.onload=ok;x.onerror=no;document.head.appendChild(x);});}
+async function dlPdf(){
+  const b=document.getElementById('btnDl'),t=b.textContent;b.disabled=true;b.textContent='Membuat PDF…';
+  try{
+    if(!window.html2canvas) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    if(!window.jspdf) await loadJs('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    window.scrollTo(0,0);
+    const c=await html2canvas(document.querySelector('.page'),{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const pdf=new window.jspdf.jsPDF({unit:'mm',format:'a4'});
+    const M=8, cw=210-2*M, ch=297-2*M;
+    const slicePx=Math.floor(c.width*ch/cw);
+    for(let y=0,pg=0;y<c.height;y+=slicePx,pg++){
+      const hPx=Math.min(slicePx,c.height-y);
+      const s=document.createElement('canvas');s.width=c.width;s.height=hPx;
+      const g=s.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,s.width,s.height);
+      g.drawImage(c,0,y,c.width,hPx,0,0,c.width,hPx);
+      if(pg>0) pdf.addPage();
+      pdf.addImage(s.toDataURL('image/jpeg',0.95),'JPEG',M,M,cw,cw*hPx/c.width);
+    }
+    pdf.save(FN.replace(/[\\/:*?"<>|]+/g,'').trim()+'.pdf');
+  }catch(e){ alert('Unduh PDF otomatis gagal (cek koneksi internet). Gunakan tombol Cetak, lalu pilih Simpan sebagai PDF.'); }
+  b.disabled=false;b.textContent=t;
+}
+<\/script>
 <div class="page"><div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava"/></div><div class="bf-sheet">${sanitizeBriefingHtml(innerHtml)}</div></div>
 </body></html>`;
   const w = window.open('', '_blank');

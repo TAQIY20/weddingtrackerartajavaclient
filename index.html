@@ -1567,6 +1567,7 @@ function normalizeState(s){
   if(!s.invoiceInfo || typeof s.invoiceInfo !== 'object') s.invoiceInfo = {};
   ['customerName','address','phone','nb'].forEach(k=>{ if(typeof s.invoiceInfo[k] !== 'string') s.invoiceInfo[k] = ''; });
   if(!Array.isArray(s.bonuses)) s.bonuses = [];
+  if(!s.briefingDraft || typeof s.briefingDraft !== 'object') s.briefingDraft = { html:'', updatedAt:'', sections:null, showPrice:false };
   if(!Array.isArray(s.removedVendorCats)) s.removedVendorCats = [];
   if(typeof s.subsidiTakeOut !== 'number'){
     // Migrasi dari sistem lama: dulu Subsidi dihitung OTOMATIS dari harga+add-on
@@ -3977,7 +3978,7 @@ const PUSH_TOKEN_PREFIX = 'push_token_';
 let pushSessionRefreshed = false;
 function pushPermission(){ return ('Notification' in window) ? Notification.permission : 'unsupported'; }
 function pushIsOn(){ let f=false; try{ f = localStorage.getItem('aj_push_on')==='1'; }catch(e){} return f && pushPermission()==='granted'; }
-function pushButtonHtml(){ return `<button class="btn tiny ghost" id="enablePushBtn">${pushIsOn() ? '🔔 Notifikasi aktif' : '🔔 Aktifkan Notifikasi'}</button><button class="btn tiny ghost" id="testPushBtn" title="Munculkan 1 notif contoh di perangkat ini">🧪 Tes Notif</button>`; }
+function pushButtonHtml(){ return `<button class="btn tiny ghost" id="enablePushBtn">${pushIsOn() ? '🔔 Notifikasi aktif' : '🔔 Aktifkan Notifikasi'}</button><button class="btn tiny ghost" id="testPushBtn" title="Munculkan 1 notif contoh di perangkat ini">🧪 Tes Notif</button><button class="btn tiny ghost" id="diagPushBtn" title="Cek status notifikasi di perangkat ini">🔍 Diagnosa</button>`; }
 /* Identitas penerima notif untuk perangkat ini. Dipakai notifier untuk menyaring token:
    admin -> semua; marketing -> marketingId; vendor -> vendorAccountId (atau projectId+supplierKey kalau
    masuk lewat link supplier tanpa akun); client -> projectId. */
@@ -3999,7 +4000,45 @@ async function removePushRecord(){
   if(!tok) return;
   try{ await window.storage.delete(PUSH_TOKEN_PREFIX + tok, true); localStorage.removeItem('aj_push_token'); }catch(e){}
 }
+/* Diagnosa notif: tampilkan status izin, service worker, langganan push, lalu munculkan 1 notif dan cek apakah tercatat di sistem. */
+async function runPushDiagnostics(){
+  const L = []; const add = (k,v) => L.push(k + ': ' + v);
+  try{
+    const mv = navigator.userAgent.match(/OS (\d+(?:_\d+)*)/);
+    add('iOS', mv ? mv[1].replace(/_/g,'.') : '-');
+    add('Terinstall (standalone)', (navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches)) ? 'ya' : 'TIDAK (buka dari ikon layar utama)');
+    add('Peran', window.__AJ_ROLE || '-');
+    const ml = document.querySelector('link[rel="manifest"]'); add('Manifest', ml ? ml.getAttribute('href') : '-');
+    add('Izin notif', ('Notification' in window) ? Notification.permission : 'tidak ada');
+    add('Token tersimpan', (function(){ try{ return localStorage.getItem('aj_push_token') ? 'ada' : 'tidak'; }catch(e){ return '?'; } })());
+    if(!('serviceWorker' in navigator)){ add('Service worker', 'TIDAK DIDUKUNG'); }
+    else{
+      const regs = await navigator.serviceWorker.getRegistrations(); add('Jumlah SW terdaftar', regs.length);
+      const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((_,rej)=> setTimeout(()=>rej(new Error('SW tidak aktif (timeout 6 dtk)')), 6000))]);
+      add('SW scope', reg.scope);
+      add('SW status', reg.active ? reg.active.state : 'TIDAK AKTIF');
+      const sub = reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      add('Langganan push (iOS)', sub ? 'ada' : 'TIDAK ADA');
+      if(Notification.permission === 'granted'){
+        await reg.showNotification('Tes diagnosa ArtaJava', Object.assign(pushNotifOptions({ body:'Notif diagnosa. Kalau terlihat, tampilan OK.' }, reg), { tag:'diag-' + Date.now() }));
+        const list = await reg.getNotifications(); add('Notif tercatat di sistem', list.length);
+      } else { add('Notif tes', 'dilewati (izin belum granted)'); }
+    }
+  }catch(e){ add('ERROR', (e && e.message) ? e.message : String(e)); }
+  const old = document.getElementById('pushDiagBox'); if(old) old.remove();
+  const box = document.createElement('div'); box.id = 'pushDiagBox';
+  box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;color:#222;border-radius:14px;padding:16px;max-width:520px;width:100%;max-height:80vh;overflow:auto;font:13px/1.5 system-ui,sans-serif';
+  const h = document.createElement('div'); h.textContent = 'Diagnosa Notifikasi'; h.style.cssText = 'font-weight:700;font-size:15px;margin-bottom:8px';
+  const pre = document.createElement('pre'); pre.textContent = L.join('\n'); pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;margin:0 0 12px';
+  const b = document.createElement('button'); b.textContent = 'Tutup'; b.style.cssText = 'padding:8px 18px;border:0;border-radius:10px;background:#7A1F2E;color:#fff;font-weight:600';
+  b.onclick = function(){ box.remove(); };
+  card.appendChild(h); card.appendChild(pre); card.appendChild(b); box.appendChild(card); document.body.appendChild(box);
+}
 function bindPushButtons(){
+  const diagPushBtn = document.getElementById('diagPushBtn');
+  if(diagPushBtn) diagPushBtn.addEventListener('click', runPushDiagnostics);
   const testPushBtn = document.getElementById('testPushBtn');
   if(testPushBtn) testPushBtn.addEventListener('click', sendLocalTestNotification);
   const enablePushBtn = document.getElementById('enablePushBtn');
@@ -5847,6 +5886,7 @@ function render(){
   notifyEnsureBase();
   if(isSupplier && currentTab==='pembayaran'){ currentTab = 'beranda'; }
   if(!isVendor && currentTab==='notifikasi'){ currentTab = 'beranda'; }
+  if(!isVendor && currentTab==='briefing'){ currentTab = 'beranda'; } /* briefing hari-H = internal (admin/marketing) saja */
   if(isSupplier && currentTab==='album'){ currentTab = 'beranda'; } /* vendor (field/akun) tidak punya tab album; admin/marketing/klien punya */
   const app = document.getElementById('app');
   const totalItems = state.timeline.length;
@@ -5936,6 +5976,7 @@ function render(){
         ${navItem('detail','📋','Detail Acara')}
         ${navItem('moodboard','🎨','Moodboard')}
         ${!isSupplier ? navItem('album','📸','Album Tamu') : ''}
+        ${isVendor ? navItem('briefing','🖨️','Briefing Hari-H') : ''}
         ${isVendor ? navItem('notifikasi','🔔','Notifikasi') : ''}
       </div>
     </nav>
@@ -6018,6 +6059,7 @@ function render(){
     <section class="panel ${currentTab==='detail'?'active':''}">${renderDetailAcara()}</section>
     <section class="panel ${currentTab==='moodboard'?'active':''}">${renderMoodboard()}</section>
     ${!isSupplier ? `<section class="panel ${currentTab==='album'?'active':''}">${currentTab==='album' ? renderAlbum() : ''}</section>` : ''}
+    ${isVendor ? `<section class="panel ${currentTab==='briefing'?'active':''}">${currentTab==='briefing' ? renderBriefing() : ''}</section>` : ''}
     ${isVendor ? `<section class="panel ${currentTab==='notifikasi'?'active':''}">${renderNotifikasi()}</section>` : ''}
 
     <footer>
@@ -6027,6 +6069,7 @@ function render(){
   `;
   attachHandlers();
   initAutoGrowTextareas(app);
+  try{ if(currentTab === 'briefing' && isVendor) briefingAfterRender(); }catch(e){ console.warn('briefing', e); showToast('Briefing Hari-H: ' + (e && e.message || e), true); }
   try{ if(currentTab === 'album') albumAfterRender(); }catch(e){ console.warn('album', e); showToast('Album Tamu: ' + (e && e.message || e), true); }
   if(window.twemoji){ twemoji.parse(app, {folder:'svg', ext:'.svg'}); }
 }
@@ -6047,6 +6090,276 @@ function initAutoGrowTextareas(root){
   });
 }
 
+/* ---------- BRIEFING HARI-H (draft cetak untuk tim internal) ----------
+   Mengumpulkan otomatis: agenda hari-H, kontak penting, request & catatan klien, catatan moodboard,
+   penambahan (add-on) & bonus, vendor + catatannya, detail acara, daftar keluarga. Hasilnya jadi DRAFT yang
+   bisa diedit bebas (contenteditable), tersimpan otomatis di project (state.briefingDraft), lalu dicetak.
+   Hanya tampil untuk Admin & Marketing (isVendor). */
+const BRIEFING_SECTIONS = [
+  {key:'agenda',   label:'Agenda & rundown hari-H'},
+  {key:'kontak',   label:'Kontak penting & PIC'},
+  {key:'request',  label:'Request & catatan klien'},
+  {key:'mood',     label:'Konsep & catatan moodboard'},
+  {key:'addon',    label:'Penambahan (add-on) & bonus'},
+  {key:'vendor',   label:'Vendor & catatannya'},
+  {key:'detail',   label:'Detail acara (VIP, catering, make up, busana, lagu)'},
+  {key:'keluarga', label:'Daftar keluarga (foto keluarga)'},
+  {key:'kosong',   label:'Ruang catatan tim (kosong, diisi tangan)'},
+];
+const BRIEFING_CSS = `
+.bf-sheet{background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;line-height:1.45;padding:22px 26px;border-radius:10px;border:1px solid #d9d0c0;}
+.bf-sheet *{box-sizing:border-box;}
+.bf-sheet:focus{outline:2px solid #C6A15B;}
+.bf-sheet h1{font-size:20px;margin:0 0 2px;color:#7A1F2E;}
+.bf-sheet .bf-sub{color:#555;margin:0 0 12px;font-size:12px;}
+.bf-sheet h2{font-size:13.5px;margin:18px 0 6px;padding:4px 8px;background:#7A1F2E;color:#fff;border-radius:4px;letter-spacing:.2px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.bf-sheet h3{font-size:12.5px;margin:10px 0 4px;color:#7A1F2E;}
+.bf-sheet table{width:100%;border-collapse:collapse;margin:4px 0 8px;}
+.bf-sheet th,.bf-sheet td{border:1px solid #888;padding:4px 6px;text-align:left;vertical-align:top;}
+.bf-sheet th{background:#efe6d4;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.bf-sheet tr{page-break-inside:avoid;}
+.bf-sheet ul{list-style:none;margin:4px 0 8px;padding:0;}
+.bf-sheet li{padding:3px 0;border-bottom:1px dotted #bbb;page-break-inside:avoid;}
+.bf-sheet .bx{display:inline-block;width:18px;font-size:14px;}
+.bf-sheet small,.bf-sheet .meta{color:#666;font-size:11px;}
+.bf-sheet .done{color:#777;text-decoration:line-through;}
+.bf-sheet .empty{color:#777;font-style:italic;}
+.bf-sheet .chip{display:inline-block;width:16px;height:16px;border:1px solid #666;border-radius:3px;vertical-align:middle;margin-right:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.bf-sheet .lines div{border-bottom:1px solid #999;height:26px;}
+`;
+function bfDefaultSel(){ const o={}; BRIEFING_SECTIONS.forEach(s=>{ o[s.key]=true; }); return o; }
+function bfEsc(v){ return escapeHtml(v==null?'':String(v)); }
+function bfTime(t){ return t ? String(t).replace(':','.') + ' WIB' : ''; }
+function bfVendorList(){
+  const list = activeVendorCats().map(c=>({label:c.key, v:state.vendors[c.key]}));
+  (state.extraVendors||[]).forEach(v=> list.push({label:v.category||'Vendor Tambahan', v}));
+  return list.filter(x=>x.v);
+}
+function bfTargetLabel(k){ if(!k || k==='Umum') return 'semua vendor'; if(k==='-') return 'klien saja'; return k; }
+function bfRows(arr, fields){
+  return (arr||[]).filter(it=> fields.some(f=> (it[f]||'').toString().trim()));
+}
+function buildBriefingHtml(sel, showPrice){
+  sel = sel || bfDefaultSel();
+  const c = state.couple || {};
+  const cd = (state.details && state.details.clientData) || {};
+  const d = state.details || {};
+  const out = [];
+  const bride = cd.cpwName || c.brideName, groom = cd.cppName || c.groomName;
+  out.push(`<h1>BRIEFING HARI-H — ${bfEsc(c.brideName)} &amp; ${bfEsc(c.groomName)}</h1>`);
+  out.push(`<p class="bf-sub">Khusus tim internal ArtaJava Wedding Organizer · disusun ${bfEsc(new Date().toLocaleString('id-ID',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}))}${state.packageName?` · Paket: ${bfEsc(state.packageName)}`:''}</p>`);
+
+  if(sel.agenda){
+    out.push(`<h2>🗓️ AGENDA &amp; RUNDOWN HARI-H</h2>`);
+    out.push(`<table><tr><th style="width:90px">Acara</th><th style="width:150px">Tanggal</th><th style="width:80px">Jam</th><th>Lokasi</th></tr>
+      <tr><td><b>Akad / Pemberkatan</b></td><td>${bfEsc(c.akadDate?fmtDate(c.akadDate):'-')}</td><td>${bfEsc(bfTime(c.akadTime)||'-')}</td><td>${bfEsc(c.akadLocation||'-')}</td></tr>
+      <tr><td><b>Resepsi</b></td><td>${bfEsc(c.weddingDate?fmtDate(c.weddingDate):'-')}</td><td>${bfEsc(bfTime(c.weddingTime)||'-')}</td><td>${bfEsc(c.venueName||'-')}</td></tr></table>`);
+    const days = [c.akadDate, c.weddingDate].filter(Boolean);
+    const items = (state.timeline||[]).filter(t=> t.date && days.includes(t.date))
+      .sort((a,b)=> (a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+    if(items.length){
+      out.push(`<table><tr><th style="width:60px">Jam</th><th>Agenda</th><th>Keterangan</th><th style="width:110px">Lokasi</th></tr>${
+        items.map(t=>`<tr><td>${bfEsc((t.time||'').replace(':','.'))}</td><td><b>${bfEsc(t.title)}</b><br><small>${bfEsc(fmtDateShort(t.date))}</small></td><td>${bfEsc(t.desc||'')}</td><td>${bfEsc(t.location||'')}</td></tr>`).join('')}</table>`);
+    } else {
+      out.push(`<p class="empty">Belum ada agenda di timeline yang jatuh pada tanggal akad/resepsi.</p>`);
+    }
+  }
+
+  if(sel.kontak){
+    const mk = state.marketingId ? findMarketingById(state.marketingId) : null;
+    const rows = [
+      ['Mempelai wanita', bride, cd.cpwContact],
+      ['Mempelai pria', groom, cd.cppContact],
+      ['Orang tua mempelai wanita', [cd.cpwFatherName, cd.cpwMotherName].filter(Boolean).join(' & '), ''],
+      ['Orang tua mempelai pria', [cd.cppFatherName, cd.cppMotherName].filter(Boolean).join(' & '), ''],
+      ['PIC keluarga (catering)', d.catering && d.catering.familyPicName, ''],
+      ['Marketing / PIC ArtaJava', mk ? mk.name : (typeof PIC_NAME!=='undefined'?PIC_NAME:''), mk ? (mk.phone||'') : (typeof PIC_PHONE_DISPLAY!=='undefined'?PIC_PHONE_DISPLAY:'')],
+    ].filter(r=> (r[1]||'').toString().trim() || (r[2]||'').toString().trim());
+    out.push(`<h2>📞 KONTAK PENTING &amp; PIC</h2>`);
+    out.push(rows.length ? `<table><tr><th>Peran</th><th>Nama</th><th>Kontak</th></tr>${rows.map(r=>`<tr><td>${bfEsc(r[0])}</td><td>${bfEsc(r[1])}</td><td>${bfEsc(r[2])}</td></tr>`).join('')}</table>` : `<p class="empty">Belum ada data kontak.</p>`);
+    out.push(`<p class="meta">Kontak vendor ada di bagian Vendor.</p>`);
+  }
+
+  if(sel.request){
+    const reqs = [...(state.requests||[])].sort((a,b)=> new Date(a.date)-new Date(b.date));
+    const open = reqs.filter(r=>r.status!=='done'), done = reqs.filter(r=>r.status==='done');
+    const li = (r,isDone)=>{
+      const by = r.by==='client' ? 'Klien' : (r.by==='supplier' ? (r.supplierKey||'Vendor') : 'Marketing');
+      const tgt = r.by==='supplier' ? '' : ` · untuk: ${bfEsc(bfTargetLabel(r.vendorKey))}`;
+      const dt = r.date ? new Date(r.date).toLocaleDateString('id-ID',{day:'numeric',month:'short'}) : '';
+      return `<li><span class="bx">${isDone?'☑':'☐'}</span><span class="${isDone?'done':''}">${bfEsc(r.text)}</span> <small>(${bfEsc(by)}${dt?' · '+bfEsc(dt):''}${tgt})</small></li>`;
+    };
+    out.push(`<h2>📝 REQUEST &amp; CATATAN KLIEN</h2>`);
+    out.push(open.length ? `<h3>Belum selesai (${open.length})</h3><ul>${open.map(r=>li(r,false)).join('')}</ul>` : `<p class="empty">Tidak ada request yang masih terbuka.</p>`);
+    if(done.length) out.push(`<h3>Sudah selesai (${done.length})</h3><ul>${done.map(r=>li(r,true)).join('')}</ul>`);
+  }
+
+  if(sel.mood){
+    const m = state.moodboard || {};
+    out.push(`<h2>🎨 KONSEP &amp; CATATAN MOODBOARD</h2>`);
+    if(m.concept) out.push(`<p>${bfEsc(m.concept).replace(/\n/g,'<br>')}</p>`);
+    if((m.tags||[]).length) out.push(`<p><b>Tema:</b> ${(m.tags||[]).map(bfEsc).join(', ')}</p>`);
+    if((m.palette||[]).length) out.push(`<p><b>Palet warna:</b> ${(m.palette||[]).map(p=>`<span class="chip" style="background:${bfEsc(/^#[0-9a-f]{3,8}$/i.test(p)?p:'#ccc')}"></span>${bfEsc(p)}`).join(' &nbsp; ')}</p>`);
+    const notes = [...(m.notes||[])].sort((a,b)=> new Date(a.date)-new Date(b.date));
+    if(notes.length){
+      out.push(`<ul>${notes.map(n=>`<li><span class="bx">•</span>${bfEsc(n.text)} <small>(${n.by==='vendor'?'Tim':'Klien'} · untuk: ${bfEsc(bfTargetLabel(n.vendorKey))})</small></li>`).join('')}</ul>`);
+    } else if(!m.concept){ out.push(`<p class="empty">Belum ada catatan moodboard.</p>`); }
+  }
+
+  if(sel.addon){
+    out.push(`<h2>➕ PENAMBAHAN (ADD-ON) &amp; BONUS</h2>`);
+    const rows = [];
+    bfVendorList().forEach(x=> (x.v.addons||[]).forEach(a=> rows.push({cat:x.label, vname:x.v.name, a})));
+    if(rows.length){
+      out.push(`<table><tr><th style="width:110px">Vendor</th><th>Penambahan</th><th style="width:60px">Qty</th>${showPrice?'<th style="width:110px">Harga</th>':''}</tr>${
+        rows.map(r=>`<tr><td>${bfEsc(r.cat)}${r.vname?`<br><small>${bfEsc(r.vname)}</small>`:''}</td><td>${bfEsc(r.a.name)}</td><td>${bfEsc(r.a.qty||'')}</td>${showPrice?`<td>${bfEsc(fmtIDR(r.a.amount))}</td>`:''}</tr>`).join('')}</table>`);
+    } else out.push(`<p class="empty">Belum ada add-on.</p>`);
+    const bon = bfRows(state.bonuses, ['text']);
+    out.push(`<h3>🎁 Bonus untuk klien</h3>`);
+    out.push(bon.length ? `<ul>${bon.map(b=>`<li><span class="bx">☐</span>${bfEsc(b.text)}</li>`).join('')}</ul>` : `<p class="empty">Tidak ada bonus.</p>`);
+  }
+
+  if(sel.vendor){
+    out.push(`<h2>🤝 VENDOR &amp; CATATANNYA</h2>`);
+    const vs = bfVendorList().filter(x=> (x.v.name||'').trim() || (x.v.note||'').trim());
+    if(vs.length){
+      out.push(`<table><tr><th style="width:100px">Kategori</th><th style="width:130px">Nama</th><th style="width:105px">Kontak</th><th style="width:60px">Status</th><th>Catatan</th></tr>${
+        vs.map(x=>{
+          const pending = (x.v.progress||[]).filter(p=>!p.done).map(p=>p.label).filter(Boolean);
+          return `<tr><td><b>${bfEsc(x.label)}</b></td><td>${bfEsc(x.v.name||'')}</td><td>${bfEsc(x.v.contact||'')}</td><td>${bfEsc(x.v.status||'')}</td><td>${bfEsc(x.v.note||'').replace(/\n/g,'<br>')}${pending.length?`<br><small>Belum beres: ${pending.map(bfEsc).join('; ')}</small>`:''}</td></tr>`;
+        }).join('')}</table>`);
+    } else out.push(`<p class="empty">Belum ada data vendor.</p>`);
+  }
+
+  if(sel.detail){
+    out.push(`<h2>📋 DETAIL ACARA</h2>`);
+    const vip = bfRows(d.vipGuests, ['name','note']);
+    out.push(`<h3>🎩 Tamu VIP</h3>` + (vip.length ? `<ul>${vip.map(v=>`<li><span class="bx">•</span><b>${bfEsc(v.name)}</b>${v.note?` — ${bfEsc(v.note)}`:''}</li>`).join('')}</ul>` : `<p class="empty">Belum ada.</p>`));
+    const cat = d.catering || {};
+    out.push(`<h3>🍽️ Catering</h3><p>Paket: <b>${bfEsc(cat.packageName||'-')}</b> · Jumlah undangan: <b>${bfEsc(cat.guestCount||'-')}</b> · PIC keluarga: <b>${bfEsc(cat.familyPicName||'-')}</b></p>`);
+    const menu = bfRows(cat.menuItems, ['name','qty']);
+    if(menu.length) out.push(`<p><b>Olahan buffet:</b></p><ul>${menu.map(m=>`<li><span class="bx">•</span>${bfEsc(m.name)}${m.qty?` — ${bfEsc(m.qty)}`:''}</li>`).join('')}</ul>`);
+    const st = bfRows(cat.stalls, ['name','qty','note']);
+    if(st.length) out.push(`<p><b>Gubug / stall:</b></p><ul>${st.map(m=>`<li><span class="bx">•</span>${bfEsc(m.name)}${m.qty?` — ${bfEsc(m.qty)}`:''}${m.note?` <small>(${bfEsc(m.note)})</small>`:''}</li>`).join('')}</ul>`);
+    const mu = bfRows(d.makeup, ['name','status']);
+    out.push(`<h3>💄 Make Up</h3>` + (mu.length ? `<table><tr><th>Nama</th><th>Status</th></tr>${mu.map(m=>`<tr><td>${bfEsc(m.name)}</td><td>${bfEsc(m.status)}</td></tr>`).join('')}</table>` : `<p class="empty">Belum ada.</p>`));
+    const of = d.outfits || {};
+    [['male','👔 Busana pendamping laki-laki'],['female','👗 Busana pendamping perempuan']].forEach(([k,t])=>{
+      const rows = bfRows(of[k], ['name','size','color','status']);
+      out.push(`<h3>${t}</h3>` + (rows.length ? `<table><tr><th>Nama</th><th style="width:55px">Ukuran</th><th>Warna</th><th>Tugas/Peran</th></tr>${rows.map(m=>`<tr><td>${bfEsc(m.name)}</td><td>${bfEsc(m.size)}</td><td>${bfEsc(m.color)}</td><td>${bfEsc(m.status)}</td></tr>`).join('')}</table>` : `<p class="empty">Belum ada.</p>`));
+    });
+    [['songRequests','🎵 Request lagu'],['kirabSongRequests','🎶 Request lagu kirab']].forEach(([k,t])=>{
+      const rows = bfRows(d[k], ['title','note']);
+      out.push(`<h3>${t}</h3>` + (rows.length ? `<ul>${rows.map(m=>`<li><span class="bx">•</span><b>${bfEsc(m.title)}</b>${m.note?` — ${bfEsc(m.note)}`:''}</li>`).join('')}</ul>` : `<p class="empty">Belum ada.</p>`));
+    });
+  }
+
+  if(sel.keluarga){
+    out.push(`<h2>👪 DAFTAR KELUARGA (FOTO KELUARGA)</h2>`);
+    const fp = (d.familyPhotos)||{};
+    [['cpw','Keluarga mempelai wanita'],['cpp','Keluarga mempelai pria']].forEach(([k,t])=>{
+      const mem = bfRows(fp[k] && fp[k].members, ['name']);
+      out.push(`<h3>${t}</h3>` + (mem.length ? `<ul>${mem.map(m=>`<li><span class="bx">☐</span>${bfEsc(m.name)}</li>`).join('')}</ul>` : `<p class="empty">Belum ada.</p>`));
+    });
+  }
+
+  if(sel.kosong){
+    out.push(`<h2>✍️ CATATAN TIM (ISI TANGAN)</h2><div class="lines">${'<div></div>'.repeat(8)}</div>`);
+  }
+  return out.join('\n');
+}
+function sanitizeBriefingHtml(html){
+  try{
+    const doc = new DOMParser().parseFromString('<body>'+String(html||'')+'</body>', 'text/html');
+    doc.body.querySelectorAll('script,style,iframe,object,embed,link,meta,form,base').forEach(n=>n.remove());
+    doc.body.querySelectorAll('*').forEach(el=>{
+      [...el.attributes].forEach(a=>{
+        const n = a.name.toLowerCase(), v = String(a.value||'').trim().toLowerCase();
+        if(n.startsWith('on') || ((n==='href'||n==='src'||n==='xlink:href') && /^(javascript|data):/.test(v))) el.removeAttribute(a.name);
+      });
+    });
+    return doc.body.innerHTML;
+  }catch(e){ return ''; }
+}
+function renderBriefing(){
+  const bd = state.briefingDraft || {};
+  const sel = Object.assign(bfDefaultSel(), bd.sections || {});
+  const html = bd.html ? sanitizeBriefingHtml(bd.html) : buildBriefingHtml(sel, !!bd.showPrice);
+  const upd = bd.updatedAt ? `Draft terakhir disimpan ${new Date(bd.updatedAt).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}` : 'Draft belum pernah disimpan (otomatis tersimpan begitu kamu edit).';
+  return `
+    <style>${BRIEFING_CSS}</style>
+    <div class="section-head"><div><h2>Briefing Hari-H</h2><p>Semua catatan, request & penambahan klien, vendor, dan detail acara dikumpulkan jadi satu draft. Edit bebas, lalu cetak buat tim internal.</p></div></div>
+    <div class="mb-card">
+      <h3>1. Pilih isi briefing</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin:8px 0 12px;">
+        ${BRIEFING_SECTIONS.map(s=>`<label style="display:flex;gap:8px;align-items:center;font-size:13.5px;"><input type="checkbox" data-bf-sec="${s.key}" ${sel[s.key]?'checked':''}/> ${escapeHtml(s.label)}</label>`).join('')}
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13.5px;margin-bottom:12px;"><input type="checkbox" id="bfShowPrice" ${bd.showPrice?'checked':''}/> Tampilkan harga add-on (default: disembunyikan di lembar tim)</label>
+      <button class="btn primary" id="bfBuild">✨ Susun Draft dari Data Terbaru</button>
+      <p style="margin:8px 0 0;font-size:12px;color:var(--cream-dim);">Menyusun ulang akan menimpa isi draft yang ada di bawah.</p>
+    </div>
+    <div class="mb-card">
+      <h3>2. Edit draft &amp; cetak</h3>
+      <p style="margin:0 0 10px;font-size:12.5px;color:var(--cream-dim);">Klik langsung di lembar untuk mengedit: ubah kata, hapus baris, atau tambah catatan. Perubahan tersimpan otomatis.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn primary" id="bfPrint">🖨️ Cetak / Simpan PDF</button>
+        <button class="btn" id="bfSaveNow">💾 Simpan Draft</button>
+      </div>
+      <div id="bfStatus" style="font-size:12px;color:var(--cream-dim);margin-bottom:10px;">${escapeHtml(upd)}</div>
+      <div id="bfDraft" class="bf-sheet" contenteditable="true" spellcheck="false">${html}</div>
+    </div>`;
+}
+function briefingAfterRender(){
+  const el = document.getElementById('bfDraft'); if(!el) return;
+  if(!state.briefingDraft) state.briefingDraft = {html:'', updatedAt:'', sections:null, showPrice:false};
+  const bd = state.briefingDraft;
+  const getSel = ()=>{ const s={}; document.querySelectorAll('[data-bf-sec]').forEach(cb=>{ s[cb.dataset.bfSec]=cb.checked; }); return s; };
+  const setStatus = t=>{ const s=document.getElementById('bfStatus'); if(s) s.textContent=t; };
+  const saveDraft = ()=>{
+    bd.html = sanitizeBriefingHtml(el.innerHTML);
+    bd.sections = getSel();
+    bd.showPrice = !!(document.getElementById('bfShowPrice')||{}).checked;
+    bd.updatedAt = new Date().toISOString();
+    scheduleSave();
+    setStatus('Draft tersimpan ' + new Date(bd.updatedAt).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}));
+  };
+  let t = null;
+  el.addEventListener('input', ()=>{ setStatus('Mengetik…'); clearTimeout(t); t = setTimeout(saveDraft, 1000); });
+  el.addEventListener('blur', ()=>{ if(t){ clearTimeout(t); t=null; saveDraft(); } });
+  document.getElementById('bfSaveNow').addEventListener('click', ()=>{ clearTimeout(t); t=null; saveDraft(); });
+  document.getElementById('bfBuild').addEventListener('click', async ()=>{
+    if(bd.html && !(await customConfirm('Draft yang sudah kamu edit akan diganti dengan data terbaru. Lanjutkan?'))) return;
+    el.innerHTML = buildBriefingHtml(getSel(), !!document.getElementById('bfShowPrice').checked);
+    clearTimeout(t); t=null; saveDraft();
+  });
+  document.getElementById('bfPrint').addEventListener('click', ()=>{
+    clearTimeout(t); t=null; if(bd.html !== sanitizeBriefingHtml(el.innerHTML)) saveDraft();
+    printBriefing(el.innerHTML);
+  });
+}
+function printBriefing(innerHtml){
+  const c = state.couple || {};
+  const title = 'Briefing Hari-H — ' + (c.brideName||'') + ' & ' + (c.groomName||'');
+  const doc = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>
+<style>
+@page{size:A4;margin:12mm}
+body{margin:0;background:#eee;font-family:Arial,Helvetica,sans-serif}
+.bar{position:sticky;top:0;background:#7A1F2E;padding:10px;text-align:center;z-index:5}
+.bar button{background:#C6A15B;border:0;border-radius:8px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer}
+.page{max-width:820px;margin:12px auto;background:#fff;padding:0}
+.brand{text-align:center;padding:14px 0 0}.brand img{height:54px}
+${BRIEFING_CSS}
+.bf-sheet{border:0;border-radius:0}
+@media print{body{background:#fff}.noprint{display:none!important}.page{margin:0;max-width:none}.bf-sheet{padding:0}}
+</style></head><body>
+<div class="bar noprint"><button onclick="window.print()">🖨️ Cetak / Simpan PDF</button></div>
+<div class="page"><div class="brand"><img src="${LOGO_SRC}" alt="ArtaJava"/></div><div class="bf-sheet">${sanitizeBriefingHtml(innerHtml)}</div></div>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ showToast('Pop-up diblokir browser. Izinkan pop-up lalu coba lagi.', true); return; }
+  w.document.open(); w.document.write(doc); w.document.close();
+}
+
 function navItem(key,emoji,label){ return `<button type="button" class="nav-item ${currentTab===key?'active':''}" data-tab="${key}"><span class="emj">${emoji}</span><span>${label}</span></button>`; }
 const TAB_META = {
   beranda:{emoji:'✨', label:'Beranda'},
@@ -6057,6 +6370,7 @@ const TAB_META = {
   moodboard:{emoji:'🎨', label:'Moodboard'},
   notifikasi:{emoji:'🔔', label:'Notifikasi'},
   album:{emoji:'📸', label:'Album Tamu'},
+  briefing:{emoji:'🖨️', label:'Briefing Hari-H'},
 };
 function currentTabIcon(tab){ return (TAB_META[tab]||TAB_META.beranda).emoji; }
 function currentTabLabel(tab){ return (TAB_META[tab]||TAB_META.beranda).label; }

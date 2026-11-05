@@ -7663,8 +7663,8 @@ function attachHandlers(){
 
     const resetTimelineDefault = document.getElementById('resetTimelineDefault');
     if(resetTimelineDefault) resetTimelineDefault.addEventListener('click', async ()=>{
-      if(await customConfirm('Set ulang Timeline ke urutan default ArtaJava? Semua agenda & status (selesai/belum) yang sudah diedit di timeline ini akan diganti dengan 25 agenda default (tanggalnya dihitung otomatis dari tanggal akad & resepsi).')){
-        state.timeline = defaultTimeline(state.couple.weddingDate, state.couple.akadDate);
+      if(await customConfirm('Set ulang Timeline ke urutan default ArtaJava? Semua agenda & status (selesai/belum) yang sudah diedit di timeline ini akan diganti dengan 25 agenda default (tanggal semua agenda dikosongkan).')){
+        state.timeline = defaultTimeline('', ''); // reset = semua tanggal agenda dikosongkan
         scheduleSave();
         render();
       }

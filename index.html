@@ -10,7 +10,7 @@
    bukan balik ke halaman Admin. iOS kadang mengabaikan start_url, jadi peran juga dikunci di
    localStorage (aj_role_lock_v2, hanya dari app terinstall) dan dipakai saat app dibuka dari ikon tanpa hash. */
 (function(){
-  if(/^#(album|layar)\//.test(location.hash)){ window.__AJ_ALBUM = true; return; } /* halaman publik album tamu: bukan peran apa pun */
+  if(/^#(album|layar|kartu)\//.test(location.hash)){ window.__AJ_ALBUM = true; return; } /* halaman publik album tamu: bukan peran apa pun */
   var MAP = { admin:{h:'#admin',n:'Admin'}, marketing:{h:'#marketing',n:'Marketing'}, client:{h:'#clientlink',n:'Klien'}, vendor:{h:'#vendorlink',n:'Vendor'} };
   var hs = location.hash, role = '';
   if(hs==='#clientlink'||hs==='#client') role='client';
@@ -8333,6 +8333,7 @@ const albumCfgKey = c => 'album_cfg_' + c;
 const albumThumbKey = (c, id) => 'album_t_' + c + '_' + id;
 const albumFullKey = (c, id) => 'album_f_' + c + '_' + id;
 const albumCoverKey = c => 'album_cover_' + c;
+function albumKartuLink(code){ return location.href.split('?')[0].split('#')[0] + '#kartu/' + code; }
 function albumLink(code){ return location.href.split('?')[0].split('#')[0] + '#album/' + code; }
 function albumFmtDate(iso){
   try{ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }) : ''; }catch(e){ return ''; }
@@ -8443,7 +8444,7 @@ function albumDemoOpenGuest(){
 
 function albumBuildCfg(){
   const a = state.album, c = state.couple || {};
-  return { code:a.code, enabled:a.enabled !== false, guestView:a.guestView !== false, bride:c.brideName || '', groom:c.groomName || '', date:c.weddingDate || '', cover:a.cover || 0 };
+  return { code:a.code, enabled:a.enabled !== false, guestView:a.guestView !== false, bride:c.brideName || '', groom:c.groomName || '', date:c.weddingDate || '', cover:a.cover || 0, venue:c.venueName || '', tag:c.hashtag || '', kmsg:a.kmsg || '', kartu:a.kartu !== false };
 }
 async function albumSyncCfg(force){
   if(!state || !state.album || !state.album.code) return true;
@@ -8709,6 +8710,14 @@ function renderAlbum(){
       <label class="album-sw"><input type="checkbox" id="albumToggleOpen" ${a.enabled !== false ? 'checked' : ''}/><span><b>Album dibuka untuk tamu</b><small>Matikan setelah acara kalau tidak mau ada upload baru.</small></span></label>
       <label class="album-sw"><input type="checkbox" id="albumToggleView" ${a.guestView !== false ? 'checked' : ''}/><span><b>Tamu boleh melihat foto tamu lain</b><small>Kalau dimatikan, tamu hanya bisa upload tanpa melihat galeri.</small></span></label>
     </div>
+    <div class="mb-card"><h3 style="margin:0 0 6px">💌 Kartu Kenang-kenangan</h3>
+      <p style="font-size:13px;color:var(--cream-dim);line-height:1.55;margin:0 0 12px">Setelah acara, tamu membuka link ini, memasukkan nama yang dipakai saat memotret, lalu mengunduh kartu berisi foto dan ucapannya. Bagikan lewat ucapan terima kasih atau meja penerima tamu.</p>
+      <input class="album-link" id="albumKartuLink" readonly value="${escapeAttr(albumKartuLink(a.code))}"/>
+      <div class="album-row" style="margin-top:10px"><button type="button" class="album-btn ghost" id="albumKartuCopy">🔗 Salin Link Kartu</button><button type="button" class="album-btn gold" id="albumKartuOpen">👀 Lihat Kartu</button></div>
+      <label style="display:block;font-size:12px;font-weight:700;color:var(--cream-dim);margin:14px 0 6px">Pesan singkat dari mempelai (tampil di kartu)</label>
+      <textarea class="album-link" id="albumKmsg" rows="2" maxlength="140" placeholder="Terima kasih sudah hadir dan mendoakan kami 💗" style="resize:vertical">${escapeHtml(a.kmsg || '')}</textarea>
+      <label class="album-sw"><input type="checkbox" id="albumToggleKartu" ${a.kartu !== false ? 'checked' : ''}/><span><b>Kartu dibuka untuk tamu</b><small>Matikan kalau kartu belum siap dibagikan.</small></span></label>
+    </div>
     <div class="mb-card"><h3 style="margin:0 0 6px">🖼️ Foto Sampul (Prewed)</h3>
       <p style="font-size:13px;color:var(--cream-dim);line-height:1.55;margin:0 0 12px">Tampil di bingkai lengkung pada halaman depan album tamu. Pakai foto tegak (potret); otomatis dipotong rasio 4:5.</p>
       <div class="album-row" style="gap:14px"><div class="album-cover-prev" id="albumCoverPrev">${a.cover ? 'Memuat…' : 'Belum ada'}</div>
@@ -8768,6 +8777,12 @@ function albumAfterRender(){
   on('albumZipFavBtn', e => albumDownloadZip(e.currentTarget, true));
   const seg = $('albumSeg'); if(seg){ seg.onclick = e => { const b = e.target.closest('button[data-s]'); if(!b) return; albumFavOnly = b.dataset.s === 'fav'; albumPaintGrid(); }; albumPaintGrid(); }
   on('albumDemoGuestBtn', albumDemoOpenGuest);
+  const kl = albumKartuLink(a.code);
+  on('albumKartuCopy', async () => { const ok = await albumCopyText(kl); if(ok) showToast('Link kartu disalin ✓'); else window.prompt('Salin link kartu ini:', kl); });
+  on('albumKartuOpen', () => { if(isDemoMode){ const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;z-index:99999;overflow:auto;background:var(--bg)'; document.body.appendChild(ov); initKartu({ root:ov, code:a.code, back:() => ov.remove() }); } else window.open(kl, '_blank'); });
+  const kb = $('albumKartuLink'); if(kb) kb.onclick = () => { try{ kb.select(); }catch(e){} };
+  let kT = 0; const km = $('albumKmsg'); if(km) km.oninput = e => { a.kmsg = e.target.value.slice(0, 140); albumPersist(); clearTimeout(kT); kT = setTimeout(() => albumSyncCfg(true), 700); };
+  const kt3 = $('albumToggleKartu'); if(kt3) kt3.onchange = e => { a.kartu = e.target.checked; albumPersist(); albumSyncCfg(true); };
   /* foto sampul */
   const prev = $('albumCoverPrev');
   if(prev && a.cover){ window.storage.get(albumCoverKey(a.code), true).then(r => { if(r && r.value){ prev.textContent = ''; prev.style.backgroundImage = 'url(' + r.value + ')'; } else prev.textContent = 'Belum ada'; }).catch(() => { prev.textContent = '—'; }); }
@@ -9054,12 +9069,13 @@ async function initGuestAlbum(opt){
       <div class="dc-arch"><div class="dc-arch-in">${DC_ICON_CAM}<div class="dc-init">${escapeHtml(initials)}</div></div></div>
       <h1 class="dc-title">${escapeHtml(title)}</h1>
       ${dateLabel ? `<div class="dc-date">${escapeHtml(dateLabel)}</div>` : ''}
-      <input type="text" class="dc-name" id="dcName" maxlength="30" placeholder="Nama kamu (boleh dikosongkan)" value="${escapeAttr(savedName)}"/>
+      <input type="text" class="dc-name" id="dcName" maxlength="30" placeholder="Nama kamu (dipakai untuk kartu kenang-kenangan)" value="${escapeAttr(savedName)}"/>
       <input type="text" class="dc-msg" id="dcMsg" maxlength="120" placeholder="Ucapan untuk mempelai, mis. Selamat ya! (opsional)"/>
       <div class="dc-fl" id="dcFlLand"></div>
       <button type="button" class="dc-go" id="dcGo">Mulai motret &nbsp;→</button>
       <div class="dc-sub" id="dcLandInfo"></div>
       <div class="dc-links"><button type="button" class="dc-link" id="dcPickBtn">Upload dari galeri</button>${showGallery ? '<span>·</span><button type="button" class="dc-link" id="dcSeeBtn">Lihat foto tamu</button>' : ''}</div>
+      ${cfg.kartu !== false ? '<div class="dc-links"><button type="button" class="dc-link" id="dcKartuBtn">💌 Kartu kenang-kenangan</button></div>' : ''}
       ${demo ? '<div class="dc-links"><button type="button" class="dc-link" id="dcSampleBtn">✨ Pakai foto contoh</button>' + (opt.onClose ? '<span>·</span><button type="button" class="dc-link" id="dcDemoExit">✕ Tutup demo</button>' : '') + '</div>' : ''}
       <div class="dc-st light" id="dcLandStatus"></div>
     </div></section>
@@ -9266,6 +9282,7 @@ async function initGuestAlbum(opt){
   $('dcShutter').onclick = shoot;
   $('dcZoom').addEventListener('click', e => { const b = e.target.closest('button[data-z]'); if(b) applyZoom(parseFloat(b.dataset.z)); });
   $('dcPickBtn').onclick = () => $('agFile').click();
+  { const kb = $('dcKartuBtn'); if(kb) kb.onclick = () => { stopCam(); initKartu({ root:app, code, back:() => initGuestAlbum(opt) }); }; }
   if(demo){
     $('dcSampleBtn').onclick = takeSample;
     const ex = $('dcDemoExit'); if(ex) ex.onclick = () => { stopCam(); opt.onClose(); };
@@ -9293,8 +9310,192 @@ async function initGuestAlbum(opt){
     else if(!$('dcCam').hidden){ startCam(); }
   });
 }
+const KT_FONTS = 'https://fonts.googleapis.com/css2?family=Jost:wght@400;500&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Caveat:wght@500;700&family=DM+Sans:wght@400;500;700&family=Fraunces:ital,wght@0,400;1,400&family=Space+Mono:wght@400;700&display=swap';
+const KT = [
+{name:"Klasik",need:1,pal:{'Maroon': {ground:'#7A1F2E', gold:'#C6A15B', panel:'#5E1622'},'Emerald': {ground:'#1F3A2E', gold:'#C6A15B', panel:'#16291F'},'Navy': {ground:'#1E2A44', gold:'#D8B76A', panel:'#151E33'},'Plum': {ground:'#4A1F4A', gold:'#E0B7C9', panel:'#361636'},'Black Gold': {ground:'#161412', gold:'#C6A15B', panel:'#0E0D0C'},'Dusty Rose': {ground:'#B4636F', gold:'#F5E8D0', panel:'#964E59'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 20px; background: ${v.ground}; font-family: 'Jost', sans-serif"><div style="width: 100%; height: 100%; box-sizing: border-box; border: 1.5px solid ${v.gold}; display: flex; flex-direction: column; align-items: center; padding: 36px 28px 28px; gap: 18px; color: #F5E8D0"><div style="font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: ${v.gold}">Forever begins today</div><h1 style="margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 42px; line-height: 1.02; text-align: center; color: ${v.gold}">Hadirmu,<br>Doa Terindah</h1><div style="font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 20px; text-align: center">for ${v.guest}</div><div style="width: 60px; height: 1px; background: ${v.gold}"></div><div style="width: 100%; flex-grow: 1; min-height: 0; background: ${v.pb(0,v.panel)}; border: 1px solid ${v.gold}; display: flex; align-items: center; justify-content: center; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: ${v.gold}">${v.lbl(0,"Foto tamu")}</div><p style="margin: 0; font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 20px; line-height: 1.35; text-align: center">${v.q}</p>${v.m("font-size:12px;line-height:1.5;text-align:center;color:#E9D9B8;max-width:300px")}<div style="font-size: 12px; letter-spacing: 1px; text-align: center; line-height: 1.6; color: #E9D9B8">${v.nm}<br>${v.dateLong}<br>${v.venue}</div><div style="font-size: 11px; letter-spacing: 3px; color: ${v.gold}">${v.tag}</div><div style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #B89A6A">ArtaJava Wedding Organizer</div></div></div>`},
+{name:"Polaroid",need:3,pal:{'Cream': {bg:'#F5E8D0', ink:'#3A2A22', accent:'#7A1F2E', p1:'#E3CFA6', p2:'#D9B7B0', p3:'#C9D3C0'},'Blush': {bg:'#FBE7E4', ink:'#4A2830', accent:'#B5656B', p1:'#F2C6C2', p2:'#F7D9CF', p3:'#E9C2CF'},'Sage': {bg:'#E4EBDC', ink:'#25331F', accent:'#4F6B45', p1:'#C5D4B8', p2:'#D8E2C8', p3:'#B7CBB0'},'Sky': {bg:'#E3EEF6', ink:'#1B3347', accent:'#3E6F94', p1:'#BCD6E8', p2:'#CFE3EE', p3:'#B0CBE0'},'Lilac': {bg:'#ECE6F6', ink:'#2D2548', accent:'#7058A8', p1:'#CFC3E8', p2:'#DDD2F0', p3:'#C2B6E0'},'Midnight': {bg:'#16213B', ink:'#EDE6D3', accent:'#E8C987', p1:'#2E3D63', p2:'#3A4A73', p3:'#26345A'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 40px 28px 28px; background: ${v.bg}; font-family: 'Jost', sans-serif; color: ${v.ink}; display: flex; flex-direction: column; align-items: center; gap: 14px; overflow: hidden"><div style="font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: ${v.accent}">Caught on camera, kept in our hearts</div><h1 style="margin: 0; font-family: 'Caveat', cursive; font-weight: 700; font-size: 52px; line-height: 1; color: ${v.accent}">${v.nm}</h1><div style="position: relative; width: 100%; height: 440px; margin-top: 6px"><div style="position: absolute; left: 6px; top: 20px; width: 190px; box-sizing: border-box; padding: 10px 10px 34px; background: #FFFFFF; box-shadow: 0 6px 16px rgba(0,0,0,.18); transform: rotate(-6deg)"><div style="width: 100%; height: 190px; background: ${v.pb(0,v.p1)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: ${v.ink}">${v.lbl(0,"Foto 1")}</div><div style="margin-top: 8px; font-family: 'Caveat', cursive; font-size: 20px; text-align: center; color: #3A2A22">momen seru</div></div><div style="position: absolute; right: 6px; top: 0; width: 190px; box-sizing: border-box; padding: 10px 10px 34px; background: #FFFFFF; box-shadow: 0 6px 16px rgba(0,0,0,.18); transform: rotate(5deg)"><div style="width: 100%; height: 190px; background: ${v.pb(1,v.p2)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: ${v.ink}">${v.lbl(1,"Foto 2")}</div><div style="margin-top: 8px; font-family: 'Caveat', cursive; font-size: 20px; text-align: center; color: #3A2A22">kenangan manis</div></div><div style="position: absolute; left: 100px; top: 190px; width: 210px; box-sizing: border-box; padding: 10px 10px 36px; background: #FFFFFF; box-shadow: 0 8px 18px rgba(0,0,0,.2); transform: rotate(-2deg)"><div style="width: 100%; height: 170px; background: ${v.pb(2,v.p3)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: ${v.ink}">${v.lbl(2,"Foto bersama mempelai")}</div><div style="margin-top: 8px; font-family: 'Caveat', cursive; font-size: 22px; text-align: center; color: #3A2A22">satu frame!</div></div></div><p style="margin: 0; font-family: 'Caveat', cursive; font-size: 26px; line-height: 1.2; text-align: center">${v.q}</p><div style="font-size: 12px; letter-spacing: 1px; text-align: center; line-height: 1.6">${v.msg||"Hadirmu melengkapi hari kami,"}<br><b style="font-weight: 500">${v.first}</b><br>${v.dateMid}${v.venue?" · "+v.venue:""}</div><div style="margin-top: auto; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; opacity: .6">ArtaJava Wedding Organizer</div></div>`},
+{name:"Minimal",need:4,pal:{'Ivory': {bg:'#FBF8F3', ink:'#2B2523', accent:'#7A1F2E', t1:'#E8E1D6', t2:'#DDE3DC', t3:'#E6DAD7', t4:'#E4E0EA'},'Stone': {bg:'#F1EFEC', ink:'#262626', accent:'#5C5A55', t1:'#DEDAD3', t2:'#D3D5D2', t3:'#E2D8D2', t4:'#D8D6DC'},'Sage': {bg:'#F2F5EE', ink:'#1F2B1B', accent:'#4F6B45', t1:'#D8E2CC', t2:'#C9D8C2', t3:'#E2E8D2', t4:'#CFDCD2'},'Rose': {bg:'#FCF1F0', ink:'#3A2227', accent:'#B5656B', t1:'#F3D5D2', t2:'#F7E0D6', t3:'#EDCFD6', t4:'#F2D9E2'},'Slate': {bg:'#EEF2F6', ink:'#17202B', accent:'#3E5F82', t1:'#D2DCE8', t2:'#C6D4E2', t3:'#DAE0EA', t4:'#CED7E8'},'Ink': {bg:'#141414', ink:'#F1EDE6', accent:'#E5C07B', t1:'#262626', t2:'#2E2E2E', t3:'#232323', t4:'#2A2A2A'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 40px 32px 32px; background: ${v.bg}; font-family: 'Jost', sans-serif; color: ${v.ink}; display: flex; flex-direction: column; gap: 22px"><div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; letter-spacing: 3px; text-transform: uppercase; opacity: .6"><span>${v.ini}</span><span>${v.d3}</span></div><div><div style="font-size: 12px; opacity: .6; margin-bottom: 6px">saved for you,</div><h1 style="margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 44px; line-height: 1.05">${v.guestBr}</h1></div><div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px"><div style="height: 150px; background: ${v.pb(0,v.t1)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; text-transform: uppercase">${v.lbl(0,"Foto 1")}</div><div style="height: 150px; background: ${v.pb(1,v.t2)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; text-transform: uppercase">${v.lbl(1,"Foto 2")}</div><div style="height: 150px; background: ${v.pb(2,v.t3)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; text-transform: uppercase">${v.lbl(2,"Foto 3")}</div><div style="height: 150px; background: ${v.pb(3,v.t4)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; text-transform: uppercase">${v.lbl(3,"Foto 4")}</div></div><div style="display: flex; gap: 24px"><div><div style="font-family: 'Cormorant Garamond', serif; font-size: 34px; font-weight: 600; color: ${v.accent}">${v.n}</div><div style="font-size: 11px; opacity: .6">foto</div></div><div><div style="font-family: 'Cormorant Garamond', serif; font-size: 34px; font-weight: 600; color: ${v.accent}">${v.nw}</div><div style="font-size: 11px; opacity: .6">ucapan</div></div><div><div style="font-family: 'Cormorant Garamond', serif; font-size: 34px; font-weight: 600; color: ${v.accent}">♥</div><div style="font-size: 11px; opacity: .6">selamanya</div></div></div><p style="margin: 0; font-family: 'Cormorant Garamond', serif; font-size: 20px; line-height: 1.35">${v.q}</p>${v.m("font-size:12px;line-height:1.45;opacity:.75")}<div style="margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; line-height: 1.5; opacity: .65"><span>${v.nm}<br>${v.venue}</span><span style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; text-align: right">ArtaJava<br>Wedding Organizer</span></div></div>`},
+{name:"Sunset Chill",need:1,pal:{'Sunset': {a:'#FF9A76', b:'#FFD6A5', ink:'#3B1F1A', chipText:'#FFD6A5', photo:'rgba(255,255,255,.45)'},'Peach Fizz': {a:'#FFB5A7', b:'#FCD5CE', ink:'#4A2420', chipText:'#FCD5CE', photo:'rgba(255,255,255,.5)'},'Lavender Haze': {a:'#B8A9E8', b:'#E8D9F7', ink:'#2A2150', chipText:'#E8D9F7', photo:'rgba(255,255,255,.5)'},'Sea Breeze': {a:'#8FD3E8', b:'#D8F3F0', ink:'#12404B', chipText:'#D8F3F0', photo:'rgba(255,255,255,.5)'},'Matcha': {a:'#B7D7A8', b:'#EAF3D5', ink:'#263A1E', chipText:'#EAF3D5', photo:'rgba(255,255,255,.5)'},'Lemon Soda': {a:'#FFE066', b:'#FFF3B0', ink:'#3D3200', chipText:'#FFF3B0', photo:'rgba(255,255,255,.55)'}},post:c=>({...c,bgGrad:'linear-gradient(160deg,'+c.a+' 0%,'+c.b+' 100%)'}),html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 36px 30px 30px; background: ${v.bgGrad}; font-family: 'DM Sans', sans-serif; color: ${v.ink}; display: flex; flex-direction: column; gap: 18px"><div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 500"><span>${v.nmX}</span><span style="padding: 6px 12px; border-radius: 999px; background: ${v.ink}; color: ${v.chipText}; font-size: 11px">${v.dShort}</span></div><h1 style="margin: 8px 0 0; font-weight: 700; font-size: 58px; line-height: .95; letter-spacing: -2px">good<br>vibes,<br>great<br>love.</h1><div style="width: 100%; flex-grow: 1; min-height: 0; border-radius: 28px; background: ${v.pb(0,v.photo)}; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; transform: rotate(-2deg)">${v.lbl(0,"Foto tamu")}</div><p style="margin: 6px 0 0; font-size: 17px; line-height: 1.4; font-weight: 500">${v.q}</p>${v.m("font-size:12px;line-height:1.4;opacity:.8")}<div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 12px; line-height: 1.5"><span>thanks for vibing with us,<br><b>${v.first}</b></span><span style="font-size: 10px; letter-spacing: 2px; text-transform: uppercase; text-align: right; opacity: .7">ArtaJava<br>Wedding Organizer</span></div></div>`},
+{name:"Midnight",need:1,pal:{'Midnight Blue': {bg:'#0F1B3D', accent:'#E8D9A8', arch:'#16264F'},'Ink Black': {bg:'#0C0C0F', accent:'#D9B36C', arch:'#17171C'},'Deep Forest': {bg:'#0F2A22', accent:'#CFE3C4', arch:'#16382D'},'Burgundy Night': {bg:'#2A0E18', accent:'#F0C9B0', arch:'#3A1522'},'Violet Dusk': {bg:'#1E1538', accent:'#D9C8F5', arch:'#2A1E4C'},'Teal Ocean': {bg:'#0B2F38', accent:'#A8E3E0', arch:'#10414D'}},post:c=>({...c,bgStars:'radial-gradient(1.5px 1.5px at 20px 30px,rgba(255,255,255,.7),transparent),radial-gradient(1px 1px at 90px 80px,rgba(255,255,255,.6),transparent),radial-gradient(1.5px 1.5px at 160px 20px,rgba(255,255,255,.5),transparent),radial-gradient(1px 1px at 60px 140px,rgba(255,255,255,.5),transparent),'+c.bg}),html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 40px 32px 32px; background: ${v.bgStars}; font-family: 'Jost', sans-serif; color: #EDE9E0; display: flex; flex-direction: column; align-items: center; gap: 16px"><div style="font-size: 11px; letter-spacing: 5px; text-transform: uppercase; color: ${v.accent}">${v.nm} · ${v.yyyy}</div><h1 style="margin: 0; font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500; font-size: 44px; line-height: 1.05; text-align: center">Under the same stars,<br>we said forever.</h1><div style="width: 250px; flex-grow: 1; min-height: 0; border-radius: 125px 125px 8px 8px; border: 1.5px solid ${v.accent}; background: ${v.pb(0,v.arch)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: ${v.accent}; margin-top: 6px">${v.lbl(0,"Foto tamu")}</div><p style="margin: 4px 0 0; font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 19px; line-height: 1.35; text-align: center">${v.q}</p><div style="font-size: 12px; letter-spacing: 1px; text-align: center; line-height: 1.6; color: #CFCABF">${v.msg||"Terima kasih sudah jadi bagian dari malam kami,"}<br><span style="color: ${v.accent}">${v.guest}</span></div><div style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #8F8B82">ArtaJava Wedding Organizer</div></div>`},
+{name:"Garden",need:1,pal:{'Sage': {bg:'#EEF2E6', ink:'#27331F', accent:'#4F6B45', panel:'#D6E0C8'},'Blush': {bg:'#FBEDEA', ink:'#4A2830', accent:'#A8575D', panel:'#F4D3D0'},'Lilac': {bg:'#F0EBF8', ink:'#2D2548', accent:'#6C55A3', panel:'#DDD3F0'},'Butter': {bg:'#FBF4DC', ink:'#3A3010', accent:'#8A6D12', panel:'#F2E4A8'},'Sky': {bg:'#E9F2F8', ink:'#1B3347', accent:'#3E6F94', panel:'#C9DEEC'},'Terracotta': {bg:'#F8EBE3', ink:'#40251C', accent:'#B4533C', panel:'#EFCDBD'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 36px 32px 30px; background: ${v.bg}; font-family: 'Jost', sans-serif; color: ${v.ink}; display: flex; flex-direction: column; align-items: center; gap: 16px"><div style="font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: ${v.accent}">${v.nm}</div><div style="width: 270px; flex-grow: 1; min-height: 0; border-radius: 135px 135px 14px 14px; background: ${v.pb(0,v.panel)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: ${v.accent}">${v.lbl(0,"Foto tamu")}</div><h1 style="margin: 4px 0 0; font-family: 'Fraunces', serif; font-weight: 400; font-style: italic; font-size: 38px; line-height: 1.05; text-align: center; color: ${v.accent}">Love, in full bloom</h1><p style="margin: 0; font-family: 'Fraunces', serif; font-size: 17px; line-height: 1.4; text-align: center">${v.q}</p><div style="width: 40px; height: 1px; background: ${v.accent}"></div><div style="font-size: 12px; line-height: 1.6; text-align: center">${v.msg||"Seperti taman yang tumbuh dari doa, hadirmu membuat hari kami berbunga,"}<br><b style="font-weight: 500">${v.first}</b></div><div style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; opacity: .55">${v.dateMid} · ArtaJava Wedding Organizer</div></div>`},
+{name:"Love Letter",need:1,pal:{'Paper Cream': {bg:'#FAF3E3', ink:'#3A2A22', accent:'#A4452E', photo:'#EBDDBE'},'Airmail Blue': {bg:'#EEF3F8', ink:'#1F3A5F', accent:'#C0392B', photo:'#D2DFEC'},'Rose': {bg:'#FBEFF0', ink:'#4A2830', accent:'#B5656B', photo:'#F1D4D6'},'Mint': {bg:'#EDF6F0', ink:'#24402F', accent:'#3F7F5E', photo:'#CDE5D5'},'Lilac': {bg:'#F3EFF9', ink:'#32284D', accent:'#7058A8', photo:'#DDD3F0'},'Kraft': {bg:'#E9D8BD', ink:'#3A2A22', accent:'#7A3B1F', photo:'#D6BF98'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 40px 36px 32px; background: ${v.bg}; font-family: 'Jost', sans-serif; color: ${v.ink}; display: flex; flex-direction: column; gap: 14px; position: relative"><div style="position: absolute; right: 30px; top: 30px; width: 74px; height: 74px; border: 2px dashed ${v.accent}; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: ${v.accent}; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; text-align: center; line-height: 1.4; transform: rotate(4deg)">Kenangan<br><b style="font-size: 15px; letter-spacing: 0">${v.dd}</b><br>${v.yyyy}</div><div style="font-family: 'Caveat', cursive; font-weight: 700; font-size: 46px; line-height: 1; margin-top: 54px; color: ${v.accent}">Dear ${v.first},</div><p style="margin: 0; font-family: 'Fraunces', serif; font-size: 17px; line-height: 1.6">${v.msg||"Di antara ratusan wajah hari itu, ada kamu, dan itu cukup membuat hari kami terasa lengkap. Terima kasih sudah datang, tertawa, dan mendoakan kami diam-diam."}</p><div style="position: relative; width: 100%; height: 230px; margin: 8px 0"><div style="position: absolute; left: 20px; top: 0; width: 220px; height: 210px; box-sizing: border-box; padding: 10px 10px 30px; background: #FFFFFF; box-shadow: 0 5px 14px rgba(0,0,0,.16); transform: rotate(-3deg)"><div style="width: 100%; height: 100%; background: ${v.pb(0,v.photo)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: ${v.ink}">${v.lbl(0,"Foto tamu")}</div></div><div style="position: absolute; left: 6px; top: -6px; width: 56px; height: 18px; background: ${v.accent}; opacity: .35; transform: rotate(-24deg)"></div><div style="position: absolute; right: 0; top: 40px; width: 130px; font-family: 'Caveat', cursive; font-size: 22px; line-height: 1.15; transform: rotate(3deg)">${v.q}<br><span style="font-size: 17px; color: ${v.accent}">— ${v.first}</span></div></div><div style="margin-top: auto; font-family: 'Caveat', cursive; font-size: 30px; line-height: 1">with all our love,<br><b style="font-weight: 700; color: ${v.accent}">${v.nm}</b></div><div style="font-size: 9px; letter-spacing: 2px; text-transform: uppercase; opacity: .55">ArtaJava Wedding Organizer</div></div>`},
+{name:"Film Roll",need:3,pal:{'Kodak': {bg:'#1A1A1A', accent:'#F5B800', f1:'#2A2A2A', f2:'#262626', f3:'#2E2E2E'},'Fuji': {bg:'#10261D', accent:'#6FD08C', f1:'#1B3A2C', f2:'#17322A', f3:'#1F4232'},'Cine Blue': {bg:'#0F1E2E', accent:'#5BC0EB', f1:'#19304A', f2:'#152A41', f3:'#1D3753'},'Polaroid Red': {bg:'#241012', accent:'#FF6B5A', f1:'#3A1C1F', f2:'#331719', f3:'#42222A'},'Mono': {bg:'#111111', accent:'#EEEEEE', f1:'#222222', f2:'#1C1C1C', f3:'#282828'},'Sepia': {bg:'#2A1E14', accent:'#D9A66B', f1:'#3E2D1E', f2:'#38281A', f3:'#46331F'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 34px 28px 28px; background: ${v.bg}; font-family: 'Space Mono', monospace; color: #EDEDED; display: flex; flex-direction: column; gap: 16px"><div style="display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 2px; color: ${v.accent}"><span>ROLL 01</span><span>FRAME 24A</span></div><h1 style="margin: 0; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 46px; line-height: 1; letter-spacing: -1px">best day<br>ever.<br><span style="color: ${v.accent}">no retakes.</span></h1><div style="background: #0A0A0A; border-radius: 6px; padding: 14px 10px; display: flex; flex-direction: column; gap: 10px; flex-grow: 1; min-height: 0"><div style="flex-grow: 1; min-height: 0; background: ${v.pb(0,v.f1)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; color: ${v.accent}">${v.lbl(0,"FOTO 1")}</div><div style="flex-grow: 1; min-height: 0; background: ${v.pb(1,v.f2)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; color: ${v.accent}">${v.lbl(1,"FOTO 2")}</div><div style="flex-grow: 1; min-height: 0; background: ${v.pb(2,v.f3)}; display: flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 2px; color: ${v.accent}">${v.lbl(2,"FOTO 3")}</div></div><p style="margin: 0; font-family: 'DM Sans', sans-serif; font-size: 17px; line-height: 1.4; font-weight: 500">${v.q}</p>${v.m("font:500 12px 'DM Sans',sans-serif;color:#B5B5B5;line-height:1.4")}<div style="display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; line-height: 1.6; color: #B5B5B5"><span>difoto oleh: ${v.guestShort}<br>${v.nmLow} · ${v.dShort}</span><span style="font-size: 9px; letter-spacing: 2px; text-align: right">ARTAJAVA<br>WEDDING ORGANIZER</span></div></div>`},
+{name:"Ticket",need:1,pal:{'Hot Pink': {bg:'#FF5C8A', ink:'#2B0F1A', photo:'#FFD3E0'},'Cobalt': {bg:'#2F4BFF', ink:'#FFFFFF', photo:'#D5DBFF'},'Tangerine': {bg:'#FF7A1A', ink:'#2B1300', photo:'#FFDDBF'},'Mint': {bg:'#2EC4A0', ink:'#06261F', photo:'#C9F1E6'},'Violet': {bg:'#7A4DFF', ink:'#FFFFFF', photo:'#E0D4FF'},'Lemon': {bg:'#FFD400', ink:'#2B2500', photo:'#FFF2A8'}},post:c=>c,html:v=>`<div style="width: 420px; height: 760px; box-sizing: border-box; padding: 34px 26px; background: ${v.bg}; font-family: 'DM Sans', sans-serif; color: ${v.ink}; display: flex; flex-direction: column; gap: 14px"><div style="display: flex; justify-content: space-between; font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 2px; font-weight: 700"><span>ADMIT ONE</span><span>NO. ${v.no}</span></div><div style="background: #FFFDF8; color: #1D1D1D; border-radius: 18px; display: flex; flex-direction: column; flex-grow: 1; min-height: 0; overflow: hidden; box-shadow: 0 10px 24px rgba(0,0,0,.18)"><div style="padding: 24px 24px 18px; display: flex; flex-direction: column; gap: 12px; flex-grow: 1; min-height: 0"><div style="font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 3px; color: ${v.bg}; filter: brightness(.8)">THE LOVE TOUR · 2027</div><h1 style="margin: 0; font-weight: 700; font-size: 40px; line-height: 1; letter-spacing: -1.5px">Dhiya &amp;<br>Bagas, live.</h1><div style="flex-grow: 1; min-height: 0; border-radius: 12px; background: ${v.pb(0,v.photo)}; display: flex; align-items: center; justify-content: center; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #5A5A5A">${v.lbl(0,"Foto tamu")}</div><p style="margin: 0; font-size: 15px; line-height: 1.4; font-weight: 500">${v.q}</p>${v.m("font-size:12px;line-height:1.4;font-weight:400;color:#555")}</div><div style="position: relative; height: 0; border-top: 2px dashed #CFCFCF; margin: 0 14px"></div><div style="padding: 16px 24px 20px; display: flex; justify-content: space-between; align-items: flex-end"><div style="font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.7"><div style="color: #7A7A7A; font-size: 9px; letter-spacing: 2px">GUEST</div><b style="font-size: 14px">${v.guest}</b><br>${v.dFull}</div><div style="display: flex; gap: 2px; align-items: flex-end; height: 44px"><div style="width: 3px; height: 44px; background: #1D1D1D"></div><div style="width: 1px; height: 44px; background: #1D1D1D"></div><div style="width: 4px; height: 44px; background: #1D1D1D"></div><div style="width: 2px; height: 44px; background: #1D1D1D"></div><div style="width: 1px; height: 44px; background: #1D1D1D"></div><div style="width: 3px; height: 44px; background: #1D1D1D"></div><div style="width: 5px; height: 44px; background: #1D1D1D"></div><div style="width: 1px; height: 44px; background: #1D1D1D"></div><div style="width: 2px; height: 44px; background: #1D1D1D"></div><div style="width: 4px; height: 44px; background: #1D1D1D"></div><div style="width: 1px; height: 44px; background: #1D1D1D"></div><div style="width: 3px; height: 44px; background: #1D1D1D"></div><div style="width: 2px; height: 44px; background: #1D1D1D"></div><div style="width: 4px; height: 44px; background: #1D1D1D"></div></div></div></div><div style="display: flex; justify-content: space-between; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px; font-weight: 700"><span>terima kasih sudah hadir.</span><span>ARTAJAVA WO</span></div></div>`}
+];
+/* ================= KARTU KENANG-KENANGAN =================
+   Halaman publik #kartu/<kode>: tamu isi nama -> foto yang pernah ia kirim (nama tersimpan di meta.n oleh kamera) muncul,
+   pilih foto + desain + warna, unduh sebagai gambar (PNG). Render lewat DOM 420x760 lalu html2canvas (dimuat saat unduh). */
+const KARTU_CSS = `
+.kt{min-height:100vh;background:var(--bg);padding:16px 14px 40px;font-family:'Plus Jakarta Sans',sans-serif}
+.kt-w{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.kt-w h1{font-family:'Fraunces',Georgia,serif;font-size:28px;margin:6px 0 0;text-align:center;color:var(--ink)}
+.kt-w .sub{text-align:center;color:var(--cream-dim);font-size:13.5px;line-height:1.55;margin:0}
+.kt-card{background:#fff;border:1px solid var(--card-border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-card)}
+.kt-card label{display:block;font-size:12px;font-weight:700;color:var(--cream-dim);margin:0 0 6px}
+.kt-in{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:12px;border:1px solid var(--card-border);background:var(--field-bg);font:inherit;font-size:16px;color:var(--ink);margin-bottom:10px}
+.kt-chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.kt-chips button{flex:none;border:1px solid var(--card-border);background:transparent;color:var(--pink);border-radius:99px;padding:6px 13px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.kt-chips button.on{background:var(--pink);color:#fff;border-color:var(--pink)}
+.kt-ph{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.kt-ph button{position:relative;aspect-ratio:3/4;border:2px solid transparent;border-radius:10px;padding:0;overflow:hidden;cursor:pointer;background:var(--card)}
+.kt-ph button img{width:100%;height:100%;object-fit:cover;display:block}
+.kt-ph button.on{border-color:var(--pink)}
+.kt-ph button b{position:absolute;top:3px;right:3px;min-width:20px;height:20px;border-radius:99px;background:var(--pink);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
+.kt-stage{display:flex;justify-content:center}
+.kt-scale{transform-origin:top left}
+.kt-prev{box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden;width:420px;height:760px}
+#ktBody:not([hidden]){display:flex;flex-direction:column;gap:14px}
+.kt-st{text-align:center;font-size:13px;color:var(--cream-dim);min-height:18px}
+`;
+const ktNorm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const ktEsc = s => escapeHtml(String(s == null ? '' : s));
+const ktBulan = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'], ktHari = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+function ktVals(cfg, o){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(cfg.date || ''), nm = ktEsc(albumNames(cfg)), g = ktEsc(o.name || 'Tamu Istimewa'), parts = g.split(' ');
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : null, mid = d ? d.getDate() + ' ' + ktBulan[d.getMonth()] + ' ' + d.getFullYear() : '';
+  const dd = m ? m[3] + '.' + m[2] : '', yyyy = m ? m[1] : '', pk = (cfg.bride && cfg.groom) ? ktEsc(cfg.bride) + ' &amp; ' + ktEsc(cfg.groom) : nm;
+  const msg = ktEsc((cfg.kmsg || '').slice(0, 140)), photos = o.photos;
+  let h = 0; for(const ch of o.name || '') h = (h * 31 + ch.charCodeAt(0)) % 10000;
+  return {
+    nm:pk, nmLow:pk.toLowerCase(), nmX:pk.toLowerCase().replace(' &amp; ', ' × '), ini:[cfg.bride, cfg.groom].filter(Boolean).map(s => ktEsc(String(s).trim().charAt(0).toUpperCase())).join(' &amp; ') || '♥',
+    guest:g, guestShort:ktEsc(parts[0] + (parts[1] ? ' ' + parts[1].charAt(0) + '.' : '')), first:ktEsc(parts[0]), guestBr:parts.length > 1 ? ktEsc(parts[0]) + '<br>' + ktEsc(parts.slice(1).join(' ')) : g,
+    q:o.wish ? '“' + ktEsc(o.wish) + '”' : 'Hari yang tak akan terlupa.', msg, m:css => msg ? '<div style="margin:0;' + css + '">' + msg + '</div>' : '',
+    dateLong:d ? ktHari[d.getDay()] + ', ' + mid : '', dateMid:mid, d3:m ? m[3] + ' · ' + m[2] + ' · ' + m[1] : '', dShort:m ? m[3] + '.' + m[2] + '.' + m[1].slice(2) : '', dFull:m ? m[3] + '.' + m[2] + '.' + m[1] : '', dd, yyyy,
+    venue:ktEsc(cfg.venue || ''), tag:ktEsc(cfg.tag || ''), no:String(h).padStart(4, '0'), n:o.nPhotos, nw:o.nWishes,
+    pb:(i, fb) => photos[i] ? 'url(' + photos[i] + ') center/cover no-repeat' : fb, lbl:(i, t) => photos[i] ? '' : t
+  };
+}
+function ktCardHtml(cfg, o, ti, ci){
+  const T = KT[ti], keys = Object.keys(T.pal), c = T.post(T.pal[keys[ci] || keys[0]]);
+  return T.html(Object.assign(ktVals(cfg, o), c));
+}
+async function ktLoadFonts(){
+  if(!document.getElementById('ktFonts')){ const l = document.createElement('link'); l.id = 'ktFonts'; l.rel = 'stylesheet'; l.href = KT_FONTS; document.head.appendChild(l); }
+  try{ await Promise.race([Promise.all(["500 20px Jost", "600 20px 'Cormorant Garamond'", "italic 500 20px 'Cormorant Garamond'", "700 20px Caveat", "700 20px 'DM Sans'", "italic 400 20px Fraunces", "700 20px 'Space Mono'"].map(f => document.fonts.load(f))), new Promise(r => setTimeout(r, 6000))]); }catch(e){}
+}
+async function initKartu(opt){
+  opt = opt || {};
+  albumInjectCss();
+  if(!document.getElementById('ktCss')){ const s = document.createElement('style'); s.id = 'ktCss'; s.textContent = KARTU_CSS; document.head.appendChild(s); }
+  const code = opt.code || ((location.hash.split('/')[1] || '').toLowerCase()).replace(/[^a-z0-9]/g, ''), demo = code === 'demo';
+  if(demo){ albumDemoOn(); await albumDemoSeedOnce(); }
+  const app = opt.root || document.getElementById('app');
+  app.innerHTML = '<div class="kt"><div class="kt-w"><p class="sub" style="margin-top:18vh">Membuka kartu…</p></div></div>';
+  let cfg = null;
+  try{ const r = code ? await window.storage.get(albumCfgKey(code), true) : null; cfg = r && r.value ? JSON.parse(r.value) : null; }catch(e){}
+  if(!cfg){ albumGuestMsg('Kartu tidak ditemukan', 'Pastikan kamu membuka link yang benar, atau minta link terbaru ke mempelai.'); return; }
+  if(cfg.kartu === false){ albumGuestMsg('Kartu belum dibuka', 'Kartu kenang-kenangan belum tersedia. Coba lagi nanti ya 💗'); return; }
+  if(!opt.root) document.title = 'Kartu Kenang-kenangan ' + albumNames(cfg);
+  let saved = ''; try{ saved = localStorage.getItem('aj_album_name') || ''; }catch(e){}
+  const st = { items:[], pick:[], ti:0, ci:0, name:saved, wish:'', full:new Map() };
+  app.innerHTML = `<div class="kt"><div class="kt-w">
+    ${opt.back ? '<button type="button" class="album-btn ghost" id="ktBack" style="align-self:flex-start">← Kembali</button>' : ''}
+    <h1>💌 Kartu Kenang-kenangan</h1><p class="sub">Masukkan nama yang kamu pakai saat memotret di kamera album, lalu pilih foto dan desain kartumu.</p>
+    <div class="kt-card"><label for="ktName">Nama kamu</label><input class="kt-in" id="ktName" maxlength="30" value="${escapeAttr(saved)}" placeholder="Nama saat memotret"/>
+      <button type="button" class="album-btn ag-big" id="ktFind">Cari foto saya</button><div class="kt-st" id="ktSt" style="margin-top:10px"></div></div>
+    <div id="ktBody" hidden>
+      <div class="kt-card"><label>Pilih foto untuk kartu <span id="ktNeed" style="font-weight:500"></span></label><div class="kt-ph" id="ktPh"></div>
+        <label style="margin-top:12px">Ucapanmu (boleh diubah)</label><input class="kt-in" id="ktWish" maxlength="120" style="margin-bottom:0"/></div>
+      <div class="kt-card"><label>Desain</label><div class="kt-chips" id="ktTpl"></div><label style="margin-top:10px">Warna</label><div class="kt-chips" id="ktCol"></div></div>
+      <div class="kt-stage" id="ktStage"><div id="ktBox"><div class="kt-scale" id="ktScale"><div class="kt-prev" id="ktPrev"></div></div></div></div>
+      <div class="album-row" style="justify-content:center;margin-top:12px"><button type="button" class="album-btn" id="ktDl">⬇️ Unduh Kartu</button><button type="button" class="album-btn gold" id="ktShare" hidden>📤 Bagikan</button></div>
+      <div class="kt-st" id="ktDlSt"></div></div>
+    <div class="ag-foot">ArtaJava Wedding Organizer</div></div></div>`;
+  const $ = id => document.getElementById(id), tpl = () => KT[st.ti];
+  const stat = (id, t) => { $(id).textContent = t; };
+  const getFull = async it => {
+    if(st.full.has(it.id)) return st.full.get(it.id);
+    let u = it.th; try{ const r = await window.storage.get(albumFullKey(code, it.id), true); if(r && r.value) u = r.value; }catch(e){}
+    st.full.set(it.id, u); return u;
+  };
+  const paintPick = () => {
+    const need = tpl().need; $('ktNeed').textContent = '(' + need + ' foto untuk desain ini)';
+    $('ktPh').innerHTML = st.items.map(it => { const k = st.pick.indexOf(it.id); return `<button type="button" data-id="${escapeAttr(it.id)}" class="${k > -1 ? 'on' : ''}"><img src="${it.th}" alt=""/>${k > -1 ? '<b>' + (k + 1) + '</b>' : ''}</button>`; }).join('');
+  };
+  const paintChips = () => {
+    $('ktTpl').innerHTML = KT.map((t, i) => `<button type="button" data-t="${i}" class="${i === st.ti ? 'on' : ''}">${t.name}</button>`).join('');
+    $('ktCol').innerHTML = Object.keys(tpl().pal).map((k, i) => `<button type="button" data-c="${i}" class="${i === st.ci ? 'on' : ''}">${k}</button>`).join('');
+  };
+  const buildOpts = async () => {
+    const need = tpl().need, ids = st.pick.slice(0, need), its = ids.map(id => st.items.find(x => x.id === id)).filter(Boolean);
+    const photos = await Promise.all(its.map(getFull));
+    return { name:st.name, photos, wish:st.wish, nPhotos:st.items.length, nWishes:st.items.filter(x => x.m).length };
+  };
+  let paintSeq = 0;
+  const paint = async () => {
+    const seq = ++paintSeq, o = await buildOpts(); if(seq !== paintSeq) return;
+    $('ktPrev').innerHTML = ktCardHtml(cfg, o, st.ti, st.ci);
+    const s = Math.min(1, (Math.min(window.innerWidth, 520) - 28) / 420);
+    $('ktScale').style.transform = 'scale(' + s + ')'; $('ktBox').style.cssText = 'width:' + 420 * s + 'px;height:' + 760 * s + 'px';
+  };
+  const find = async () => {
+    st.name = ($('ktName').value || '').trim().slice(0, 30);
+    if(!st.name){ stat('ktSt', 'Isi nama dulu ya.'); return; }
+    try{ localStorage.setItem('aj_album_name', st.name); }catch(e){}
+    stat('ktSt', 'Mencari foto…'); $('ktFind').disabled = true;
+    try{
+      const all = await albumFetchThumbs(code), q = ktNorm(st.name);
+      let mine = all.filter(x => ktNorm(x.n) === q);
+      if(!mine.length && q.length >= 3) mine = all.filter(x => { const n = ktNorm(x.n); return n && (n.indexOf(q) > -1 || q.indexOf(n) > -1); });
+      if(!mine.length){ $('ktBody').hidden = true; stat('ktSt', 'Belum ada foto atas nama “' + st.name + '”. Coba tulis nama persis seperti saat memotret.'); $('ktFind').disabled = false; return; }
+      st.items = mine; st.pick = mine.slice(0, tpl().need).map(x => x.id);
+      st.wish = (mine.find(x => x.m) || {}).m || ''; $('ktWish').value = st.wish;
+      stat('ktSt', mine.length + ' foto ditemukan ✓'); $('ktBody').hidden = false;
+      await ktLoadFonts(); paintPick(); paintChips(); await paint();
+    }catch(e){ stat('ktSt', 'Gagal memuat: ' + (e && e.message || e)); }
+    $('ktFind').disabled = false;
+  };
+  $('ktFind').onclick = find;
+  $('ktName').addEventListener('keydown', e => { if(e.key === 'Enter') find(); });
+  const bk = $('ktBack'); if(bk) bk.onclick = opt.back;
+  $('ktPh').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]'); if(!b) return;
+    const id = b.dataset.id, k = st.pick.indexOf(id), need = tpl().need;
+    if(k > -1){ if(st.pick.length > 1) st.pick.splice(k, 1); } else { st.pick.push(id); if(st.pick.length > need) st.pick.shift(); }
+    paintPick(); paint();
+  });
+  $('ktWish').addEventListener('input', e => { st.wish = e.target.value; paint(); });
+  $('ktTpl').addEventListener('click', e => {
+    const b = e.target.closest('button[data-t]'); if(!b) return;
+    st.ti = +b.dataset.t; st.ci = 0; const need = tpl().need;
+    if(st.pick.length > need) st.pick = st.pick.slice(-need);
+    else for(const it of st.items){ if(st.pick.length >= need) break; if(st.pick.indexOf(it.id) < 0) st.pick.push(it.id); }
+    paintPick(); paintChips(); paint();
+  });
+  $('ktCol').addEventListener('click', e => { const b = e.target.closest('button[data-c]'); if(!b) return; st.ci = +b.dataset.c; paintChips(); paint(); });
+  const render = async () => {
+    stat('ktDlSt', 'Menyiapkan gambar…');
+    if(!window.html2canvas) await albumLoadJs('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    await ktLoadFonts();
+    const o = await buildOpts(), host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-9999px;top:0;width:420px;height:760px;overflow:hidden';
+    host.innerHTML = ktCardHtml(cfg, o, st.ti, st.ci); document.body.appendChild(host);
+    try{
+      await Promise.all(Array.from(host.querySelectorAll('img')).map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
+      return await html2canvas(host, { scale:3, backgroundColor:null, useCORS:true, logging:false, width:420, height:760 });
+    } finally { host.remove(); }
+  };
+  const fname = () => 'kartu-kenangan-' + (ktNorm(st.name).replace(/[^a-z0-9]+/g, '-') || 'tamu') + '.png';
+  $('ktDl').onclick = async () => {
+    $('ktDl').disabled = true;
+    try{ const cv = await render(); cv.toBlob(b => { albumSaveBlob(b, fname()); stat('ktDlSt', 'Kartu tersimpan ✓ Jangan lupa bagikan ke temanmu 💗'); }, 'image/png'); }
+    catch(e){ stat('ktDlSt', 'Gagal membuat gambar: ' + (e && e.message || e)); }
+    $('ktDl').disabled = false;
+  };
+  if(navigator.canShare){
+    $('ktShare').hidden = false;
+    $('ktShare').onclick = async () => {
+      try{
+        const cv = await render(), blob = await new Promise(r => cv.toBlob(r, 'image/png')), f = new File([blob], fname(), { type:'image/png' });
+        if(navigator.canShare({ files:[f] })){ await navigator.share({ files:[f], title:'Kartu Kenang-kenangan ' + albumNames(cfg) }); stat('ktDlSt', ''); }
+        else { albumSaveBlob(blob, fname()); stat('ktDlSt', 'Perangkat ini belum bisa berbagi langsung, kartu diunduh saja ✓'); }
+      }catch(e){ if(!e || e.name !== 'AbortError') stat('ktDlSt', 'Gagal membagikan: ' + (e && e.message || e)); }
+    };
+  }
+  if(saved) find();
+}
 (async function init(){
-  if(window.__AJ_ALBUM){ if(/^#layar\//.test(location.hash)) await initScreenShow(); else await initGuestAlbum(); return; }
+  if(window.__AJ_ALBUM){ if(/^#layar\//.test(location.hash)) await initScreenShow(); else if(/^#kartu\//.test(location.hash)) await initKartu(); else await initGuestAlbum(); return; }
   await initRoleFlow();
 })();
 

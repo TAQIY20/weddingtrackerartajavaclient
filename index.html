@@ -1302,7 +1302,7 @@ function defaultData(brideName, groomName, id, marketingId, pkg, weddingDateOpt)
     clientSourceDate: '',
     documents: { mou: null, rundown: null },
     couple: { brideName: brideName || 'Nama Mempelai Wanita', groomName: groomName || 'Nama Mempelai Pria', hashtag:'#TheWeddingOf', weddingDate, weddingTime:'', venueName:'', akadDate: weddingDate, akadTime:'', akadLocation:'' },
-    timeline: defaultTimeline(weddingDate, weddingDate),
+    timeline: defaultTimeline('', ''), // tanggal agenda selalu kosong di project baru, diisi manual / lewat Reset Timeline
     vendors: vendors,
     extraVendors: [],
     removedVendorCats,
@@ -1310,9 +1310,9 @@ function defaultData(brideName, groomName, id, marketingId, pkg, weddingDateOpt)
     budget,
     subsidiTakeOut: 0,
     payments: [
-      {id:uid('p'), label:'DP 1 — Tanda Jadi', amount:dp1, dueDate: weddingDate, status:'unpaid'},
-      {id:uid('p'), label:'DP 25%', amount:dp20, dueDate: weddingDate, status:'unpaid'},
-      {id:uid('p'), label:'Pelunasan (Sisa 75%)', amount:pelunasan, dueDate: weddingDate, status:'unpaid'},
+      {id:uid('p'), label:'DP 1 — Tanda Jadi', amount:dp1, dueDate: '', status:'unpaid'},
+      {id:uid('p'), label:'DP 25%', amount:dp20, dueDate: '', status:'unpaid'},
+      {id:uid('p'), label:'Pelunasan (Sisa 75%)', amount:pelunasan, dueDate: '', status:'unpaid'},
     ],
     moodboard: { concept: pkg ? (pkg.note||'') : '', notes:[], tags:['Minimalis','Garden Party'], palette:['#7A1F2E','#C6A15B','#F5E8D0'], links:[] },
     requests: [],
@@ -1553,7 +1553,7 @@ function normalizeState(s){
   }
   Object.keys(s.vendors||{}).forEach(k=> fixVendor(s.vendors[k]));
   (s.extraVendors||[]).forEach(v=> fixVendor(v, true));
-  (s.payments||[]).forEach(p=>{ if(!p.dueDate) p.dueDate = s.couple.weddingDate; if(typeof p.invoice === 'undefined') p.invoice = null; });
+  (s.payments||[]).forEach(p=>{ if(typeof p.dueDate !== 'string') p.dueDate = ''; if(typeof p.invoice === 'undefined') p.invoice = null; });
   if(!s.couple.akadDate) s.couple.akadDate = s.couple.weddingDate;
   if(typeof s.couple.akadLocation !== 'string') s.couple.akadLocation = '';
   if(typeof s.couple.akadTime !== 'string') s.couple.akadTime = '';
@@ -7791,7 +7791,7 @@ function attachHandlers(){
     });
     const addPayment = document.getElementById('addPayment');
     if(addPayment) addPayment.addEventListener('click', ()=>{
-      state.payments.push({id:uid('p'), label:'Item Pembayaran Baru', amount:0, dueDate: state.couple.weddingDate, status:'unpaid', invoice:null});
+      state.payments.push({id:uid('p'), label:'Item Pembayaran Baru', amount:0, dueDate: '', status:'unpaid', invoice:null});
       sortPayments();
       scheduleSave(); render();
     });

@@ -8663,7 +8663,7 @@ function albumPosterHtml(c, link){
   const NS = Math.max(50, Math.min(100, Math.floor(880 / (Math.max(longest, 1) * 0.58)))); /* nama panjang -> font mengecil, tetap 1 baris */
   const QR = albumQrPosterUrl(link);
   const PH = '<svg viewBox="0 0 300 300" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"><rect width="300" height="300" fill="#FFC9A8"></rect><circle cx="238" cy="62" r="34" fill="#FFE27A"></circle><ellipse cx="150" cy="330" rx="230" ry="90" fill="#9ADBC0"></ellipse><rect x="62" y="190" width="100" height="120" rx="40" fill="#8E6BFF"></rect><rect x="150" y="196" width="96" height="120" rx="40" fill="#FF5FA2"></rect><circle cx="112" cy="150" r="46" fill="#F2B48F"></circle><path d="M66 146a46 46 0 0 1 92 0c-14-22-70-22-92 0z" fill="#2A1A4A"></path><circle cx="198" cy="160" r="42" fill="#E9A07A"></circle><path d="M156 156a42 42 0 0 1 84 0c-12-24-66-24-84 0z" fill="#5A2E1A"></path><circle cx="96" cy="154" r="5" fill="#2A1A4A"></circle><circle cx="128" cy="154" r="5" fill="#2A1A4A"></circle><path d="M96 170q16 16 32 0" fill="none" stroke="#2A1A4A" stroke-width="5" stroke-linecap="round"></path><circle cx="184" cy="164" r="5" fill="#2A1A4A"></circle><circle cx="212" cy="164" r="5" fill="#2A1A4A"></circle><path d="M184 178q14 14 28 0" fill="none" stroke="#2A1A4A" stroke-width="5" stroke-linecap="round"></path><circle cx="84" cy="168" r="8" fill="#FF8FB8" opacity=".7"></circle><circle cx="226" cy="178" r="8" fill="#FF8FB8" opacity=".7"></circle><path d="M270 150l8 14-8 14-8-14z" fill="#FFFFFF" opacity=".8"></path></svg>';
-  return `<div style="width:1080px;height:1500px;box-sizing:border-box;position:relative;overflow:hidden;background:#FFE3F1;font-family:'AJFredoka','Fredoka',sans-serif;color:#2A1A4A;padding:44px 56px;display:flex;flex-direction:column;justify-content:space-between" data-canvas-width="1080" data-canvas-height="1500" data-document-role="page" data-label="Poster Album Tamu">
+  return `<div style="width:1080px;height:1527px;box-sizing:border-box;position:relative;overflow:hidden;background:#FFE3F1;font-family:'AJFredoka','Fredoka',sans-serif;color:#2A1A4A;padding:44px 56px;display:flex;flex-direction:column;justify-content:space-between" data-canvas-width="1080" data-canvas-height="1527" data-document-role="page" data-label="Poster Album Tamu">
 <div style="position:absolute;left:-120px;top:240px;width:420px;height:420px;border-radius:50%;background:#EADFFF"></div>
 <div style="position:absolute;right:-140px;top:-100px;width:380px;height:380px;border-radius:50%;background:#FFF3A8"></div>
 <div style="position:absolute;right:-90px;top:860px;width:300px;height:300px;border-radius:50%;background:#C9F3E3"></div>
@@ -8713,7 +8713,7 @@ function albumPosterHtml(c, link){
 </div>
 </div>
 
-<div style="position:relative;display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:600"><div style="width:298px;display:flex;justify-content:center"><img src="${LOGO_DARK_SRC}" alt="ArtaJava Wedding Organizer" style="display:block;width:230px;height:auto"></div><span style="font-family:'AJPatrick','Patrick Hand',cursive;font-size:30px;font-weight:400">kameranya sekali pakai, kenangannya selamanya</span></div>
+<div style="position:relative;display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:600;margin-top:30px"><div style="width:298px;display:flex;justify-content:center"><img src="${LOGO_DARK_SRC}" alt="ArtaJava Wedding Organizer" style="display:block;width:230px;height:auto"></div><span style="font-family:'AJPatrick','Patrick Hand',cursive;font-size:30px;font-weight:400">kameranya sekali pakai, kenangannya selamanya</span></div>
 </div>`;
 }
 async function albumDownloadQrCard(){
@@ -8722,14 +8722,14 @@ async function albumDownloadQrCard(){
   if(!window.html2canvas) await albumLoadJs('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
   await albumPosterFonts();
   const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:1080px;height:1500px;overflow:hidden';
+  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:1080px;height:1527px;overflow:hidden';
   host.innerHTML = albumPosterHtml(c, albumLink(a.code));
   document.body.appendChild(host);
   let cv;
   try{
     await Promise.all(Array.from(host.querySelectorAll('img')).map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
     try{ await document.fonts.ready; }catch(e){}
-    cv = await html2canvas(host, { scale:2, backgroundColor:'#FFE3F1', useCORS:true, logging:false, width:1080, height:1500, windowWidth:1080, windowHeight:1500 });
+    cv = await html2canvas(host, { scale:2, backgroundColor:'#FFE3F1', useCORS:true, logging:false, width:1080, height:1527, windowWidth:1080, windowHeight:1527 });
   } finally { host.remove(); }
   const name = 'poster-qr-album-' + (((c.brideName || 'tamu') + '-' + (c.groomName || '')).replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '')) + '.png';
   await new Promise(res => cv.toBlob(b => { if(b) albumSaveBlob(b, name); else albumDownloadDataUrl(cv.toDataURL('image/png'), name); res(); }, 'image/png'));

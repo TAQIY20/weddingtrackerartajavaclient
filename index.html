@@ -3375,7 +3375,7 @@ function notifySnapshot(s){
     mbLinkMap[l.url] = t;
   });
   const tl = {};
-  (s.timeline||[]).forEach(t=>{ if(t && t.id) tl[t.id] = { title:t.title||'', date:t.date||'', time:t.time||'', location:t.location||'', desc:pwSig(t.desc||''), status:t.status||'', cc:!!t.clientConfirmed, vk:(t.vendorKeys||[]).join(',') }; });
+  (s.timeline||[]).forEach(t=>{ if(t && t.id) tl[t.id] = { title:t.title||'', date:t.date||'', time:t.time||'', location:t.location||'', desc:pwSig(t.desc||''), status:t.status||'', cc:!!t.clientConfirmed, vk:(t.vendorKeys||[]).join(','), cat:t.cat||'' }; });
   return {
     wd: (s.couple && s.couple.weddingDate) || '',
     reqs: reqMap,
@@ -3389,6 +3389,7 @@ function notifySnapshot(s){
     mb: pwSig(JSON.stringify(mb))
   };
 }
+const tlRefs = (vk, cat) => vk ? vk.split(',') : ((cat && cat!=='Koordinasi' && cat!=='Acara') ? ['cat:'+cat] : []); /* push notif: tanpa centang -> otomatis ikut kategori agenda */
 function notifyDiff(a, b){
   const ev = [];
   const newIds = (x, y)=>{ const old = new Set((x||'').split(',')); return (y||'').split(',').filter(i=> i && !old.has(i)); };
@@ -3400,14 +3401,15 @@ function notifyDiff(a, b){
   const ta = a.timeline || {}, tb = b.timeline || {};
   Object.keys(tb).forEach(id=>{
     const n = tb[id], o = ta[id];
-    if(!o){ ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:['new'], refs:n.vk ? n.vk.split(',') : [] }); return; }
+    if(!o){ ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:['new'], refs:tlRefs(n.vk, n.cat) }); return; }
     const ch = TL_FIELDS.filter(k=> o[k] !== n[k]);
-    if(ch.length) ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:ch, refs:n.vk ? n.vk.split(',') : [] });
+    if(ch.length) ev.push({ kind:'timeline', key:'tl:'+id, title:n.title, date:n.date, time:n.time, changes:ch, refs:tlRefs(n.vk, n.cat) });
   });
-  Object.keys(ta).forEach(id=>{ if(!tb[id]) ev.push({ kind:'timeline', key:'tl:'+id, title:ta[id].title, changes:['deleted'], refs:ta[id].vk ? ta[id].vk.split(',') : [] }); });
+  Object.keys(ta).forEach(id=>{ if(!tb[id]) ev.push({ kind:'timeline', key:'tl:'+id, title:ta[id].title, changes:['deleted'], refs:tlRefs(ta[id].vk, ta[id].cat) }); });
   Object.keys(b.vend).forEach(k=>{
-    const o = a.vend[k], n = b.vend[k]; if(!o) return;
+    const o = a.vend[k], n = b.vend[k];
     const label = k.replace(/^x:/,'');
+    if(!o){ if(n.acc) ev.push({ kind:'vendor_booked', key:'vb:' + k + ':' + n.acc, vendorKey:label, vendorAccountId:n.acc, date:b.wd || '', status:'' }); return; } // vendor tambahan baru langsung dipasang
     if(n.acc && o.acc !== n.acc){
       // vendor baru saja dipasang/di-booking ke project ini -> kabari akun vendor tsb
       ev.push({ kind:'vendor_booked', key:'vb:' + k + ':' + n.acc, vendorKey:label, vendorAccountId:n.acc, date:b.wd || '', status:(o.status !== n.status && typeof statusLabel==='function') ? statusLabel(n.status) : '' });
@@ -3453,7 +3455,8 @@ function notifyAfterPersist(){
       notifyPending.events[k] = e;
     });
     clearTimeout(notifyTimer);
-    notifyTimer = setTimeout(()=> flushNotify(false), NOTIFY_QUIET_MS);
+    const hasBooking = Object.keys(notifyPending.events).some(k=> notifyPending.events[k].kind === 'vendor_booked');
+    notifyTimer = setTimeout(()=> flushNotify(false), hasBooking ? 3000 : NOTIFY_QUIET_MS); /* booking vendor dikirim cepat (3 dtk) */
   }catch(e){ console.warn('notif: gagal menyusun perubahan', e); }
 }
 function flushNotify(useBeacon){
@@ -3466,7 +3469,18 @@ function flushNotify(useBeacon){
   const body = JSON.stringify({ projectId:p.projectId, actorRole:p.actorRole, actorVendorKey:p.actorVendorKey, actorToken:tok, events });
   try{
     if(useBeacon && navigator.sendBeacon){ navigator.sendBeacon(NOTIFY_ENDPOINT, new Blob([body], {type:'application/json'})); }
-    else fetch(NOTIFY_ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true }).catch(()=>{});
+    else fetch(NOTIFY_ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true })
+      .then(r=> r.json().catch(()=>({ error:'HTTP ' + r.status })))
+      .then(j=>{
+        if(!events.some(e=> e.kind === 'vendor_booked')) return;
+        const to = (j && j.to) || {};
+        let msg;
+        if(j && j.error) msg = '⚠️ Notif gagal: ' + j.error;
+        else if(j && j.skipped) msg = '🔔 Notif dilewati (' + j.skipped + ')';
+        else if(!to.vendor) msg = '⚠️ Notif booking tidak terkirim: vendor belum punya perangkat notif terdaftar (minta vendor login akunnya & Aktifkan Notifikasi)';
+        else msg = '🔔 Notif booking: terkirim ' + (j.sent||0) + ', gagal ' + (j.failed||0) + ', token kedaluwarsa ' + (j.removed||0) + (j.err ? ' (' + j.err + ')' : '');
+        showToast(msg, !(j && j.sent > 0));
+      }).catch(e=>{ console.warn('notif: gagal menghubungi server', e); });
   }catch(e){}
 }
 window.addEventListener('pagehide', ()=> flushNotify(true));
@@ -3872,12 +3886,8 @@ function buildProjectReminders(){
         const match = allVendorListR.find(x=>x.refId===ref);
         if(match && match.v) relatedVendors.push(match);
       });
-    } else if(t.cat==='Koordinasi' || t.cat==='Acara'){
-      // Tidak ada fallback otomatis untuk kategori ini — vendor harus dicentang manual dulu.
-    } else {
-      const match = allVendorListR.find(x=> x.label===t.cat || x.key===t.cat);
-      if(match && match.v && match.v.status && match.v.status!=='belum') relatedVendors.push(match);
     }
+    // Reminder agenda: vendor harus dicentang manual (tanpa fallback kategori).
     relatedVendors.forEach(x=>{
       const vendorBooked = x.v.status && x.v.status!=='belum';
       const msg = buildAgendaVendorReminderMessage(x.v.name||x.label, coupleLabel, t.title, t.desc, dateFmt, dLeftAgenda, t.location, t.mapsUrl);
@@ -6911,7 +6921,7 @@ function renderTimeline(){
                     </label>
                   `).join('')}
                 </div>
-                <div class="t-vendor-picker-hint">${(item.vendorKeys && item.vendorKeys.length) ? 'Manual — cuma vendor yang dicentang di atas yang diingatkan.' : (item.cat==='Koordinasi'||item.cat==='Acara') ? 'Belum ada vendor dicentang — belum ada notif vendor yang muncul untuk agenda ini sampai kamu centang manual.' : `Belum dipilih manual — otomatis pakai kategori "${escapeHtml(item.cat)}".`}</div>
+                <div class="t-vendor-picker-hint">${(item.vendorKeys && item.vendorKeys.length) ? 'Manual — cuma vendor yang dicentang di atas yang diingatkan.' : (item.cat==='Koordinasi'||item.cat==='Acara') ? 'Belum ada vendor dicentang — belum ada notif vendor yang muncul untuk agenda ini sampai kamu centang manual.' : `Belum dicentang — reminder WA ke vendor tidak muncul; notif push tetap otomatis ke vendor kategori "${escapeHtml(item.cat)}".`}</div>
               </div>` : ''}
             </div>
             <div class="t-right">
@@ -8663,7 +8673,7 @@ function albumPosterHtml(c, link){
   const NS = Math.max(50, Math.min(100, Math.floor(880 / (Math.max(longest, 1) * 0.58)))); /* nama panjang -> font mengecil, tetap 1 baris */
   const QR = albumQrPosterUrl(link);
   const PH = '<svg viewBox="0 0 300 300" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"><rect width="300" height="300" fill="#FFC9A8"></rect><circle cx="238" cy="62" r="34" fill="#FFE27A"></circle><ellipse cx="150" cy="330" rx="230" ry="90" fill="#9ADBC0"></ellipse><rect x="62" y="190" width="100" height="120" rx="40" fill="#8E6BFF"></rect><rect x="150" y="196" width="96" height="120" rx="40" fill="#FF5FA2"></rect><circle cx="112" cy="150" r="46" fill="#F2B48F"></circle><path d="M66 146a46 46 0 0 1 92 0c-14-22-70-22-92 0z" fill="#2A1A4A"></path><circle cx="198" cy="160" r="42" fill="#E9A07A"></circle><path d="M156 156a42 42 0 0 1 84 0c-12-24-66-24-84 0z" fill="#5A2E1A"></path><circle cx="96" cy="154" r="5" fill="#2A1A4A"></circle><circle cx="128" cy="154" r="5" fill="#2A1A4A"></circle><path d="M96 170q16 16 32 0" fill="none" stroke="#2A1A4A" stroke-width="5" stroke-linecap="round"></path><circle cx="184" cy="164" r="5" fill="#2A1A4A"></circle><circle cx="212" cy="164" r="5" fill="#2A1A4A"></circle><path d="M184 178q14 14 28 0" fill="none" stroke="#2A1A4A" stroke-width="5" stroke-linecap="round"></path><circle cx="84" cy="168" r="8" fill="#FF8FB8" opacity=".7"></circle><circle cx="226" cy="178" r="8" fill="#FF8FB8" opacity=".7"></circle><path d="M270 150l8 14-8 14-8-14z" fill="#FFFFFF" opacity=".8"></path></svg>';
-  return `<div style="width:1080px;height:1527px;box-sizing:border-box;position:relative;overflow:hidden;background:#FFE3F1;font-family:'AJFredoka','Fredoka',sans-serif;color:#2A1A4A;padding:44px 56px;display:flex;flex-direction:column;justify-content:space-between" data-canvas-width="1080" data-canvas-height="1527" data-document-role="page" data-label="Poster Album Tamu">
+  return `<div style="width:1080px;height:1500px;box-sizing:border-box;position:relative;overflow:hidden;background:#FFE3F1;font-family:'AJFredoka','Fredoka',sans-serif;color:#2A1A4A;padding:44px 56px;display:flex;flex-direction:column;justify-content:space-between" data-canvas-width="1080" data-canvas-height="1500" data-document-role="page" data-label="Poster Album Tamu">
 <div style="position:absolute;left:-120px;top:240px;width:420px;height:420px;border-radius:50%;background:#EADFFF"></div>
 <div style="position:absolute;right:-140px;top:-100px;width:380px;height:380px;border-radius:50%;background:#FFF3A8"></div>
 <div style="position:absolute;right:-90px;top:860px;width:300px;height:300px;border-radius:50%;background:#C9F3E3"></div>
@@ -8713,7 +8723,7 @@ function albumPosterHtml(c, link){
 </div>
 </div>
 
-<div style="position:relative;display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:600;margin-top:30px"><div style="width:298px;display:flex;justify-content:center"><img src="${LOGO_DARK_SRC}" alt="ArtaJava Wedding Organizer" style="display:block;width:230px;height:auto"></div><span style="font-family:'AJPatrick','Patrick Hand',cursive;font-size:30px;font-weight:400">kameranya sekali pakai, kenangannya selamanya</span></div>
+<div style="position:relative;display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:600"><div style="width:298px;display:flex;justify-content:center"><img src="${LOGO_DARK_SRC}" alt="ArtaJava Wedding Organizer" style="display:block;width:230px;height:auto"></div><span style="font-family:'AJPatrick','Patrick Hand',cursive;font-size:30px;font-weight:400">kameranya sekali pakai, kenangannya selamanya</span></div>
 </div>`;
 }
 async function albumDownloadQrCard(){
@@ -8722,14 +8732,14 @@ async function albumDownloadQrCard(){
   if(!window.html2canvas) await albumLoadJs('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
   await albumPosterFonts();
   const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:1080px;height:1527px;overflow:hidden';
+  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:1080px;height:1500px;overflow:hidden';
   host.innerHTML = albumPosterHtml(c, albumLink(a.code));
   document.body.appendChild(host);
   let cv;
   try{
     await Promise.all(Array.from(host.querySelectorAll('img')).map(im => im.complete ? 0 : new Promise(r => { im.onload = im.onerror = r; })));
     try{ await document.fonts.ready; }catch(e){}
-    cv = await html2canvas(host, { scale:2, backgroundColor:'#FFE3F1', useCORS:true, logging:false, width:1080, height:1527, windowWidth:1080, windowHeight:1527 });
+    cv = await html2canvas(host, { scale:2, backgroundColor:'#FFE3F1', useCORS:true, logging:false, width:1080, height:1500, windowWidth:1080, windowHeight:1500 });
   } finally { host.remove(); }
   const name = 'poster-qr-album-' + (((c.brideName || 'tamu') + '-' + (c.groomName || '')).replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '')) + '.png';
   await new Promise(res => cv.toBlob(b => { if(b) albumSaveBlob(b, name); else albumDownloadDataUrl(cv.toDataURL('image/png'), name); res(); }, 'image/png'));

@@ -4069,7 +4069,7 @@ function pushSupported(){
 }
 function pushNotifOptions(d, reg){
   const base = reg.scope;
-  return { body: d.body||'', icon: base+'icons/icon-192.png', badge: base+'icons/badge-96.png', tag: d.tag||undefined, data: { url: d.url||base } };
+  return { body: d.body||'', icon: base+'icons/icon-192.png', badge: base+'icons/badge-96.png', tag: d.tag ? (d.tag + '-' + Date.now()) : undefined, data: { url: d.url||base } };
 }
 /* Tes dari dalam app: munculkan 1 notif contoh lewat service worker (cek izin, ikon, badge, sw.js).
    Ini TIDAK mengetes pengiriman dari server; untuk itu pakai "Run workflow" test_notif di GitHub. */

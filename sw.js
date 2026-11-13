@@ -15,7 +15,9 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-/* Pesan dari server berupa "data-only", jadi tampilannya (ikon, badge, judul) kita atur sendiri di sini. */
+/* Pesan dari server berupa "data-only", jadi tampilannya (ikon, badge, judul) kita atur sendiri di sini.
+   Tag dibuat unik per notif: tag yang sama membuat notif baru menggantikan yang lama secara diam-diam
+   (tanpa banner/suara), terutama di iPhone, sehingga notif berikutnya seolah tidak muncul. */
 messaging.onBackgroundMessage(function(payload){
   const d = payload.data || {};
   const base = self.registration.scope;
@@ -23,7 +25,7 @@ messaging.onBackgroundMessage(function(payload){
     body: d.body || '',
     icon: base + 'icons/icon-192.png',
     badge: base + 'icons/badge-96.png',
-    tag: d.tag || undefined,
+    tag: (d.tag || 'evt') + '-' + Date.now(),
     data: { url: d.url || base }
   });
 });

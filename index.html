@@ -4059,7 +4059,7 @@ function bindPushButtons(){
     enablePushBtn.disabled = false;
     if(ok) enablePushBtn.textContent = '🔔 Notifikasi aktif';
   });
-  if(!pushSessionRefreshed && pushIsOn()){
+  if(!pushSessionRefreshed && pushPermission()==='granted'){ /* izin sudah diberikan -> daftarkan token otomatis (tanpa bergantung flag lokal yang bisa hilang) */
     pushSessionRefreshed = true; // perbarui token diam-diam sekali per sesi (token bisa berganti)
     enablePushNotifications(true).then(ok=>{ if(ok && enablePushBtn.isConnected) enablePushBtn.textContent = '🔔 Notifikasi aktif'; });
   }
